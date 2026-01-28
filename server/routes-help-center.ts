@@ -1347,10 +1347,11 @@ export function registerHelpCenterRoutes(app: Express) {
         WHERE resolved_at IS NULL OR resolved_at > NOW() - INTERVAL '24 hours'
         ORDER BY 
           CASE status 
-            WHEN 'OUTAGE' THEN 1 
-            WHEN 'DEGRADED' THEN 2 
-            WHEN 'MAINTENANCE' THEN 3 
-            ELSE 4 
+            WHEN 'MAJOR_OUTAGE' THEN 1 
+            WHEN 'PARTIAL_OUTAGE' THEN 2
+            WHEN 'DEGRADED' THEN 3 
+            WHEN 'MAINTENANCE' THEN 4 
+            ELSE 5 
           END,
           started_at DESC
       `);
@@ -1358,15 +1359,29 @@ export function registerHelpCenterRoutes(app: Express) {
       // Calculate overall status
       const statuses = result.rows;
       let overallStatus = "OPERATIONAL";
-      if (statuses.some(s => s.status === "OUTAGE" && !s.resolved_at)) {
-        overallStatus = "OUTAGE";
+      let overallMessage = "All systems operational";
+      
+      if (statuses.some(s => s.status === "MAJOR_OUTAGE" && !s.resolved_at)) {
+        overallStatus = "MAJOR_OUTAGE";
+        overallMessage = "Major outage detected";
+      } else if (statuses.some(s => s.status === "PARTIAL_OUTAGE" && !s.resolved_at)) {
+        overallStatus = "PARTIAL_OUTAGE";
+        overallMessage = "Partial outage detected";
       } else if (statuses.some(s => s.status === "DEGRADED" && !s.resolved_at)) {
         overallStatus = "DEGRADED";
+        overallMessage = "Some services experiencing issues";
       } else if (statuses.some(s => s.status === "MAINTENANCE" && !s.resolved_at)) {
         overallStatus = "MAINTENANCE";
+        overallMessage = "Scheduled maintenance in progress";
       }
       
-      res.json({ overallStatus, incidents: statuses });
+      // Return format expected by frontend
+      res.json({ 
+        status: overallStatus === "OPERATIONAL" ? "operational" : overallStatus.toLowerCase(),
+        message: overallMessage,
+        lastChecked: new Date().toISOString(),
+        incidents: statuses 
+      });
     } catch (error: any) {
       console.error("Error fetching system status:", error);
       res.status(500).json({ error: "Failed to fetch status" });
@@ -1416,13 +1431,29 @@ export function registerHelpCenterRoutes(app: Express) {
     try {
       const result = await pool.query(`
         SELECT * FROM known_issues 
-        WHERE is_public = true AND status != 'RESOLVED'
+        WHERE is_public = true AND status != 'FIXED'
         ORDER BY priority DESC, report_count DESC
       `);
       res.json(result.rows);
     } catch (error: any) {
       console.error("Error fetching known issues:", error);
       res.status(500).json({ error: "Failed to fetch known issues" });
+    }
+  });
+  
+  // ==================== SAFETY RESOURCES ====================
+  
+  // GET /api/help/safety-resources - Get safety resources
+  app.get("/api/help/safety-resources", async (req: Request, res: Response) => {
+    try {
+      const result = await pool.query(`
+        SELECT * FROM safety_resources 
+        ORDER BY is_emergency DESC, sort_order ASC
+      `);
+      res.json(result.rows);
+    } catch (error: any) {
+      console.error("Error fetching safety resources:", error);
+      res.status(500).json({ error: "Failed to fetch safety resources" });
     }
   });
   
