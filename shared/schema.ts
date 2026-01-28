@@ -4369,6 +4369,8 @@ export const supportTickets = pgTable("support_tickets", {
   index("support_tickets_assigned_idx").on(table.assignedTo),
 ]);
 
+export const ticketSenderTypeEnum = pgEnum("ticket_sender_type", ["USER", "ADMIN", "SYSTEM"]);
+
 export const supportTicketMessages = pgTable("support_ticket_messages", {
   id: varchar("id")
     .primaryKey()
@@ -4379,7 +4381,8 @@ export const supportTicketMessages = pgTable("support_ticket_messages", {
   senderId: varchar("sender_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  message: text("message").notNull(),
+  senderType: ticketSenderTypeEnum("sender_type").default("USER").notNull(),
+  content: text("content").notNull(),
   isInternal: boolean("is_internal").default(false).notNull(),
   attachmentUrls: text("attachment_urls"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

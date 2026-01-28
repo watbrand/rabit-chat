@@ -306,7 +306,7 @@ export function registerHelpCenterRoutes(app: Express) {
       const result = await pool.query(`
         SELECT a.id, a.title, a.slug, a.summary, a.difficulty, a.has_walkthrough, a.has_video,
                a.estimated_read_time, a.view_count, a.helpful_count, a.tags, a.thumbnail_url,
-               a.published_at, c.name as category_name, c.slug as category_slug
+               a.published_at, a.category_id, c.name as category_name, c.slug as category_slug
         FROM help_articles a
         LEFT JOIN help_categories c ON a.category_id = c.id
         WHERE ${whereClause}
@@ -337,7 +337,7 @@ export function registerHelpCenterRoutes(app: Express) {
       const result = await pool.query(`
         SELECT a.id, a.title, a.slug, a.summary, a.difficulty, a.has_walkthrough, a.has_video,
                a.estimated_read_time, a.view_count, a.helpful_count, a.thumbnail_url,
-               c.name as category_name, c.slug as category_slug
+               a.category_id, c.name as category_name, c.slug as category_slug
         FROM help_articles a
         LEFT JOIN help_categories c ON a.category_id = c.id
         WHERE a.status = 'PUBLISHED'
