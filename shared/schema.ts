@@ -5649,7 +5649,579 @@ export const apiUsageAlertHistory = pgTable("api_usage_alert_history", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// ===== HELP CENTER SYSTEM =====
+
+// Help article status enum
+export const helpArticleStatusEnum = pgEnum("help_article_status", [
+  "DRAFT", "PUBLISHED", "ARCHIVED"
+]);
+
+// Help article difficulty enum
+export const helpDifficultyEnum = pgEnum("help_difficulty", [
+  "BEGINNER", "INTERMEDIATE", "ADVANCED"
+]);
+
+// Support ticket attachment type enum
+export const attachmentTypeEnum = pgEnum("attachment_type", [
+  "IMAGE", "VIDEO", "DOCUMENT", "AUDIO", "ARCHIVE", "OTHER"
+]);
+
+// Feature request status enum
+export const featureRequestStatusEnum = pgEnum("feature_request_status", [
+  "NEW", "UNDER_REVIEW", "PLANNED", "IN_PROGRESS", "COMPLETED", "DECLINED"
+]);
+
+// System status type enum
+export const systemStatusTypeEnum = pgEnum("system_status_type", [
+  "OPERATIONAL", "DEGRADED", "PARTIAL_OUTAGE", "MAJOR_OUTAGE", "MAINTENANCE"
+]);
+
+// Appeal status enum
+export const appealStatusEnum = pgEnum("appeal_status", [
+  "PENDING", "UNDER_REVIEW", "APPROVED", "DENIED", "MORE_INFO_NEEDED"
+]);
+
+// Appeal type enum
+export const appealTypeEnum = pgEnum("appeal_type", [
+  "ACCOUNT_SUSPENDED", "CONTENT_REMOVED", "VERIFICATION_DENIED", "WITHDRAWAL_REJECTED", "OTHER"
+]);
+
+// Help categories - organized by app features
+export const helpCategories = pgTable("help_categories", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 100 }).notNull(),
+  slug: varchar("slug", { length: 100 }).notNull().unique(),
+  description: text("description"),
+  icon: varchar("icon", { length: 50 }), // Icon name from icon library
+  color: varchar("color", { length: 20 }), // Hex color for category
+  parentId: varchar("parent_id"), // For subcategories
+  sortOrder: integer("sort_order").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  articleCount: integer("article_count").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("help_categories_slug_idx").on(table.slug),
+  index("help_categories_parent_idx").on(table.parentId),
+  index("help_categories_active_idx").on(table.isActive),
+]);
+
+// Help articles - the main help content
+export const helpArticles = pgTable("help_articles", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  categoryId: varchar("category_id")
+    .notNull()
+    .references(() => helpCategories.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 200 }).notNull(),
+  slug: varchar("slug", { length: 200 }).notNull().unique(),
+  summary: text("summary"), // Short description for search results
+  content: text("content").notNull(), // Rich text content (markdown/HTML)
+  difficulty: helpDifficultyEnum("difficulty").default("BEGINNER"),
+  status: helpArticleStatusEnum("status").default("DRAFT").notNull(),
+  hasWalkthrough: boolean("has_walkthrough").default(false).notNull(),
+  hasVideo: boolean("has_video").default(false).notNull(),
+  videoUrl: text("video_url"),
+  thumbnailUrl: text("thumbnail_url"),
+  estimatedReadTime: integer("estimated_read_time").default(2), // In minutes
+  viewCount: integer("view_count").default(0).notNull(),
+  helpfulCount: integer("helpful_count").default(0).notNull(),
+  notHelpfulCount: integer("not_helpful_count").default(0).notNull(),
+  tags: jsonb("tags").default([]), // Array of tags for search
+  relatedArticleIds: jsonb("related_article_ids").default([]), // Array of related article IDs
+  metaTitle: varchar("meta_title", { length: 100 }), // SEO
+  metaDescription: text("meta_description"), // SEO
+  authorId: varchar("author_id")
+    .references(() => users.id, { onDelete: "set null" }),
+  lastUpdatedBy: varchar("last_updated_by")
+    .references(() => users.id, { onDelete: "set null" }),
+  publishedAt: timestamp("published_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("help_articles_category_idx").on(table.categoryId),
+  index("help_articles_slug_idx").on(table.slug),
+  index("help_articles_status_idx").on(table.status),
+]);
+
+// Help article steps - for interactive walkthroughs
+export const helpArticleSteps = pgTable("help_article_steps", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  articleId: varchar("article_id")
+    .notNull()
+    .references(() => helpArticles.id, { onDelete: "cascade" }),
+  stepNumber: integer("step_number").notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description").notNull(),
+  imageUrl: text("image_url"), // Screenshot
+  videoUrl: text("video_url"), // Optional video for step
+  targetElement: varchar("target_element", { length: 100 }), // CSS selector for highlighting
+  screenName: varchar("screen_name", { length: 100 }), // App screen this relates to
+  actionType: varchar("action_type", { length: 50 }), // TAP, SWIPE, TYPE, etc.
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("help_article_steps_article_idx").on(table.articleId),
+]);
+
+// Support inboxes - one per user (like Facebook support inbox)
+export const supportInboxes = pgTable("support_inboxes", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  totalTickets: integer("total_tickets").default(0).notNull(),
+  openTickets: integer("open_tickets").default(0).notNull(),
+  unreadMessages: integer("unread_messages").default(0).notNull(),
+  priorityLevel: varchar("priority_level", { length: 20 }).default("STANDARD"), // STANDARD, VIP, DIAMOND
+  lastActivityAt: timestamp("last_activity_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("support_inboxes_user_idx").on(table.userId),
+]);
+
+// Ticket attachments - separate table for large file support (up to 1GB)
+export const ticketAttachments = pgTable("ticket_attachments", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  messageId: varchar("message_id")
+    .notNull()
+    .references(() => supportTicketMessages.id, { onDelete: "cascade" }),
+  ticketId: varchar("ticket_id")
+    .notNull()
+    .references(() => supportTickets.id, { onDelete: "cascade" }),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  fileType: attachmentTypeEnum("file_type").notNull(),
+  mimeType: varchar("mime_type", { length: 100 }).notNull(),
+  fileSize: bigint("file_size", { mode: "number" }).notNull(), // In bytes
+  fileUrl: text("file_url").notNull(), // Cloudinary URL
+  thumbnailUrl: text("thumbnail_url"), // For images/videos
+  publicId: varchar("public_id", { length: 200 }), // Cloudinary public ID
+  uploadedById: varchar("uploaded_by_id")
+    .references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("ticket_attachments_message_idx").on(table.messageId),
+  index("ticket_attachments_ticket_idx").on(table.ticketId),
+]);
+
+// Ticket internal notes - admin-only notes on tickets
+export const ticketInternalNotes = pgTable("ticket_internal_notes", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id")
+    .notNull()
+    .references(() => supportTickets.id, { onDelete: "cascade" }),
+  adminId: varchar("admin_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  note: text("note").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("ticket_internal_notes_ticket_idx").on(table.ticketId),
+]);
+
+// Canned responses - pre-written responses for common issues
+export const cannedResponses = pgTable("canned_responses", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  title: varchar("title", { length: 200 }).notNull(),
+  content: text("content").notNull(),
+  category: ticketCategoryEnum("category"),
+  shortcut: varchar("shortcut", { length: 50 }), // e.g., /password to insert password reset response
+  usageCount: integer("usage_count").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdBy: varchar("created_by")
+    .references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("canned_responses_category_idx").on(table.category),
+]);
+
+// FAQs - frequently asked questions
+export const helpFaqs = pgTable("help_faqs", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  categoryId: varchar("category_id")
+    .references(() => helpCategories.id, { onDelete: "set null" }),
+  question: text("question").notNull(),
+  answer: text("answer").notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  viewCount: integer("view_count").default(0).notNull(),
+  helpfulCount: integer("helpful_count").default(0).notNull(),
+  notHelpfulCount: integer("not_helpful_count").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  isFeatured: boolean("is_featured").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("help_faqs_category_idx").on(table.categoryId),
+  index("help_faqs_active_idx").on(table.isActive),
+]);
+
+// System status - platform health indicators
+export const systemStatus = pgTable("system_status", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  component: varchar("component", { length: 100 }).notNull(), // e.g., "Feed", "Messaging", "Payments"
+  status: systemStatusTypeEnum("status").default("OPERATIONAL").notNull(),
+  title: varchar("title", { length: 200 }),
+  description: text("description"),
+  affectedFeatures: jsonb("affected_features").default([]),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at"),
+  updatedBy: varchar("updated_by")
+    .references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("system_status_component_idx").on(table.component),
+  index("system_status_status_idx").on(table.status),
+]);
+
+// Known issues - current bugs/issues being worked on
+export const knownIssues = pgTable("known_issues", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description").notNull(),
+  affectedPlatforms: jsonb("affected_platforms").default([]), // iOS, Android, Web
+  workaround: text("workaround"),
+  priority: ticketPriorityEnum("priority").default("MEDIUM").notNull(),
+  status: varchar("status", { length: 20 }).default("INVESTIGATING").notNull(), // INVESTIGATING, FIXING, FIXED
+  fixedInVersion: varchar("fixed_in_version", { length: 20 }),
+  reportCount: integer("report_count").default(1).notNull(),
+  isPublic: boolean("is_public").default(true).notNull(),
+  reportedAt: timestamp("reported_at").defaultNow().notNull(),
+  fixedAt: timestamp("fixed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("known_issues_status_idx").on(table.status),
+  index("known_issues_public_idx").on(table.isPublic),
+]);
+
+// Feature requests - user-submitted feature ideas with voting
+export const featureRequests = pgTable("feature_requests", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description").notNull(),
+  category: varchar("category", { length: 50 }),
+  status: featureRequestStatusEnum("status").default("NEW").notNull(),
+  upvotes: integer("upvotes").default(0).notNull(),
+  downvotes: integer("downvotes").default(0).notNull(),
+  commentCount: integer("comment_count").default(0).notNull(),
+  adminResponse: text("admin_response"),
+  adminRespondedAt: timestamp("admin_responded_at"),
+  adminRespondedBy: varchar("admin_responded_by")
+    .references(() => users.id, { onDelete: "set null" }),
+  plannedVersion: varchar("planned_version", { length: 20 }),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("feature_requests_user_idx").on(table.userId),
+  index("feature_requests_status_idx").on(table.status),
+]);
+
+// Feature request votes
+export const featureRequestVotes = pgTable("feature_request_votes", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  requestId: varchar("request_id")
+    .notNull()
+    .references(() => featureRequests.id, { onDelete: "cascade" }),
+  userId: varchar("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  isUpvote: boolean("is_upvote").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("feature_request_votes_request_idx").on(table.requestId),
+  unique("feature_request_votes_user_request_idx").on(table.userId, table.requestId),
+]);
+
+// Help feedback - user ratings on help content
+export const helpFeedback = pgTable("help_feedback", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id")
+    .references(() => users.id, { onDelete: "set null" }),
+  articleId: varchar("article_id")
+    .references(() => helpArticles.id, { onDelete: "cascade" }),
+  faqId: varchar("faq_id")
+    .references(() => helpFaqs.id, { onDelete: "cascade" }),
+  isHelpful: boolean("is_helpful").notNull(),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("help_feedback_article_idx").on(table.articleId),
+  index("help_feedback_faq_idx").on(table.faqId),
+]);
+
+// Community questions - user-submitted questions
+export const communityQuestions = pgTable("community_questions", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  categoryId: varchar("category_id")
+    .references(() => helpCategories.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 200 }).notNull(),
+  body: text("body").notNull(),
+  answerCount: integer("answer_count").default(0).notNull(),
+  viewCount: integer("view_count").default(0).notNull(),
+  upvotes: integer("upvotes").default(0).notNull(),
+  isSolved: boolean("is_solved").default(false).notNull(),
+  acceptedAnswerId: varchar("accepted_answer_id"),
+  isLocked: boolean("is_locked").default(false).notNull(),
+  isPinned: boolean("is_pinned").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("community_questions_user_idx").on(table.userId),
+  index("community_questions_category_idx").on(table.categoryId),
+  index("community_questions_solved_idx").on(table.isSolved),
+]);
+
+// Community answers
+export const communityAnswers = pgTable("community_answers", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  questionId: varchar("question_id")
+    .notNull()
+    .references(() => communityQuestions.id, { onDelete: "cascade" }),
+  userId: varchar("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  upvotes: integer("upvotes").default(0).notNull(),
+  downvotes: integer("downvotes").default(0).notNull(),
+  isVerified: boolean("is_verified").default(false).notNull(), // Verified by staff
+  verifiedBy: varchar("verified_by")
+    .references(() => users.id, { onDelete: "set null" }),
+  verifiedAt: timestamp("verified_at"),
+  isAccepted: boolean("is_accepted").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("community_answers_question_idx").on(table.questionId),
+  index("community_answers_user_idx").on(table.userId),
+]);
+
+// Community answer votes
+export const communityAnswerVotes = pgTable("community_answer_votes", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  answerId: varchar("answer_id")
+    .notNull()
+    .references(() => communityAnswers.id, { onDelete: "cascade" }),
+  userId: varchar("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  isUpvote: boolean("is_upvote").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("community_answer_votes_answer_idx").on(table.answerId),
+  unique("community_answer_votes_user_answer_idx").on(table.userId, table.answerId),
+]);
+
+// Help achievements - gamification for helping others
+export const helpAchievements = pgTable("help_achievements", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description").notNull(),
+  icon: varchar("icon", { length: 50 }).notNull(),
+  badgeColor: varchar("badge_color", { length: 20 }),
+  requirement: varchar("requirement", { length: 50 }).notNull(), // e.g., ANSWERS_10, VERIFIED_5, HELPFUL_50
+  threshold: integer("threshold").notNull(),
+  coinReward: integer("coin_reward").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("help_achievements_active_idx").on(table.isActive),
+]);
+
+// User help achievements
+export const userHelpAchievements = pgTable("user_help_achievements", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  achievementId: varchar("achievement_id")
+    .notNull()
+    .references(() => helpAchievements.id, { onDelete: "cascade" }),
+  earnedAt: timestamp("earned_at").defaultNow().notNull(),
+  coinRewardClaimed: boolean("coin_reward_claimed").default(false).notNull(),
+}, (table) => [
+  index("user_help_achievements_user_idx").on(table.userId),
+  unique("user_help_achievements_unique_idx").on(table.userId, table.achievementId),
+]);
+
+// User help progress - track learning and engagement
+export const userHelpProgress = pgTable("user_help_progress", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  articlesRead: integer("articles_read").default(0).notNull(),
+  tutorialsCompleted: integer("tutorials_completed").default(0).notNull(),
+  questionsAsked: integer("questions_asked").default(0).notNull(),
+  answersPosted: integer("answers_posted").default(0).notNull(),
+  answersVerified: integer("answers_verified").default(0).notNull(),
+  helpfulVotesReceived: integer("helpful_votes_received").default(0).notNull(),
+  ticketsCreated: integer("tickets_created").default(0).notNull(),
+  ticketsResolved: integer("tickets_resolved").default(0).notNull(),
+  lastArticleReadAt: timestamp("last_article_read_at"),
+  lastTutorialCompletedAt: timestamp("last_tutorial_completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("user_help_progress_user_idx").on(table.userId),
+]);
+
+// Appeals - for account/content appeals
+export const appeals = pgTable("appeals", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  type: appealTypeEnum("type").notNull(),
+  status: appealStatusEnum("status").default("PENDING").notNull(),
+  subject: varchar("subject", { length: 200 }).notNull(),
+  description: text("description").notNull(),
+  referenceId: varchar("reference_id"), // ID of the suspended account, removed content, etc.
+  attachmentUrls: jsonb("attachment_urls").default([]),
+  adminResponse: text("admin_response"),
+  reviewedBy: varchar("reviewed_by")
+    .references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("appeals_user_idx").on(table.userId),
+  index("appeals_status_idx").on(table.status),
+  index("appeals_type_idx").on(table.type),
+]);
+
+// App changelog - what's new in each version
+export const appChangelog = pgTable("app_changelog", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  version: varchar("version", { length: 20 }).notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description").notNull(),
+  features: jsonb("features").default([]), // Array of new features
+  improvements: jsonb("improvements").default([]), // Array of improvements
+  bugFixes: jsonb("bug_fixes").default([]), // Array of bug fixes
+  imageUrl: text("image_url"),
+  isPublished: boolean("is_published").default(false).notNull(),
+  publishedAt: timestamp("published_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("app_changelog_version_idx").on(table.version),
+  index("app_changelog_published_idx").on(table.isPublished),
+]);
+
+// Safety resources - crisis and emergency contacts
+export const safetyResources = pgTable("safety_resources", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description").notNull(),
+  category: varchar("category", { length: 50 }).notNull(), // CRISIS, HARASSMENT, LEGAL, etc.
+  contactNumber: varchar("contact_number", { length: 50 }),
+  contactEmail: varchar("contact_email", { length: 100 }),
+  websiteUrl: text("website_url"),
+  country: varchar("country", { length: 50 }), // For country-specific resources
+  isEmergency: boolean("is_emergency").default(false).notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("safety_resources_category_idx").on(table.category),
+  index("safety_resources_country_idx").on(table.country),
+]);
+
+// Help search history - for analytics and personalization
+export const helpSearchHistory = pgTable("help_search_history", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id")
+    .references(() => users.id, { onDelete: "cascade" }),
+  query: text("query").notNull(),
+  resultsCount: integer("results_count").default(0).notNull(),
+  clickedArticleId: varchar("clicked_article_id")
+    .references(() => helpArticles.id, { onDelete: "set null" }),
+  sessionId: varchar("session_id", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("help_search_history_user_idx").on(table.userId),
+  index("help_search_history_query_idx").on(table.query),
+]);
+
 // ===== TYPE EXPORTS FOR NEW TABLES =====
+
+export type HelpCategory = typeof helpCategories.$inferSelect;
+export type HelpArticle = typeof helpArticles.$inferSelect;
+export type HelpArticleStep = typeof helpArticleSteps.$inferSelect;
+export type SupportInbox = typeof supportInboxes.$inferSelect;
+export type TicketAttachment = typeof ticketAttachments.$inferSelect;
+export type TicketInternalNote = typeof ticketInternalNotes.$inferSelect;
+export type CannedResponse = typeof cannedResponses.$inferSelect;
+export type HelpFaq = typeof helpFaqs.$inferSelect;
+export type SystemStatusRecord = typeof systemStatus.$inferSelect;
+export type KnownIssue = typeof knownIssues.$inferSelect;
+export type FeatureRequest = typeof featureRequests.$inferSelect;
+export type FeatureRequestVote = typeof featureRequestVotes.$inferSelect;
+export type HelpFeedbackRecord = typeof helpFeedback.$inferSelect;
+export type CommunityQuestion = typeof communityQuestions.$inferSelect;
+export type CommunityAnswer = typeof communityAnswers.$inferSelect;
+export type CommunityAnswerVote = typeof communityAnswerVotes.$inferSelect;
+export type HelpAchievement = typeof helpAchievements.$inferSelect;
+export type UserHelpAchievement = typeof userHelpAchievements.$inferSelect;
+export type UserHelpProgress = typeof userHelpProgress.$inferSelect;
+export type Appeal = typeof appeals.$inferSelect;
+export type AppChangelogEntry = typeof appChangelog.$inferSelect;
+export type SafetyResource = typeof safetyResources.$inferSelect;
+export type HelpSearchHistoryEntry = typeof helpSearchHistory.$inferSelect;
 
 export type ApiUsageDaily = typeof apiUsageDaily.$inferSelect;
 export type ApiUsageAlert = typeof apiUsageAlerts.$inferSelect;
