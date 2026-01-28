@@ -1,0 +1,155 @@
+You are the senior engineer + QA lead for RabitChat. Your job is to make the app fully logical and bulletproof end-to-end — not just UI. Do NOT rebuild the app. Do NOT create random new features. Instead: deeply audit the entire codebase, compare our workflows to how Instagram, TikTok, Facebook, and Twitter/X handle the same workflows, and then implement the missing logic, safety checks, and end-to-end behavior. Be creative only when it closes real loopholes or improves reliability. No placeholders. No dead ends.
+
+IMPORTANT RULES
+- You must NOT copy code from other apps. Only replicate workflow logic patterns and UX behavior.
+- Every UI action must map to a real API route and persistent DB changes where applicable.
+- Ensure Android + iOS + web parity (touch behavior, cookies/auth, playback, layout, safe-areas).
+- Preserve our existing RBAC admin panel, privacy rules, and our unique features (Gossip anonymity, Mall net worth, Studio analytics).
+
+PHASE 1 — DEEP LOGIC AUDIT (WHOLE APP)
+1) Crawl the entire UI and list every interactive element:
+- bottom tabs, buttons, icons, menus, toggles, forms, links, tiles, modals
+- include Admin panel actions
+2) For each action, verify:
+- Backend logic exists (API route exists, validated, permission-checked)
+- Database persistence exists (still correct after refresh/login on another device)
+- Policy enforcement exists (privacy/blocks/visibility/RBAC)
+- UX states exist (loading, success, failure; no silent fails)
+3) Label each action:
+- ✅ Fully implemented end-to-end
+- ⚠️ Partial (UI exists but backend/DB incomplete or broken)
+- ❌ UI-only / dead-end / placeholder / broken
+
+Create: /docs/LOGIC_AUDIT.md
+Include a table:
+Screen -> Action -> Expected Behavior -> Current Status -> Missing Logic -> Fix Plan
+
+PHASE 2 — BENCHMARK AGAINST REAL APPS (WORKFLOW COMPARISON)
+For each workflow below, compare what RabitChat does vs how these apps behave:
+- Instagram: profile editing persistence, requests inbox, saving/bookmarking, full-screen media viewer, notifications deep-linking
+- TikTok: reels-style vertical viewer, watch-time stats, creator analytics patterns
+- Facebook: full-image viewer behavior, profile banner behavior, follow/friend-style discovery patterns
+- Twitter/X: trends page behavior and retweet/repost behavior patterns
+
+Workflows to benchmark:
+A) Auth + session persistence
+- Compare to how these apps keep sessions stable across mobile devices
+- Fix cookie/session issues on mobile (Android/iOS) if present
+
+B) Posting workflows (text/photo/video/voice)
+- Compare the full workflow: upload -> validate -> create -> view -> interact -> persist
+- Ensure video playback works everywhere
+- Ensure upload limits are enforced consistently (500MB video)
+
+C) Feed + Profile browsing
+- Correct pagination/cursors
+- Viewer flags (liked/saved/following)
+- Strict privacy behavior
+- Full-screen open from grid and return behavior
+
+D) Full-screen viewers
+- Image tap opens full image viewer (Facebook/Instagram style)
+- Video/voice opens reels-like viewer (TikTok style) with a queue:
+  - start at selected post
+  - continue that user’s posts
+  - if none left, fallback to global recommendations
+
+E) Messaging system (Instagram-style)
+- Tabs: Primary / General / Requests
+- Requests: read preview allowed, but no read receipts until accepted
+- Must accept before replying (input disabled)
+- Accept -> goes Primary by default
+- Move between Primary and General
+- Clicking avatar/name goes to the sender profile before accepting
+
+F) Notifications system (Instagram/Facebook style)
+- Every like/comment/follow/message creates a notification
+- Notification click deep-links to the exact target (post/comment/profile/conversation)
+- Fix layout issues (header overlap, safe-area)
+- Ensure backend logic exists for each notification type
+
+G) Strict privacy + blocks
+- Private accounts restrict content for non-followers
+- Hidden net worth for private users (unless follower)
+- Blocks override everything
+
+H) Admin panel (Facebook-style operational control)
+- Every admin action must work end-to-end on mobile/web
+- RBAC permissions enforced
+- Audit logs captured for all sensitive actions
+
+I) Mall + net worth mechanics (game-like economy)
+- Items purchase (free now)
+- Unlimited buying
+- Net worth increases by item.value * 10 per purchase
+- Top 50 leaderboard excludes private accounts
+- Admin manages items/categories/logs
+
+J) Gossip (anonymous community)
+- Anonymous ghost identities (no names shown)
+- Likes/comments/retweet inside gossip only
+- Gossip isolated from the rest of the app
+- Critical: no identity leaks anywhere (including admin)
+
+Create: /docs/WORKFLOW_GAPS.md
+For each workflow:
+- Required states
+- Required DB records
+- Required policy checks
+- Required UI states
+- Common loopholes and how to prevent them
+- What we are missing and exact plan to fix
+
+PHASE 3 — IMPLEMENT MISSING LOGIC (CLOSE ALL LOOPS)
+Implement fixes wherever our app is ⚠️ or ❌:
+- Add/repair API routes (zod validation, consistent errors)
+- Add/repair DB persistence (transactions, constraints, indexes)
+- Apply centralized policy checks everywhere
+- Fix mobile-specific issues (auth cookies, CORS, safe-area padding, z-index tap blocking)
+- Fix media playback (MIME, CORS, range requests, player config)
+- Ensure counters update correctly (likes/comments/saves/shares/views)
+- Ensure deep links route correctly across app
+- Ensure admin panel works and is audit-logged
+- Ensure Studio metrics reflect real user activity (track events + rollups)
+
+Hard rules:
+- No UI-only fixes that pretend success
+- No backend routes unused by UI
+- No dead buttons after this pass
+
+PHASE 4 — PROOF (TESTING + INSTRUMENTATION)
+1) Add minimal instrumentation:
+- Server logs for 401/403/422/500 with route + error type (no sensitive data)
+- Client toasts on failure (no silent errors)
+2) Add a “smoke test” runner (npm script):
+- Tests auth, create post, like, comment, save, notifications, inbox tabs, mall buy, admin actions
+- Confirms expected status codes and response shapes
+- Confirms gossip endpoints never return identity
+3) Create /docs/TEST_PLAN.md with step-by-step checklists:
+- Android checklist
+- iOS checklist
+- Web checklist
+- Admin checklist
+
+Create: /docs/BUGFIX_REPORT.md
+List:
+- every issue found
+- root cause
+- fixes applied (file paths)
+- how verified
+
+DONE GATE — DO NOT STOP UNTIL:
+- Every interactive UI element is ✅ end-to-end
+- No dead buttons, no missing routes, no silent failures
+- Workflows match the logic patterns of Instagram/TikTok/Facebook/Twitter where relevant
+- Cross-device parity confirmed (Android + iOS + web)
+- Admin panel fully functional with RBAC + audit logs
+- Gossip anonymity guaranteed (no identity leaks)
+- Docs accurate and complete
+
+FINAL OUTPUT
+Print a summary:
+- total actions audited
+- ✅ / ⚠️ / ❌ counts before and after
+- biggest loopholes fixed
+- exact steps to re-test quickly

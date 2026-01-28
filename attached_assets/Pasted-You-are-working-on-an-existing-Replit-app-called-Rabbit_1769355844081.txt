@@ -1,0 +1,57 @@
+You are working on an existing Replit app called RabbitChat.
+
+CRITICAL CONTEXT:
+- The Super Admin panel already exists at: /admin
+- Live URL: https://rabit-chat--watbrandafrica.replit.app/admin
+- The system has a tendency to “assume” instead of checking. DO NOT ASSUME ANYTHING.
+
+NON-NEGOTIABLE RULE:
+Before proposing changes, you MUST locate and read the actual admin implementation in the repo (routes, layout, guards, API handlers). If you cannot find it, you must search for it by patterns and confirm the exact files.
+
+STEP 1 — FIND THE ADMIN ENTRY POINT (NO GUESSING)
+Search the repo for:
+- "/admin"
+- "admin"
+- "AdminLayout"
+- "createPageUrl"
+- "router"
+- "routes"
+- "role"
+- "super_admin"
+- "permissions"
+Identify:
+- the admin route definition(s)
+- the admin layout/component(s)
+- the admin auth/role guard(s)
+- the admin API endpoints (if any)
+
+STEP 2 — BUILD A “FEATURE → ADMIN CONTROL” MAP FROM REAL CODE
+Crawl the entire app and list every major feature/function that exists (users, posts, comments, messages, reports, moderation, categories/locations, settings, notifications, etc).
+For EACH feature, verify in code whether the /admin panel can manage it.
+Output a table in /ADMIN_GAP_MAP.md:
+- Feature
+- Where implemented (file paths)
+- API used
+- Admin control exists? (YES/NO)
+- Missing admin control required
+
+STEP 3 — FIX THE DISCONNECT (ADD WHAT’S MISSING)
+For every “NO” in the map:
+- Add secure server-side admin endpoints (RBAC enforced)
+- Add admin UI pages/actions to manage the feature
+- Add audit logs for all admin actions
+- Add safe defaults (if unsure: restrict/disable, document decision)
+
+STEP 4 — HARDEN ADMIN (MAKE IT RELIABLE)
+- Ensure /admin is protected by auth + role guard
+- Ensure all admin actions are server-enforced (no client-only checks)
+- Add consistent error handling (no silent failures)
+- Add NotFound + error boundary for admin routes
+- Add basic tests for admin permissions
+
+OUTPUTS REQUIRED:
+1) /ADMIN_GAP_MAP.md (the feature→admin mapping)
+2) Working /admin controls for missing features
+3) /ADMIN_GUIDE.md explaining how to use the admin panel
+
+START NOW by performing Step 1 and printing the exact file paths where /admin is implemented.

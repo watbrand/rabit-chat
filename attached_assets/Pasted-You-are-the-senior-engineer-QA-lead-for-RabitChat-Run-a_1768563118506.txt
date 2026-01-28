@@ -1,0 +1,71 @@
+You are the senior engineer + QA lead for RabitChat. Run a deep full-stack sweep to find and fix ALL loose ends / dead-ends across the entire app. Do NOT add new features or redesign; only fix broken behavior, missing wiring, cross-device issues, and incorrect logic. The result must be stable and fully operational.
+
+NON-NEGOTIABLE RULES
+1) Do not “assume” anything works. Verify with real execution paths.
+2) Every UI action must call a real API route and persist in DB when applicable.
+3) Fix root causes, not symptoms.
+4) Ensure parity across Android + iOS + web (responsive + touch behavior).
+5) Ensure admin panel functions match the same backend rules and are RBAC protected.
+6) No placeholders, no TODOs, no alert() stubs, no silent failures.
+
+PHASE 1 — AUTOMATED DISCOVERY (DEEP SEARCH)
+A) Scan the codebase for:
+- Buttons/links with no handler or broken route
+- Components with disabled click via overlays/z-index on mobile
+- API calls missing auth or wrong base URL
+- Unhandled promise rejections and swallowed errors
+- Endpoints referenced by UI that do not exist
+- Endpoints that exist but do not validate or persist correctly
+- Any mock/fake data paths still in use
+- Any CORS/cookie/session settings that break on mobile browsers
+- Upload limits/body size limits that break large media
+- CSS blur/backdrop-filter overlays affecting readability (especially chat/messages)
+
+B) Add minimal instrumentation to detect failures:
+- Server logs for 401/403/422/500 with request path + error type
+- Client error toasts for failed actions (no silent failures)
+- A lightweight “smoke test” runner that calls key endpoints
+
+PHASE 2 — END-TO-END FUNCTIONAL SWEEP (FIX EVERYTHING)
+Fix all issues found in Phase 1, including but not limited to:
+1) Mobile persistence failures (profile edits, cover/avatar updates, settings saves)
+2) Mobile navigation/tap issues (icons not clickable due to layout overlays)
+3) Posting flow failures on Android for all post types (text/photo/video/voice)
+4) Comments + saves/bookmarks fully working end-to-end
+5) Video playback reliability (correct URL access, MIME type, CORS/range, player setup)
+6) Upload limit increase for video to 500MB (wherever enforced: API + server + provider)
+7) Notifications:
+   - consistent layout (not hidden under header)
+   - backend creation on like/comment/follow/message
+   - deep-link routing to the exact target (post/comment/profile/conversation)
+8) Follow-back logic:
+   - if someone follows viewer and viewer does not follow them -> show “Follow Back”
+9) Chat readability:
+   - remove/contain blur effects so messages never become blurry on iOS or Android
+10) Admin panel:
+   - verify every admin action works from mobile and web
+   - RBAC checks correct
+   - audit logs written for all sensitive actions
+
+PHASE 3 — POLICY + DATA INTEGRITY ENFORCEMENT
+Ensure centralized policy checks are used everywhere (profile privacy, post visibility, blocks, comment/message permissions). Fix any endpoint that bypasses policy rules. Ensure transactions update counters safely and constraints are correct.
+
+PHASE 4 — PROOF + DOCUMENTATION
+Create these files and keep them accurate:
+1) /docs/DEEP_SWEEP_REPORT.md
+   - list every bug found, root cause, fix, and file paths changed
+2) /docs/SMOKE_TESTS.md
+   - what smoke tests exist and how to run them
+3) /docs/DEVICE_TEST_PLAN.md
+   - Android checklist, iOS checklist, Admin checklist with pass criteria
+
+Add a “done gate”:
+- Do not conclude until ALL smoke tests pass and all checklists can be completed without errors.
+- Confirm explicitly that: profile updates, settings, posting, comments, saves, video playback, messages readability, notifications deep-linking, follow-back, and admin actions all work across Android+iOS+web.
+
+FINAL OUTPUT
+After implementing fixes, print a short summary:
+- total issues found
+- total issues fixed
+- remaining known limitations (should be none for core flows)
+- exact steps to verify on Android/iOS/Admin

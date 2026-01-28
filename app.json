@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "RabitChat",
+    "slug": "rabitchat",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "rabitchat",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.rabitchat.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "RabitChat needs access to your photo library to share photos and videos in posts and messages.",
+        "NSPhotoLibraryAddUsageDescription": "RabitChat needs permission to save photos and videos to your library.",
+        "NSCameraUsageDescription": "RabitChat needs access to your camera to take photos and record videos.",
+        "NSMicrophoneUsageDescription": "RabitChat needs access to your microphone to record audio for voice posts and messages."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0F0F0F",
+        "foregroundImage": "./assets/images/icon.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.rabitchat.app"
+    },
+    "web": {
+      "output": "single",
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#0F0F0F",
+          "dark": {
+            "backgroundColor": "#0F0F0F"
+          }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "RabitChat needs access to your photos to share media in posts and messages.",
+          "cameraPermission": "RabitChat needs access to your camera to take photos and videos."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "RabitChat needs access to your photo library to save and share media.",
+          "savePhotosPermission": "RabitChat needs access to save photos and videos to your library.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "reactCompiler": true
+    }
+  }
+}

@@ -1,0 +1,86 @@
+TypeError: Cannot read property 'purchaseId' of undefined
+
+This error is located at:
+at C (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1941:705)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:665:453)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:605:230)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:663:184)
+at RNSScreenContentWrapper (<anonymous>)
+at l (<anonymous>)
+at u (<anonymous>)
+at RNSScreen (<anonymous>)
+at Animated(Anonymous) (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:363:466)
+at t (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1320:329)
+at Suspense (<anonymous>)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1320:119)
+at c (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1319:296)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1317:894)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1317:4288)
+at y (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1339:788)
+at S (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1242:2448)
+at RNSScreenStack (<anonymous>)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1336:400)
+at l (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1335:457)
+at RCTView (<anonymous>)
+at View (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:125:1244)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1287:379)
+at v (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1306:648)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1242:132)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:647:189)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:671:390)
+at t (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:660:694)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:660:227)
+at l (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1241:685)
+at Ue (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1239:1544)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1944:188)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:611:126)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:605:230)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:588:1021)
+at j (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:684:765)
+at B (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:584:865)
+at KeyboardControllerView (<anonymous>)
+at Animated(Anonymous) (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:363:466)
+at AnimatedComponent(Animated(Anonymous)) (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:879:236)
+at Animated(Anonymous) (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:879:603)
+at C (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1114:1573)
+at RCTView (<anonymous>)
+at View (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:125:1244)
+at o (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1038:330)
+at RNCSafeAreaProvider (<anonymous>)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1147:477)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1495:133)
+at S (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:584:753)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1454:179)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1676:185)
+at o (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1218:802)
+at anonymous (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1464:180)
+at s (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:1942:359)
+at R (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:584:1308)
+at RCTView (<anonymous>)
+at View (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:125:1244)
+at c (https://rabit-chat--watbrandafrica.replit.app/1769539728803-56/_expo/static/js/ios/bundle.js:301:340)
+
+C
+bundle.js:1941:835
+$l
+bundle.js:204:35980
+Va
+bundle.js:204:63956
+oi
+bundle.js:204:73655
+Ju
+bundle.js:204:100561
+Xu
+bundle.js:204:100489
+Yu
+bundle.js:204:100331
+ju
+bundle.js:204:95732
+jt
+bundle.js:204:27746
+It
+bundle.js:204:26364
+Ut
+bundle.js:204:26600
+anonymous
+bundle.js:204:25973

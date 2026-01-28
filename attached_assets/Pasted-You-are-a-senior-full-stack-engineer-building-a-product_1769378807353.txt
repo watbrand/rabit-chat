@@ -1,0 +1,243 @@
+You are a senior full-stack engineer building a production-grade Ads System for the RabbitChat app.
+
+MANDATE:
+- Build a self-serve ads platform similar to Facebook/Instagram + TikTok.
+- Any account type (business/user/creator) can create and run ads.
+- Ads MUST be controlled and moderated from Admin (approval, rejection, bans, billing holds, etc).
+- Implement full logic + workflow. No placeholders.
+- Do not guess. Inspect the existing repo structure and integrate using the existing patterns, routing, DB access, auth, and UI style.
+
+CORE ADS MODEL (LIKE META + TIKTOK):
+Hierarchy:
+1) Advertiser Account (per user or per business profile)
+2) Campaign (objective + overall settings)
+3) Ad Set / Ad Group (targeting + placements + schedule + budget + optimization goal)
+4) Ad (creative + destination + tracking)
+
+OBJECTIVES (minimum):
+- Awareness (reach/impressions)
+- Traffic (clicks)
+- App engagement (in-app actions like follow, profile view, message, post view)
+- Conversions (custom in-app events: signup, purchase, subscribe, etc)
+- Lead (in-app lead form)
+
+PLACEMENTS (where ads can show):
+- Feed (main feed)
+- Discover/Explore
+- Stories/Reels/Short-video (if exists)
+- Search results (if exists)
+- Profile placements (optional)
+Design placements so they can expand later.
+
+TARGETING:
+- Geo: country/province/city/town/hood (use existing location taxonomy)
+- Demographics: age range (use DOB), gender (if stored), language (optional)
+- Interests: based on followed categories/hashtags/topics
+- Custom audiences:
+  - Retargeting: users who engaged with advertiser content (viewed profile, liked, commented, messaged, watched video)
+  - Lookalike: v1 simple “similar interests” expansion (no ML required; rule-based is ok)
+- Exclusions: exclude specific geos or audience groups
+
+BUDGETING + DELIVERY (AUCTION-LIKE):
+Budget types:
+- Daily budget
+- Lifetime budget
+Schedule:
+- Start time, end time
+- Timezone-aware
+Bidding:
+- Simplified bidding options:
+  - Lowest cost (auto bid)
+  - Cost cap (optional v2)
+Optimization:
+- Optimize for objective event (impressions/clicks/follows/messages/conversions)
+Pacing:
+- Even pacing over day (daily)
+- Even pacing over lifetime schedule (lifetime)
+Frequency:
+- Frequency cap per user per day (e.g., 2-5 impressions) configurable per ad set/ad group
+
+CREATIVE TYPES:
+- Image ad (single)
+- Video ad (single)
+- Carousel (optional v2)
+Creative fields:
+- primary_text, headline (optional), call_to_action
+- media asset (image/video)
+- destination:
+  - internal destination (profile, post, chat, group, event)
+  - external link (if allowed)
+Tracking:
+- Track impressions, clicks, video views, follows, messages started, conversions (custom events)
+- Store both raw events and aggregated stats.
+
+REVIEW + POLICY WORKFLOW (ADMIN CONTROL):
+Statuses:
+- Draft
+- Submitted
+- In Review
+- Approved
+- Rejected (with reason codes + notes)
+- Active
+- Paused
+- Completed
+- Disabled (policy)
+- Billing Hold
+Rules:
+- Ads cannot deliver unless APPROVED.
+- Edits to an approved ad set/ad should send it back to REVIEW (unless safe fields).
+- Admin can override approval, pause, disable, or refund credits.
+- Add “Advertiser Verification” gate (optional):
+  - Unverified advertisers can run with lower limits and mandatory review.
+
+PAYMENTS / WALLET (KEEP SIMPLE BUT REAL):
+Implement an internal prepaid wallet:
+- Advertisers top up credits (manual records + later payment integration)
+- Spend credits per impression or per click (choose one model now; implement one correctly)
+- Admin can adjust credits, issue refunds, freeze wallet, hold advertiser
+- Store ledger entries: credit, debit, reason, reference_id
+- Enforce: if wallet balance <= 0 => campaigns pause automatically
+
+SCORING + ELIGIBILITY:
+- For each ad request, compute eligibility based on:
+  - targeting match
+  - pacing
+  - budget remaining
+  - frequency cap
+  - safety blocks (user blocked advertiser, user opted out)
+- Rank eligible ads by:
+  - bid (if CPC) or effective CPM
+  - quality score (simple: based on CTR + negative feedback + report rate)
+- Return 0–N ads to placement feed injection.
+
+AD INJECTION (IMPORTANT):
+- Integrate into existing feed/discover queries:
+  - Insert sponsored items at configurable intervals (e.g., every 6–10 organic items)
+  - Ensure “Sponsored” label
+  - Ensure ad click routes correctly to destination
+- Provide user controls:
+  - hide ad
+  - report ad
+  - ad preferences toggle (opt-out of targeted; still show contextual/limited if required)
+
+REPORTING (ADVERTISER DASHBOARD):
+Advertiser UI pages:
+- Ads Home: overview of spend + results
+- Campaign list + create flow (wizard)
+- Ad set/ad group targeting builder
+- Ad creative builder + preview
+- Billing/wallet + invoices/receipts (simple)
+- Reports:
+  - by date range
+  - breakdown by placement, geo, age range, gender (if allowed)
+  - metrics:
+    impressions, reach (approx unique), clicks, CTR, CPC/CPM, follows, messages, conversions, cost per result
+
+ADMIN PANEL (FULL CONTROL):
+Admin pages:
+1) Advertisers
+   - verify/unverify
+   - set limits
+   - suspend/ban
+2) Review Queue
+   - campaigns/ad sets/ads pending review
+   - approve/reject with reason templates
+3) Ad Library
+   - search/filter all ads
+   - force pause/disable
+   - view history + changes
+4) Billing Control
+   - adjust wallet, freeze wallet, refunds
+   - ledger view per advertiser
+5) Safety & Policy
+   - block categories/keywords
+   - manage report thresholds (auto-disable rules)
+6) System Settings
+   - ad intervals per placement
+   - frequency cap defaults
+   - minimum wallet balance
+   - default review requirement
+7) Audit Logs (mandatory)
+   - record every admin action and advertiser action:
+     who, what, before/after, timestamp, ip/user-agent if available
+
+DATABASE / TABLES (MINIMUM):
+- advertisers (id, user_id, status, verification_status, limits_json)
+- campaigns (id, advertiser_id, objective, status, budget_type, daily_budget, lifetime_budget, start_at, end_at)
+- ad_groups (id, campaign_id, status, placements_json, targeting_json, optimization_goal, bid_type, bid_amount, frequency_cap, schedule)
+- ads (id, ad_group_id, status, creative_json, destination_json, review_status, rejection_reason)
+- ad_events (id, ad_id, user_id, type, placement, occurred_at, metadata_json)
+- ad_stats_daily (date, ad_id, impressions, clicks, spend, results_json)
+- wallet_accounts (advertiser_id, balance)
+- wallet_ledger (id, advertiser_id, amount, type, reason, ref_id, created_at)
+- ad_reports (id, ad_id, reporter_user_id, reason, created_at)
+- audit_logs (id, actor_type, actor_id, action, entity_type, entity_id, before_json, after_json, created_at)
+
+API ENDPOINTS (SECURE):
+Advertiser:
+- POST /api/ads/advertiser/create_or_get
+- CRUD /api/ads/campaigns
+- CRUD /api/ads/ad-groups
+- CRUD /api/ads/ads
+- POST /api/ads/submit (submit for review)
+- GET /api/ads/reports (metrics)
+- POST /api/ads/wallet/topup-request (creates pending topup record)
+Admin:
+- GET /api/admin/ads/review-queue
+- POST /api/admin/ads/approve
+- POST /api/admin/ads/reject
+- POST /api/admin/ads/force-pause
+- POST /api/admin/ads/disable
+- POST /api/admin/ads/advertiser/verify
+- POST /api/admin/ads/wallet/adjust
+- GET /api/admin/ads/audit
+
+AUTH + RBAC:
+- Only authenticated users can create ads.
+- Only admin can approve/reject/disable/adjust wallets.
+- Enforce server-side checks everywhere (no client-only security).
+
+WORKFLOW REQUIREMENTS (MUST IMPLEMENT):
+1) Advertiser creates campaign (Draft)
+2) Advertiser creates ad group (targeting, budget, schedule)
+3) Advertiser creates ad (creative, destination)
+4) Advertiser submits → status becomes In Review
+5) Admin approves → becomes Approved
+6) Delivery engine starts serving Approved ads based on schedule + wallet
+7) Spend deducted automatically based on billing model
+8) Reporting updates daily + near real-time counters for dashboard
+9) User hide/report feedback affects quality score + auto-disable rules if threshold exceeded
+
+DELIVERY ENGINE (IMPLEMENT NOW):
+- Create a server-side “Ad Decision” function used by feed endpoints.
+- Inputs: placement, viewer_user_id, viewer_location, viewer_profile signals
+- Output: list of ad payloads + tracking tokens
+- Record impression on render and click on click endpoint
+- Use idempotency to avoid double-charging (impression dedupe per user/ad/time window)
+
+UI:
+- Keep it consistent with the existing RabbitChat UI patterns.
+- Provide a simple create wizard for advertisers.
+- Provide admin moderation queue UI.
+
+TESTING:
+- Add tests for:
+  - cannot deliver unapproved ads
+  - wallet insufficient pauses delivery
+  - frequency caps enforced
+  - admin approve/reject changes states correctly
+  - ad events produce stats
+
+DELIVERABLES:
+- Fully working ads system integrated into app feed
+- Advertiser dashboard (campaigns/ad groups/ads + reporting)
+- Admin controls (review queue + enforce + billing + audit)
+- Migration scripts
+- Minimal docs: /ADS_SYSTEM_GUIDE.md
+
+Start by:
+1) locating the current feed endpoints and UI injection points
+2) implementing the database schema + migrations
+3) building advertiser flows
+4) building admin review queue
+5) implementing ad decisioning + tracking + spend

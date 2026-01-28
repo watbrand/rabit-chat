@@ -1,0 +1,382 @@
+You are the senior full-stack engineer for RabitChat. Implement the navigation + Discover + Mall + Messages changes EXACTLY as specified below, with complete backend + database + admin integration. No placeholders. No dead buttons. No silent failures. Do NOT rebuild the app; integrate into the existing codebase and preserve working parts.
+
+GOAL SUMMARY (WHAT MUST EXIST WHEN DONE)
+Bottom tabs (mobile-first) are now:
+1) Home
+2) Discover
+3) Mall
+4) Messages
+5) Profile
+
+Notifications/Activity is REMOVED from bottom tabs and is accessed ONLY via a top-right bell icon on the logged-in user’s OWN Profile page (Case A). Notifications functionality remains the same, just the location changes.
+
+Discover has 4 sub-tabs:
+A) New People (grid tiles, mixed post types, unknown-first)
+B) Reels (full-screen vertical swipe; video + photo + voice; no text-only here)
+C) Trends (algorithm-based topics/posts; NON-gossip only)
+D) Gossip (anonymous-only; text + voice only; ghost identities; likes/comments/retweet; isolated feed; admins cannot see authors; users can delete their own gossip posts)
+
+Mall tab:
+- Top 50 wealthiest users carousel (story-like) EXCLUDING private accounts (private users net worth hidden publicly)
+- Marketplace of digital items (categories, value, description required, image optional)
+- Buying is FREE (no currency) and UNLIMITED (same user can buy same item repeatedly)
+- Each purchase increases user net worth by (item.value * 10)
+- Net worth updates everywhere across app immediately
+- Admin fully manages items/categories, views purchase logs, can enable/disable items, all audit-logged
+
+Messages tab (exact behavior spec):
+- Inbox has 3 sub-tabs: Primary / General / Requests
+- Request is created when the receiver does NOT follow the sender
+- In Requests: user can open thread and read content, and can view sender’s profile BEFORE accepting
+- Message input is DISABLED until Accept
+- Opening Requests must NOT mark as “seen/read” and must not trigger read receipts
+- Buttons at top of request thread: Accept / Delete(Decline) / Block
+- Accept moves conversation to Primary by default, then normal behavior starts (send messages, read receipts, notifications)
+- Users can move accepted conversations between Primary and General anytime
+- Avatar/name in inbox rows and chat header always navigates to that user’s profile timeline (privacy rules apply)
+
+NON-NEGOTIABLE ENGINEERING RULES
+1) Every UI action must map to a real API endpoint and persist in DB where applicable.
+2) Central policy/privacy rules must be respected everywhere (private accounts strict, blocks, post visibility, admin overrides).
+3) Fix/avoid mobile click/tap issues (z-index overlays). Ensure Android/iOS parity.
+4) Add robust error handling: show toasts/errors on failures; no silent failures.
+5) Add docs + test plan + a quick smoke runner.
+
+PHASE 1 — DATABASE / PRISMA CHANGES (SAFE MIGRATIONS)
+A) Bottom tabs are UI only (no DB).
+B) Discover: add/extend models for Trends + Gossip + Retweet (if not existing).
+C) Mall: add models for items/categories/purchases.
+D) Messages: add fields for conversation folder status and request accepted state.
+
+Implement/confirm Prisma models (adapt to existing schema; do NOT break existing):
+1) Conversation:
+- id
+- userAId, userBId (existing unique pair)
+- status enum: REQUEST | ACCEPTED
+- inboxFolder enum: PRIMARY | GENERAL (only meaningful when ACCEPTED)
+- requestedByUserId (who initiated request)
+- acceptedAt datetime?
+- lastMessageAt datetime?
+- (keep existing updatedAt)
+
+2) Message:
+- conversationId, senderId, body, createdAt
+- (existing fields)
+- Add: deliveredAt? readAt? (if you already have, reuse)
+IMPORTANT: For REQUEST conversations, do not set readAt/seen until accepted.
+
+3) GossipPost (new, isolated from Post):
+- id
+- authorUserId (internal only; NEVER exposed)
+- type enum: TEXT | VOICE
+- text string? (required for TEXT)
+- mediaUrl string? (required for VOICE)
+- thumbnailUrl string? (optional)
+- durationMs int? (required for VOICE)
+- likeCount int default 0
+- commentCount int default 0
+- retweetCount int default 0
+- createdAt, updatedAt
+- isDeleted boolean default false (soft delete for “author removed”; still no admin view)
+
+4) GossipLike:
+- id, gossipPostId, userId
+- unique(userId, gossipPostId)
+
+5) GossipComment:
+- id, gossipPostId, userId (internal only), body, createdAt
+- IMPORTANT: API never returns commenter identity; only “Ghost”.
+
+6) GossipRetweet:
+- id, originalGossipPostId, userId (internal only), createdAt
+- unique(userId, originalGossipPostId) (or allow multiple; choose and document; if unlimited, store many rows)
+
+7) MallCategory:
+- id, name unique, description?, isActive boolean default true, createdAt
+
+8) MallItem:
+- id
+- categoryId
+- name
+- description (required)
+- value int (required)
+- imageUrl? (optional)
+- isActive boolean default true
+- createdAt, updatedAt
+
+9) MallPurchase:
+- id
+- userId
+- itemId
+- quantity int default 1 (or store 1 row per purchase; either ok)
+- createdAt
+RULE: Unlimited purchases allowed, so do NOT enforce unique(userId,itemId).
+
+10) NetWorthLedger (recommended, if not existing):
+- id
+- userId
+- delta int (positive/negative)
+- reason enum/string (e.g., MALL_PURCHASE, ADMIN_ADJUST)
+- refType/refId (e.g., MallPurchase, itemId)
+- createdAt
+This prevents netWorth corruption and allows audit/debug. If you already store netWorth directly, keep it but update via ledger + transaction.
+
+11) TrendsDaily (or similar rollup table) (minimal viable):
+- id
+- topic string
+- score float
+- windowStart date/datetime
+- createdAt
+If topic inference is hard, start with “top posts/topics” from hashtags/keywords and document.
+
+MIGRATION + SEED
+- Migrate safely; generate Prisma client.
+- Seed:
+  - Mall categories + items (digital, multiple categories, good descriptions)
+  - Ensure items have value set
+  - Seed a few gossip posts (optional) but do not expose authors
+
+PHASE 2 — CENTRALIZED POLICY (NO LEAKS)
+A) Private accounts strict:
+- Private users’ net worth is hidden publicly; only followers see.
+- Private users are excluded from Top 50 leaderboard (global).
+
+B) Gossip anonymity:
+- APIs must never return authorUserId, liker userId, commenter userId.
+- Admin endpoints must NOT expose gossip identity or even list gossip posts by author. Ideally: no admin pages for gossip at all.
+- Server logs must not print author ids in response payloads.
+
+C) Messaging requests:
+- If receiver does not follow sender -> conversation status REQUEST.
+- REQUEST conversations:
+  - receiver can view message content
+  - but read receipts must not trigger until accepted
+  - message input disabled until accepted
+- Accept -> status ACCEPTED, folder PRIMARY by default.
+
+D) Notifications:
+- Keep existing notification creation, but ensure deep links are correct and navigation works.
+- For Gossip, you may create internal notifications (optional) but do not leak identity; safest is: Gossip interactions only notify as “Ghost activity” or skip notifications entirely for gossip (document choice).
+
+PHASE 3 — BACKEND API ENDPOINTS (COMPLETE, VALIDATED)
+Create/confirm endpoints with zod validation and consistent error JSON.
+
+A) NAV / HOME
+- Home feed endpoint stays as-is; ensure the tab points to it.
+
+B) DISCOVER
+1) GET /api/discover/new-people?cursor=&limit=
+- Returns mixed tiles from public posts, prioritizing unknown users first.
+- Enforce diversity: do not show same author too many times per page.
+- Only include posts viewer can see (policy applied).
+
+2) GET /api/discover/reels?cursor=&limit=
+- Returns items for vertical viewer: VIDEO + PHOTO + VOICE (no TEXT-only).
+- Include fields needed for full-screen rendering (mediaUrl, thumbnailUrl, durationMs, type, counts, viewer flags).
+
+3) GET /api/discover/trends?range=24h|7d
+- Returns topics with scores (algorithm-based).
+- Only derived from NON-gossip content.
+
+4) GET /api/discover/trends/:topic?cursor=&limit=
+- Returns posts related to the trend (non-gossip), policy applied.
+
+5) GOSSIP APIs (isolated)
+- POST /api/gossip (create TEXT or VOICE)
+- GET /api/gossip?cursor=&limit= (gossip feed)
+- GET /api/gossip/:id
+- POST /api/gossip/:id/like (toggle)
+- POST /api/gossip/:id/comment (create comment)
+- GET /api/gossip/:id/comments
+- POST /api/gossip/:id/retweet
+- DELETE /api/gossip/:id (author only; soft delete)
+Responses must present:
+- author: { name: "Ghost", avatar: generic }
+- commenters/likers also ghosts (do not list identities)
+
+C) MALL APIs
+1) GET /api/mall/top50
+- Return top 50 PUBLIC users only (exclude private accounts).
+- Provide carousel-friendly payload: avatar, username, displayName, netWorth, rank.
+
+2) GET /api/mall/categories
+3) GET /api/mall/items?categoryId=&cursor=&limit=
+- Only active items.
+- Include description and value.
+
+4) POST /api/mall/buy
+Body: itemId, quantity (default 1)
+- Validate item active.
+- Create purchase record.
+- In a DB transaction:
+  - compute delta = item.value * 10 * quantity
+  - update user.netWorth += delta OR via NetWorthLedger + derived total
+- Return updated netWorth and receipt.
+
+Admin APIs (RBAC):
+- CRUD categories/items
+- Toggle isActive
+- View purchases
+- Optional: reverse purchase (creates negative ledger entry)
+
+D) MESSAGES APIs
+1) GET /api/messages/inbox?tab=PRIMARY|GENERAL|REQUESTS
+- Returns conversations list for that tab with unread counts
+- REQUESTS are conversations with status REQUEST and receiver is current user
+
+2) GET /api/messages/conversations/:id
+- Returns conversation + messages
+- If status REQUEST and user is receiver:
+  - allow reading
+  - but do NOT mark read
+  - include “requestActionsAllowed=true”
+
+3) POST /api/messages/conversations (start a chat)
+Body: username, initialMessage
+- Determine if receiver follows sender:
+  - if receiver follows sender -> ACCEPTED PRIMARY
+  - else -> REQUEST
+- Create conversation if not exists
+- Create first message
+
+4) POST /api/messages/:conversationId/send
+- If conversation status REQUEST:
+  - allow sender to send (still a request)
+  - receiver can see but input disabled until accept
+- Apply messaging policy + blocks.
+
+5) POST /api/messages/:conversationId/accept
+- Receiver only
+- Set status ACCEPTED, folder PRIMARY, acceptedAt now
+- Enable normal read receipts from now on
+
+6) POST /api/messages/:conversationId/decline
+- Receiver only
+- Remove or soft-delete conversation request (choose soft delete)
+- Ensure it disappears from Requests list
+
+7) POST /api/messages/:conversationId/move-folder
+Body: folder PRIMARY|GENERAL
+- Only if ACCEPTED
+- Receiver (and/or both parties) can move; choose consistent rule and document (recommend: each user has their own folder setting; if simple, store per-conversation per-user folder via join table; if you already have per-user conversation table, use it).
+
+8) Mark read logic:
+- For ACCEPTED conversations, mark read when opened.
+- For REQUEST conversations, do NOT mark read until accepted.
+
+E) NOTIFICATIONS (LOCATION CHANGE + DEEPLINK)
+- Keep backend notifications.
+- Ensure each notification has deepLink payload:
+  - postId / profile username / conversationId, etc.
+- Clicking opens correct screen.
+- The bell icon on OWN profile opens Notifications screen.
+
+PHASE 4 — FRONTEND UI (MOBILE-FIRST, NO DEAD TAPS)
+A) Bottom Tab Bar
+- Implement a fixed bottom tab bar for main app screens:
+  Home / Discover / Mall / Messages / Profile
+- Hide tab bar on full-screen viewers (reels viewer, image viewer, settings, admin).
+- Ensure touch targets are large and not blocked by overlays.
+
+B) Notifications relocation
+- Remove bottom tab.
+- Add bell icon to top-right of OWN profile header only.
+- Bell opens Notifications screen.
+- Keep notifications deep-link navigation.
+
+C) Discover UI
+- Discover main page with sub-tabs:
+  New People | Reels | Trends | Gossip
+1) New People:
+- Tile grid (responsive)
+- Mixed types with type badges
+- Clicking opens post viewer
+
+2) Reels:
+- Full-screen vertical swipe viewer
+- Supports VIDEO + PHOTO + VOICE
+- Voice posts render as full-screen “audio reel” (play-on-view, waveform optional)
+- Swipe loads more
+
+3) Trends:
+- List of topics with scores
+- Clicking opens topic feed
+- Topic feed supports post viewer
+
+4) Gossip:
+- Feed (full-screen cards or mixed; choose consistent)
+- Create Gossip button opens composer for TEXT/VOICE only
+- All identities displayed as Ghost
+- Like/comment/retweet actions work and show counts
+- Delete own gossip post available from menu
+
+D) Mall UI
+- Top section: Top 50 carousel (story-like)
+- Tapping a user opens profile (policy applies)
+- Categories chips
+- Items grid
+- Item detail modal includes description + value
+- Buy button:
+  - free
+  - unlimited
+  - shows immediate netWorth update
+- Show “Owned count” optional (since unlimited) + purchase history optional
+
+E) Messages UI
+- Messages screen with tabs: Primary | General | Requests
+- Each conversation row:
+  - tapping row opens chat
+  - tapping avatar/name opens user profile timeline
+- Requests tab:
+  - Request thread shows Accept / Delete / Block bar at top
+  - message input disabled until Accept
+  - allow reading messages before accept
+  - do NOT show “seen” until accepted
+- Accepted chats:
+  - can move between Primary/General via conversation options menu
+- Ensure read/unread badges per tab
+
+F) Profile tab remains as-is
+- Only add bell icon on own profile.
+- Keep existing profile layout.
+
+PHASE 5 — ADMIN INTEGRATION
+- Add Mall management screens:
+  - categories/items CRUD
+  - purchases list
+  - audit logs for changes
+- Add feature flags if needed:
+  - mallEnabled, gossipEnabled (optional)
+- Ensure RBAC permissions required and consistent.
+- Gossip: do NOT create admin tools that reveal author identities.
+
+PHASE 6 — QA, SMOKE TESTS, DOCS (NO LOOSE ENDS)
+1) Create /docs/NAVIGATION.md (tab structure, when tab bar hidden)
+2) Create /docs/DISCOVER.md (tabs + ranking rules)
+3) Create /docs/GOSSIP_PRIVACY.md (guarantees: no identity exposure)
+4) Create /docs/MALL.md (items, top50 rules, private exclusion, net worth formula)
+5) Create /docs/MESSAGES.md (tabs, requests behavior, accept flow, read receipts rules)
+6) Create /docs/TEST_PLAN.md with checklists:
+- Android: posting, discover tabs, reels voice, mall buy, messages requests accept, profile bell
+- iOS: same
+- Admin: manage items, view purchases, verify RBAC, audit logs
+7) Add a minimal smoke runner (npm script) that:
+- hits key endpoints authenticated and unauthenticated
+- checks expected status codes
+- validates no identity fields returned by gossip endpoints
+
+DONE GATE
+Do not conclude until:
+- Bottom tabs work on Android and iOS with no dead taps
+- Notifications accessible from own profile and deep links route correctly
+- Discover tabs all load and paginate
+- Gossip is fully anonymous (no identity leaks) and interactions work
+- Mall purchases update net worth everywhere (profile badges/fields) immediately
+- Top50 excludes private users
+- Messages Requests flow works exactly: read before accept, input disabled, accept->Primary, move to General, profile navigation from chat
+- Admin can manage Mall and audit logs reflect actions
+
+When complete, print a short summary:
+- What files/modules were added/changed
+- How to test each tab quickly
+- Any remaining limitations (should be none for core flows)

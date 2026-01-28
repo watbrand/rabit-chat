@@ -1,0 +1,124 @@
+You are a senior full-stack engineer + QA lead. You will perform a COMPLETE end-to-end audit, test, and hardening of the RabbitChat codebase.
+
+GOAL:
+RabbitChat is “working”, but we want a deep fix pass to eliminate hidden errors, edge-case bugs, security gaps, performance issues, and workflow/logic inconsistencies — from the first line of code to the last. Do not rewrite the whole app. Do targeted, safe fixes with minimal breaking change risk.
+
+NON-NEGOTIABLE RULES:
+1) Read the entire repository first (all folders, configs, env usage, routes, API handlers, database models, UI logic).
+2) Identify problems before changing anything. Create an “Audit Report” first.
+3) Then apply fixes in small, verifiable commits/patches.
+4) Every fix must include: what was wrong → why it happens → exact change → how to test it.
+5) No placeholder logic. If something is missing, stub it safely with proper errors + TODO markers.
+6) Preserve existing features and UI/UX unless a bug requires change.
+7) Add automated tests where possible, and manual test scripts where not.
+
+PHASE 0 — BASELINE + INVENTORY
+- Detect stack (frameworks, runtime, DB, auth, storage, realtime, push notifications, etc.)
+- List all app modules (auth, profiles, feed/posts, gossip categories, comments, likes, saves, DMs, notifications, search, admin/mod, reporting, blocks, etc.)
+- Map routes/endpoints/screens → which services/controllers they hit → which DB tables/collections they touch
+- Confirm environment variables required; list missing/unused ones.
+
+PHASE 1 — RUN + REPRODUCE
+- Run the app in dev mode.
+- Scan logs for warnings/errors at startup and during typical usage.
+- Create a reproducible “smoke test” flow:
+  A) Sign up / login / logout
+  B) Create profile + edit profile
+  C) Create a post (text/image/video if applicable)
+  D) Browse feed + open post + interact (like/comment/share/save)
+  E) Search + filtering by category (country → province → city/town → hood/kasi) if used
+  F) DM: send message, receive, message request flow if exists
+  G) Notifications: trigger and view
+  H) Report content / block user / moderation actions
+  I) Admin/mod dashboards (if any)
+- Document any crash, broken workflow, wrong permissions, or inconsistent state.
+
+PHASE 2 — LOGIC + WORKFLOW VERIFICATION (NO MERCY PASS)
+For EACH feature module:
+- Validate happy path + edge cases:
+  - empty states, null values, missing images, long text, invalid input
+  - double submits, rapid clicking, slow network, offline/online switching
+  - pagination boundaries, “no more results”, duplicated items, stale cache
+  - concurrency: two devices, simultaneous updates
+- Confirm UI state matches server truth (no fake optimistic UI without rollback)
+- Confirm data integrity (no orphan records; cascading deletes/soft deletes correct)
+- Confirm idempotency (repeat requests don’t create duplicates)
+- Confirm consistent error handling (user-friendly errors, logs for dev)
+
+PHASE 3 — SECURITY + PERMISSIONS (CRITICAL)
+- Audit authentication and session/token handling:
+  - token storage, expiry, refresh, logout invalidation
+- Audit authorization:
+  - enforce server-side role/permission checks (not only UI checks)
+  - prevent IDOR (users accessing other users’ private resources)
+- Validate input sanitization + validation:
+  - server-side validation schemas (zod/joi/etc.)
+  - prevent XSS where applicable, sanitize user-generated content
+- Rate limiting / abuse prevention:
+  - login brute force, spam posts/comments, DM spam
+- File upload safety (if uploads exist):
+  - MIME/type checks, size limits, secure URLs
+- Secrets/env safety:
+  - no secrets in client, no hardcoded keys
+
+PHASE 4 — PERFORMANCE + STABILITY
+- Identify N+1 queries and heavy endpoints.
+- Add indexes for frequent queries (feed, search, messages, notifications).
+- Fix memory leaks / event listener leaks / repeated subscriptions.
+- Ensure pagination is consistent and efficient.
+- Reduce redundant re-renders; memoize where needed.
+- Add caching strategy only if safe and needed (avoid stale gossip category filters).
+- Ensure error boundaries + global exception handlers exist.
+
+PHASE 5 — DATA + DB INTEGRITY
+- Validate schema relations, constraints, and normalization.
+- Ensure migrations (or schema updates) are correct and repeatable.
+- Add defensive checks for:
+  - missing user profile record
+  - deleted user content
+  - blocked relationships
+  - reported content visibility rules
+- Ensure timestamps/timezones consistent (Africa/Johannesburg / UTC strategy).
+
+PHASE 6 — TESTING HARDENING
+Deliver:
+1) Automated tests:
+   - Unit tests for utilities/validators
+   - Integration tests for core endpoints (auth, create post, like/comment, DM send)
+2) Manual test checklist (step-by-step)
+3) A “Regression Checklist” to run before every deploy
+
+PHASE 7 — FIX IMPLEMENTATION PLAN + PATCHES
+Output must be structured like this:
+
+A) AUDIT REPORT (before fixes)
+- Critical (must-fix): list + reproduction steps + affected files
+- High
+- Medium
+- Low
+- Tech debt suggestions (optional)
+
+B) FIX PLAN
+- Ordered list of fixes with dependencies
+- Risk level for each change
+- Estimated verification steps for each
+
+C) PATCHES
+- Provide actual code changes (diff/patch format) OR edit the files directly if tool allows
+- Ensure each patch is small and testable
+
+D) TEST RESULTS
+- Show what tests were run and results
+- Confirm smoke test flow passes end-to-end
+- Confirm no console errors and no server 500s during tested workflows
+
+QUALITY BAR:
+- No vague answers. Every issue must include the evidence (error logs, failing flow, file/line references).
+- Prefer minimal fixes over refactors, unless refactor is required for correctness/security.
+- Make the app more stable, more secure, and more predictable without changing the product.
+
+Start now by:
+1) Scanning the entire repo structure and summarizing it.
+2) Running the baseline smoke test flows.
+3) Producing the Audit Report.
+Only after the report, begin applying fixes.

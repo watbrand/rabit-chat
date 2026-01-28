@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1768454700371,
+      "tag": "0000_reflective_exodus",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1768504752194,
+      "tag": "0001_gorgeous_salo",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1768657027680,
+      "tag": "0002_panoramic_nico_minoru",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1769023914240,
+      "tag": "0003_melodic_wallow",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1769381962916,
+      "tag": "0004_parched_maximus",
+      "breakpoints": true
+    }
+  ]
+}

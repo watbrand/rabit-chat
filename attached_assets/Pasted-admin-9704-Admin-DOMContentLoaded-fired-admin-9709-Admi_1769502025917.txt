@@ -1,0 +1,28 @@
+admin:9704 [Admin] DOMContentLoaded fired
+admin:9709 [Admin] Login form found, binding submit
+admin:9716 [Admin] Login button found, binding click
+admin:9733 [Admin] Attaching main click handler for data-action elements
+admin:9718 [Admin] Login button clicked
+admin:4258 [Admin] loadAllData called
+admin:4258 [Admin] loadAllData called
+admin:1115 [Admin] Login successful
+admin:4258 [Admin] loadAllData called
+admin:4309 [Admin] Dashboard data: {"users":{"total":17,"today":1,"thisWeek":3,"lastWeek":14,"growth":-78.6},"posts":{"total":268,"today":0,"thisWeek":55,"lastWeek":213,"growth":-74.2},"engagement":{"likes":46,"comments":22,"shares":7,"avgEngagementRate":0.28},"revenue":{"total":0,"thisMonth":0,"lastMonth":0,"growth":0},"contentBreakdown":[{"type":"PHOTO","count":111,"percentage":41},{"type":"VOICE","count":41,"percentage":15},{"type":"VIDEO","count":51,"percentage":19},{"type":"TEXT","count":65,"percentage":24}],"moderation":{"pendingReports":0,"resolvedToday":0,"flaggedContent":0}}
+admin:4309 [Admin] Dashboard data: {"users":{"total":17,"today":1,"thisWeek":3,"lastWeek":14,"growth":-78.6},"posts":{"total":268,"today":0,"thisWeek":55,"lastWeek":213,"growth":-74.2},"engagement":{"likes":46,"comments":22,"shares":7,"avgEngagementRate":0.28},"revenue":{"total":0,"thisMonth":0,"lastMonth":0,"growth":0},"contentBreakdown":[{"type":"PHOTO","count":111,"percentage":41},{"type":"VOICE","count":41,"percentage":15},{"type":"VIDEO","count":51,"percentage":19},{"type":"TEXT","count":65,"percentage":24}],"moderation":{"pendingReports":0,"resolvedToday":0,"flaggedContent":0}}
+admin:4309 [Admin] Dashboard data: {"users":{"total":17,"today":1,"thisWeek":3,"lastWeek":14,"growth":-78.6},"posts":{"total":268,"today":0,"thisWeek":55,"lastWeek":213,"growth":-74.2},"engagement":{"likes":46,"comments":22,"shares":7,"avgEngagementRate":0.28},"revenue":{"total":0,"thisMonth":0,"lastMonth":0,"growth":0},"contentBreakdown":[{"type":"PHOTO","count":111,"percentage":41},{"type":"VOICE","count":41,"percentage":15},{"type":"VIDEO","count":51,"percentage":19},{"type":"TEXT","count":65,"percentage":24}],"moderation":{"pendingReports":0,"resolvedToday":0,"flaggedContent":0}}
+admin:9739 [Admin] Click handler triggered - action: section
+admin:9743 [Admin] Section click detected, calling showSection with: users
+admin:9739 [Admin] Click handler triggered - action: section
+admin:9743 [Admin] Section click detected, calling showSection with: users
+admin:9739 [Admin] Click handler triggered - action: section
+admin:9743 [Admin] Section click detected, calling showSection with: posts
+admin:9739 [Admin] Click handler triggered - action: section
+admin:9743 [Admin] Section click detected, calling showSection with: comments
+admin:9739 [Admin] Click handler triggered - action: section
+admin:9743 [Admin] Section click detected, calling showSection with: arfilters
+admin:9739 [Admin] Click handler triggered - action: section
+admin:9743 [Admin] Section click detected, calling showSection with: aicontent
+admin:9739 [Admin] Click handler triggered - action: section
+admin:9743 [Admin] Section click detected, calling showSection with: mall
+admin:9739 [Admin] Click handler triggered - action: section
+admin:9743 [Admin] Section click detected, calling showSection with: users

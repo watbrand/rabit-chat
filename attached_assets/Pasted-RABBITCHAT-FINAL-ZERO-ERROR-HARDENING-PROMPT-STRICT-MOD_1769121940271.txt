@@ -1,0 +1,154 @@
+RABBITCHAT — FINAL “ZERO-ERROR” HARDENING PROMPT (STRICT MODE / FAIL IF NOT MET)
+
+You are a senior full-stack engineer + QA lead. RabbitChat is already working. This is the FINAL stabilization pass.
+IMPORTANT: This task FAILS unless ALL acceptance criteria are met.
+
+PRIMARY GOAL:
+Achieve a “zero red” app:
+- 0 client console errors during full navigation + core workflows
+- 0 server/API 500 errors during the same workflows
+- Production build succeeds (if the stack supports a build step)
+- All failures are handled gracefully with consistent UX and consistent API error shapes
+
+DO NOT:
+- Rebuild the app from scratch
+- Change product features/branding/UI unless required to fix a bug
+- Add fake placeholders that hide errors (no silent catch)
+- Remove features to “pass tests”
+
+STRICT ACCEPTANCE CRITERIA (TASK FAILS IF ANY FAIL):
+A) Client:
+   - 0 console errors (errors, not just warnings) across the full smoke test
+   - 0 unhandled promise rejections
+   - No blank screens / route crashes
+B) Server/API (or internal services):
+   - 0 HTTP 500 errors across the full smoke test
+   - All error responses follow a consistent shape:
+     { error: { code: string, message: string, details?: any } }
+C) Build:
+   - Production build passes (Next/Vite/CRA/etc.) OR if no build step exists, provide proof and run the closest equivalent verification.
+D) Evidence:
+   - You must provide the exact commands run + logs snippets showing clean results.
+
+PHASE 1 — REPO SCAN + STACK DETECTION (MANDATORY FIRST)
+1) Read the entire repository tree and identify:
+   - Framework (Next.js / Vite React / CRA / Remix / Expo / other)
+   - API pattern (Next API routes, Express, serverless, Firebase, Supabase functions, etc.)
+   - Data layer (Prisma/SQL/Mongo/Firebase/Supabase/local storage)
+   - Auth/session strategy
+   - Routing approach
+2) Print a Stack Summary.
+3) Determine and list EXACT commands for:
+   - install
+   - dev
+   - build (if exists)
+   - start (prod mode)
+   - test (if exists)
+   - lint/typecheck (if exists)
+
+PHASE 2 — BASELINE RUN (CAPTURE EVIDENCE)
+1) Run install + dev.
+2) Capture baseline logs:
+   - client console output
+   - server terminal output
+3) If there are ANY errors, record them with:
+   - repro steps
+   - file(s) and line(s)
+   - stack trace
+
+PHASE 3 — FULL SMOKE TEST (MUST COVER EVERYTHING IMPORTANT)
+Execute this EXACT smoke test and record results:
+
+AUTH
+- Sign up → verify account/session → logout → login again
+- Try protected route while logged out (must redirect/block cleanly)
+- Session expiry behavior (simulate if possible)
+
+PROFILE
+- View profile → edit profile → save → refresh page → data persists
+- Upload/change avatar (if exists) with size/type validation
+- Handle missing/empty profile fields without crashing
+
+POSTS / FEED / GOSSIP
+- Create post (text) → verify appears in feed
+- Create post with media (if exists) → verify upload + render
+- Open post details → like → unlike → comment → delete comment (if allowed)
+- Pagination/load more → no duplicates → end-of-list stable
+- Empty feed state must render without errors
+
+FILTERING / CATEGORIES (IF PRESENT)
+- Apply country/province/city/hood filters
+- Invalid/empty category combinations must not crash
+
+DM / MESSAGING (IF PRESENT)
+- Open inbox → open thread → send message
+- Double-click send prevention (no duplicates)
+- Offline/slow network simulation handling (graceful error + retry)
+
+NOTIFICATIONS (IF PRESENT)
+- Trigger a notification (like/comment/message) → open it → navigates correctly
+- If target content missing/deleted, show “Content unavailable” state (no crash)
+
+SAFETY / MODERATION (IF PRESENT)
+- Report content/user → verify state change
+- Block user → verify they cannot DM/interact + feed respects block rules
+
+ADMIN/MOD (IF PRESENT)
+- Access control enforced server-side (not just UI)
+- Unauthorized access returns 401/403 (not 500)
+
+PHASE 4 — FIX LOOP (ROOT CAUSE ONLY)
+For each issue found:
+1) Classify severity (Critical/High/Medium/Low)
+2) Find the root cause (not just the failing line)
+3) Apply a minimal patch that fixes it safely
+4) Add guards + validation where needed:
+   - client: defensive rendering, safe defaults, error boundary
+   - server: input validation, auth checks, consistent error output
+5) Verify the fix by re-running the exact step that failed AND re-running the full smoke test module affected.
+
+PHASE 5 — “ZERO RED CONSOLE” REQUIREMENTS (CLIENT)
+You must enforce:
+- No “Cannot read properties of undefined/null”
+- No unhandled promise rejections
+- No state update on unmounted component warnings that lead to crashes
+- Fix React key issues only if they cause functional bugs (warnings ok), but errors are not allowed
+- Add a top-level Error Boundary (if missing) to prevent hard crashes and show a friendly fallback screen.
+  - The boundary must log the error (console + optional server logging) and provide a “Reload” action.
+
+PHASE 6 — “ZERO 500” REQUIREMENTS (SERVER/API)
+- Add a centralized server error handler if missing:
+  - converts thrown errors into consistent error shape
+  - logs stack traces server-side
+  - never leaks secrets to client
+- Validate request payloads server-side (zod/joi/yup/etc.)
+- Replace any unsafe assumptions (missing params, missing auth user) with 401/403/400—not 500.
+
+PHASE 7 — BUILD + TYPECHECK GATE (MUST PASS)
+1) Run production build command.
+2) Fix any:
+   - TS type errors
+   - build-time env issues
+   - SSR/CSR mismatches (if Next.js)
+3) Start in production mode if supported and verify app loads.
+
+FINAL OUTPUT (STRICT FORMAT — REQUIRED)
+1) Stack Summary (framework, runtime, API layer, DB, auth)
+2) Commands Run (copy/paste exact commands)
+3) ZERO-ERROR EVIDENCE:
+   - “Console errors: 0” with log snippet proof
+   - “Server 500s: 0” with log snippet proof
+   - “Build: PASS” with log snippet proof
+4) Fixes Applied (table):
+   - Severity | Issue | Repro Steps | Root Cause | Files Changed | Patch Summary | Verification Steps
+5) Patches (diffs or direct file edits)
+6) Final Smoke Test Checklist (all PASS)
+
+FAIL CONDITION:
+If you cannot achieve all acceptance criteria, do NOT claim success.
+Instead, list what remains failing with exact errors and where.
+
+START NOW:
+- Scan the entire repo tree.
+- Determine the stack and commands.
+- Run dev, execute the smoke test, then begin the fix loop until ALL criteria pass.

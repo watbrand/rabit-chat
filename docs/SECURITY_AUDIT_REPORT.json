@@ -1,0 +1,472 @@
+{
+  "audit_date": "2026-01-22",
+  "last_updated": "2026-01-22",
+  "audited_files": [
+    "server/routes.ts",
+    "server/storage.ts",
+    "server/validation.ts",
+    "server/policy.ts"
+  ],
+  "summary": {
+    "total_issues": 42,
+    "critical": 5,
+    "high": 12,
+    "medium": 17,
+    "low": 8,
+    "fixed": 7,
+    "remaining": 35
+  },
+  "issues": [
+    {
+      "id": "SEC-001",
+      "issue_type": "Security - Password Exposure",
+      "severity": "CRITICAL",
+      "status": "FIXED",
+      "fixed_date": "2026-01-22",
+      "file": "server/routes.ts",
+      "line_number": 7175,
+      "description": "The /api/users/:userId/profile-full endpoint returns the complete user object without removing the password field. This exposes hashed passwords to any unauthenticated caller.",
+      "code_snippet": "res.json({ ...user, highlights, note, links: links.filter(l => l.isActive), interests, relationshipPartner... });",
+      "suggested_fix": "Add password exclusion: const { password: _, ...safeUser } = user; and use safeUser in the response. Also add requireAuth middleware."
+    },
+    {
+      "id": "SEC-002",
+      "issue_type": "Security - IDOR (Insecure Direct Object Reference)",
+      "severity": "CRITICAL",
+      "status": "FIXED",
+      "fixed_date": "2026-01-22",
+      "file": "server/routes.ts",
+      "line_number": 7240,
+      "description": "DELETE /api/security/sessions/:sessionId allows any authenticated user to invalidate ANY session by ID without verifying the session belongs to them. An attacker could log out other users.",
+      "code_snippet": "app.delete('/api/security/sessions/:sessionId', requireAuth, async (req, res) => { await storage.invalidateLoginSession(req.params.sessionId); ... })",
+      "suggested_fix": "Add ownership verification: const session = await storage.getLoginSession(req.params.sessionId); if (!session || session.userId !== req.session.userId) return res.status(404).json({ message: 'Session not found' });"
+    },
+    {
+      "id": "SEC-003",
+      "issue_type": "Security - IDOR (Insecure Direct Object Reference)",
+      "severity": "CRITICAL",
+      "status": "FIXED",
+      "fixed_date": "2026-01-22",
+      "file": "server/routes.ts",
+      "line_number": 7288,
+      "description": "DELETE /api/security/devices/:deviceId allows any authenticated user to remove ANY trusted device by ID without verifying ownership. An attacker could remove trusted devices from other users' accounts.",
+      "code_snippet": "app.delete('/api/security/devices/:deviceId', requireAuth, async (req, res) => { await storage.removeTrustedDevice(req.params.deviceId); ... })",
+      "suggested_fix": "Add ownership check before deletion: const device = await storage.getTrustedDevice(req.params.deviceId); if (!device || device.userId !== req.session.userId) return res.status(404);"
+    },
+    {
+      "id": "SEC-004",
+      "issue_type": "Security - IDOR (Insecure Direct Object Reference)",
+      "severity": "CRITICAL",
+      "status": "FIXED",
+      "fixed_date": "2026-01-22",
+      "file": "server/routes.ts",
+      "line_number": 7394,
+      "description": "PATCH /api/privacy/keyword-filters/:filterId and DELETE /api/privacy/keyword-filters/:filterId allow modification/deletion of any keyword filter without verifying ownership.",
+      "code_snippet": "app.patch('/api/privacy/keyword-filters/:filterId', requireAuth, async (req, res) => { const updated = await storage.updateKeywordFilter(req.params.filterId, req.body); })",
+      "suggested_fix": "Add ownership verification: const filter = await storage.getKeywordFilter(req.params.filterId); if (!filter || filter.userId !== req.session.userId) return res.status(404).json({ message: 'Filter not found' });"
+    },
+    {
+      "id": "SEC-005",
+      "issue_type": "Security - Missing Authentication",
+      "severity": "CRITICAL",
+      "status": "FIXED",
+      "fixed_date": "2026-01-22",
+      "file": "server/routes.ts",
+      "line_number": 7075,
+      "description": "POST /api/links/:linkId/click has no authentication. Combined with no ownership check, this allows enumeration and abuse of link tracking.",
+      "code_snippet": "app.post('/api/links/:linkId/click', async (req, res) => { await storage.incrementLinkClicks(req.params.linkId); ... })",
+      "suggested_fix": "While this may be intentional for analytics, add rate limiting at minimum: app.post('/api/links/:linkId/click', apiLimiter, async ...)"
+    },
+    {
+      "id": "SEC-006",
+      "issue_type": "Security - Missing Authentication on Sensitive Endpoints",
+      "severity": "HIGH",
+      "status": "FIXED",
+      "fixed_date": "2026-01-22",
+      "file": "server/routes.ts",
+      "line_number": 7175,
+      "description": "GET /api/users/:userId/profile-full returns sensitive user data including contact info without requiring authentication.",
+      "code_snippet": "app.get('/api/users/:userId/profile-full', async (req, res) => { ... })",
+      "suggested_fix": "Add requireAuth middleware and policy checks for private profiles: app.get('/api/users/:userId/profile-full', requireAuth, async ...)"
+    },
+    {
+      "id": "SEC-007",
+      "issue_type": "Security - Missing Rate Limiting",
+      "severity": "HIGH",
+      "file": "server/routes.ts",
+      "line_number": 2800,
+      "description": "Story endpoints (/api/stories/*) lack rate limiting, allowing potential abuse through rapid story creation, views, and reactions.",
+      "code_snippet": "app.post('/api/stories', requireAuth, async (req, res) => { ... })",
+      "suggested_fix": "Add rate limiting: app.post('/api/stories', requireAuth, postLimiter, async ...). Consider creating a dedicated storyLimiter."
+    },
+    {
+      "id": "SEC-008",
+      "issue_type": "Security - Missing Input Validation",
+      "severity": "HIGH",
+      "file": "server/routes.ts",
+      "line_number": 3104,
+      "description": "POST /api/stories/drafts directly passes req.body to storage without validation, allowing arbitrary data injection.",
+      "code_snippet": "app.post('/api/stories/drafts', requireAuth, async (req, res) => { const draft = await storage.createStoryDraft(req.session.userId!, req.body); })",
+      "suggested_fix": "Create and apply a validation schema: validateBody(createStoryDraftSchema)"
+    },
+    {
+      "id": "SEC-009",
+      "issue_type": "Security - Missing Input Validation",
+      "severity": "HIGH",
+      "file": "server/routes.ts",
+      "line_number": 7490,
+      "description": "POST /api/drafts passes req.body directly to storage without validation, allowing arbitrary data to be stored.",
+      "code_snippet": "app.post('/api/drafts', requireAuth, async (req, res) => { const draft = await storage.createDraft(req.session.userId!, req.body); })",
+      "suggested_fix": "Create and apply a validation schema for drafts."
+    },
+    {
+      "id": "SEC-010",
+      "issue_type": "Security - Missing Input Validation",
+      "severity": "HIGH",
+      "file": "server/routes.ts",
+      "line_number": 7150,
+      "description": "PATCH /api/me/profile-enhancements accepts various sensitive fields (contactEmail, contactPhone, etc.) without schema validation.",
+      "code_snippet": "app.patch('/api/me/profile-enhancements', requireAuth, async (req, res) => { const { birthday, profileSongUrl, ... } = req.body; })",
+      "suggested_fix": "Create a profileEnhancementsSchema with proper validation for each field."
+    },
+    {
+      "id": "SEC-011",
+      "issue_type": "Security - Missing Input Validation",
+      "severity": "HIGH",
+      "file": "server/routes.ts",
+      "line_number": 3158,
+      "description": "POST /api/stories/:id/insights accepts arbitrary data for story insights without validation.",
+      "code_snippet": "app.post('/api/stories/:id/insights', requireAuth, async (req, res) => { const { viewDuration, tappedForward, ... } = req.body; })",
+      "suggested_fix": "Create a storyInsightsSchema to validate numeric fields and boolean values."
+    },
+    {
+      "id": "SEC-012",
+      "issue_type": "Security - Missing Policy Check",
+      "severity": "HIGH",
+      "file": "server/routes.ts",
+      "line_number": 3004,
+      "description": "GET /api/stories/:id/reactions returns reactions without checking if the viewer can access the story.",
+      "code_snippet": "app.get('/api/stories/:id/reactions', requireAuth, async (req, res) => { const reactions = await storage.getStoryReactions(req.params.id); res.json(reactions); })",
+      "suggested_fix": "Add story access check: const story = await storage.getStory(req.params.id); if (!story) return 404; Check if viewer can view story."
+    },
+    {
+      "id": "SEC-013",
+      "issue_type": "Security - Missing Ownership Validation",
+      "severity": "HIGH",
+      "file": "server/routes.ts",
+      "line_number": 3429,
+      "description": "POST /api/stickers/:stickerId/subscribe doesn't verify the sticker exists or belongs to a valid story before subscribing.",
+      "code_snippet": "app.post('/api/stickers/:stickerId/subscribe', requireAuth, async (req, res) => { const subscription = await storage.subscribeToCountdown(req.params.stickerId, req.session.userId!); })",
+      "suggested_fix": "Validate sticker exists and belongs to an active story before subscribing."
+    },
+    {
+      "id": "SEC-014",
+      "issue_type": "Security - Missing Rate Limiting",
+      "severity": "HIGH",
+      "file": "server/routes.ts",
+      "line_number": 7553,
+      "description": "POST /api/scheduled-posts has no rate limiting, allowing users to create unlimited scheduled posts.",
+      "code_snippet": "app.post('/api/scheduled-posts', requireAuth, async (req, res) => { ... })",
+      "suggested_fix": "Add postLimiter or create a dedicated scheduledPostLimiter."
+    },
+    {
+      "id": "SEC-015",
+      "issue_type": "Security - Missing Rate Limiting",
+      "severity": "HIGH",
+      "file": "server/routes.ts",
+      "line_number": 7032,
+      "description": "POST /api/me/links has no rate limiting, allowing creation of unlimited profile links.",
+      "code_snippet": "app.post('/api/me/links', requireAuth, async (req, res) => { ... })",
+      "suggested_fix": "Add a rate limiter to prevent link spam."
+    },
+    {
+      "id": "SEC-016",
+      "issue_type": "Error Handling - Missing Error Logging",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 1063,
+      "description": "DELETE /api/users/:id/follow catch block doesn't log the error, making debugging difficult.",
+      "code_snippet": "} catch (error) { res.status(500).json({ message: 'Failed to unfollow' }); }",
+      "suggested_fix": "Add error logging: console.error('Failed to unfollow:', error);"
+    },
+    {
+      "id": "SEC-017",
+      "issue_type": "Error Handling - Silent Failure",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 3051,
+      "description": "Notification creation failures are silently caught without logging, hiding potential issues.",
+      "code_snippet": "try { await storage.createNotification(...); } catch (e) { /* silent */ }",
+      "suggested_fix": "Log notification failures: catch (e) { console.error('[Notification] Failed:', e); }"
+    },
+    {
+      "id": "SEC-018",
+      "issue_type": "Error Handling - Missing Error Logging",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 1059,
+      "description": "Multiple endpoints have catch blocks that don't log the actual error, only returning generic messages.",
+      "code_snippet": "} catch (error) { res.status(500).json({ message: 'Failed to follow' }); }",
+      "suggested_fix": "Add consistent error logging across all catch blocks."
+    },
+    {
+      "id": "SEC-019",
+      "issue_type": "N+1 Query Problem",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 261,
+      "description": "notifyMentionedUsers function makes sequential database calls in a loop for each mentioned user.",
+      "code_snippet": "for (const username of usernames) { const user = await storage.getUserByUsername(username); ... }",
+      "suggested_fix": "Use Promise.all or batch lookup: const users = await storage.getUsersByUsernames(usernames);"
+    },
+    {
+      "id": "SEC-020",
+      "issue_type": "N+1 Query Problem",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 561,
+      "description": "Username availability suggestions loop makes sequential database calls for each suggestion.",
+      "code_snippet": "for (const suffix of suffixes) { const suggestion = ...; const exists = await storage.getUserByUsername(suggestion); ... }",
+      "suggested_fix": "Batch the username lookups using a single query with IN clause."
+    },
+    {
+      "id": "SEC-021",
+      "issue_type": "N+1 Query Problem",
+      "severity": "MEDIUM",
+      "file": "server/policy.ts",
+      "line_number": 59,
+      "description": "getViewerContext loops over roles and makes a database call for each role's permissions.",
+      "code_snippet": "for (const role of roles) { const rolePerms = await storage.getRolePermissions(role.id); ... }",
+      "suggested_fix": "Fetch all permissions in one query: const allPerms = await storage.getPermissionsForRoles(roles.map(r => r.id));"
+    },
+    {
+      "id": "SEC-022",
+      "issue_type": "N+1 Query Problem",
+      "severity": "MEDIUM",
+      "file": "server/policy.ts",
+      "line_number": 439,
+      "description": "filterPostsForViewer loops and awaits canViewPost for each post, causing N+1 queries.",
+      "code_snippet": "for (const post of posts) { const canView = await canViewPost(viewer, post, post.author); ... }",
+      "suggested_fix": "Pre-fetch follow status, blocked users in bulk, then filter in memory."
+    },
+    {
+      "id": "SEC-023",
+      "issue_type": "N+1 Query Problem",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 1251,
+      "description": "Feed endpoints map over posts and make individual database calls for hasLiked and hasSaved per post.",
+      "code_snippet": "visiblePosts.map(async (post) => ({ ...post, hasLiked: await storage.hasUserLikedPost(post.id, req.session.userId!), ... }))",
+      "suggested_fix": "Create bulk methods: storage.getUserLikedPostIds(userId, postIds) and storage.getUserSavedPostIds(userId, postIds)."
+    },
+    {
+      "id": "SEC-024",
+      "issue_type": "Missing Authentication",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 1920,
+      "description": "GET /api/users/:username/profile is publicly accessible. While profile viewing may be intentional, it should still use policy checks.",
+      "code_snippet": "app.get('/api/users/:username/profile', async (req, res) => { ... })",
+      "suggested_fix": "This is likely intentional for public profiles, but ensure the response respects privacy settings consistently."
+    },
+    {
+      "id": "SEC-025",
+      "issue_type": "Missing Authentication",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 7012,
+      "description": "GET /api/users/:userId/links is publicly accessible without checking privacy settings.",
+      "code_snippet": "app.get('/api/users/:userId/links', async (req, res) => { const links = await storage.getUserLinks(req.params.userId); })",
+      "suggested_fix": "Add privacy check: if user has private account, only return links to authorized viewers."
+    },
+    {
+      "id": "SEC-026",
+      "issue_type": "Missing Authentication",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 7087,
+      "description": "GET /api/users/:userId/interests is publicly accessible without privacy checks.",
+      "code_snippet": "app.get('/api/users/:userId/interests', async (req, res) => { const interests = await storage.getUserInterests(req.params.userId); })",
+      "suggested_fix": "Add privacy check for private accounts."
+    },
+    {
+      "id": "SEC-027",
+      "issue_type": "Missing Authentication",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 7209,
+      "description": "GET /api/users/:userId/qr is publicly accessible. While this may be intentional, no rate limiting is applied.",
+      "code_snippet": "app.get('/api/users/:userId/qr', async (req, res) => { ... })",
+      "suggested_fix": "Add rate limiting to prevent enumeration attacks."
+    },
+    {
+      "id": "SEC-028",
+      "issue_type": "Data Integrity - Missing Existence Check",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 7313,
+      "description": "POST /api/privacy/restricted/:userId doesn't verify the target user exists before creating a restriction.",
+      "code_snippet": "app.post('/api/privacy/restricted/:userId', requireAuth, async (req, res) => { const restricted = await storage.restrictAccount(req.session.userId!, req.params.userId, reason); })",
+      "suggested_fix": "Validate target user exists: const targetUser = await storage.getUser(req.params.userId); if (!targetUser) return 404;"
+    },
+    {
+      "id": "SEC-029",
+      "issue_type": "Data Integrity - Missing Existence Check",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 7343,
+      "description": "POST /api/privacy/muted/:userId doesn't verify the target user exists before muting.",
+      "code_snippet": "app.post('/api/privacy/muted/:userId', requireAuth, async (req, res) => { const muted = await storage.muteAccount(...); })",
+      "suggested_fix": "Validate target user exists before muting."
+    },
+    {
+      "id": "SEC-030",
+      "issue_type": "Data Integrity - Missing Existence Check",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 7426,
+      "description": "POST /api/privacy/close-friends/:userId doesn't verify the target user exists.",
+      "code_snippet": "app.post('/api/privacy/close-friends/:userId', requireAuth, async (req, res) => { const friend = await storage.addCloseFriend(...); })",
+      "suggested_fix": "Validate target user exists and isn't the same as the requesting user."
+    },
+    {
+      "id": "SEC-031",
+      "issue_type": "Data Integrity - Missing Self-Action Prevention",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": 7313,
+      "description": "POST /api/privacy/restricted/:userId allows users to restrict themselves.",
+      "code_snippet": "const restricted = await storage.restrictAccount(req.session.userId!, req.params.userId, reason);",
+      "suggested_fix": "Add check: if (req.params.userId === req.session.userId) return res.status(400).json({ message: 'Cannot restrict yourself' });"
+    },
+    {
+      "id": "SEC-032",
+      "issue_type": "Input Validation - Missing Schema",
+      "severity": "MEDIUM",
+      "file": "server/validation.ts",
+      "line_number": null,
+      "description": "Several schemas are missing for commonly used endpoints including: storyDrafts, drafts, profileEnhancements, storyInsights.",
+      "code_snippet": "N/A",
+      "suggested_fix": "Create Zod schemas for: createStoryDraftSchema, createDraftSchema, profileEnhancementsSchema, storyInsightsSchema"
+    },
+    {
+      "id": "SEC-033",
+      "issue_type": "Security - UUID Validation Missing",
+      "severity": "MEDIUM",
+      "file": "server/routes.ts",
+      "line_number": "multiple",
+      "description": "Many endpoints accept IDs in URL params without validating they are valid UUIDs, potentially causing database errors.",
+      "code_snippet": "app.get('/api/posts/:id', requireAuth, async (req, res) => { const post = await storage.getPost(req.params.id); })",
+      "suggested_fix": "Add UUID validation middleware or validate at the start of each handler."
+    },
+    {
+      "id": "SEC-034",
+      "issue_type": "Error Handling - Inconsistent Responses",
+      "severity": "LOW",
+      "file": "server/routes.ts",
+      "line_number": "multiple",
+      "description": "Some endpoints return { message: '...' } while others return { success: true } or other formats. Inconsistent API responses.",
+      "code_snippet": "res.json({ message: 'Followed' }); vs res.json({ success: true });",
+      "suggested_fix": "Standardize all responses using apiSuccess and apiError helpers from validation.ts."
+    },
+    {
+      "id": "SEC-035",
+      "issue_type": "Security - Session Fixation Risk",
+      "severity": "LOW",
+      "file": "server/routes.ts",
+      "line_number": 638,
+      "description": "Session is not regenerated after login, potentially allowing session fixation attacks.",
+      "code_snippet": "req.session.userId = user.id;",
+      "suggested_fix": "Regenerate session after authentication: req.session.regenerate((err) => { req.session.userId = user.id; ... });"
+    },
+    {
+      "id": "SEC-036",
+      "issue_type": "Performance - Missing Pagination",
+      "severity": "LOW",
+      "file": "server/routes.ts",
+      "line_number": 7230,
+      "description": "GET /api/security/sessions returns all sessions without pagination, could be slow for users with many sessions.",
+      "code_snippet": "const sessions = await storage.getLoginSessions(req.session.userId!);",
+      "suggested_fix": "Add pagination: limit and offset query parameters."
+    },
+    {
+      "id": "SEC-037",
+      "issue_type": "Performance - Missing Pagination",
+      "severity": "LOW",
+      "file": "server/routes.ts",
+      "line_number": 7262,
+      "description": "GET /api/security/devices returns all devices without pagination.",
+      "code_snippet": "const devices = await storage.getTrustedDevices(req.session.userId!);",
+      "suggested_fix": "Add pagination parameters."
+    },
+    {
+      "id": "SEC-038",
+      "issue_type": "Security - Weak Password Validation",
+      "severity": "LOW",
+      "file": "server/validation.ts",
+      "line_number": 14,
+      "description": "Password validation only checks minimum length (8 chars) but doesn't enforce complexity requirements.",
+      "code_snippet": "password: z.string().min(8, 'Password must be at least 8 characters')",
+      "suggested_fix": "Add complexity regex: .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)/, 'Password must contain uppercase, lowercase, and number')"
+    },
+    {
+      "id": "SEC-039",
+      "issue_type": "Data Integrity - Orphaned Data",
+      "severity": "LOW",
+      "file": "server/storage.ts",
+      "line_number": "multiple",
+      "description": "User deletion may leave orphaned data in related tables (posts, comments, messages, etc.) if not properly cascaded.",
+      "code_snippet": "async deleteUser(id: string): Promise<void>",
+      "suggested_fix": "Ensure database schema has ON DELETE CASCADE for foreign keys, or implement soft delete consistently."
+    },
+    {
+      "id": "SEC-040",
+      "issue_type": "Security - Missing Content Length Validation",
+      "severity": "LOW",
+      "file": "server/routes.ts",
+      "line_number": 3016,
+      "description": "POST /api/stories/:id/replies accepts content without length validation.",
+      "code_snippet": "const { content, mediaUrl, mediaType } = req.body;",
+      "suggested_fix": "Add content length validation: if (content && content.length > 2000) return res.status(400).json({ message: 'Reply too long' });"
+    },
+    {
+      "id": "SEC-041",
+      "issue_type": "Security - Timing Attack Vector",
+      "severity": "LOW",
+      "file": "server/routes.ts",
+      "line_number": 656,
+      "description": "Login endpoint may be vulnerable to timing attacks - different response times for valid vs invalid usernames.",
+      "code_snippet": "let user = await storage.getUserByEmail(email); if (!user) { user = await storage.getUserByUsername(email); }",
+      "suggested_fix": "Always perform password comparison even when user not found, use constant-time comparison."
+    },
+    {
+      "id": "SEC-042",
+      "issue_type": "Error Handling - Promise Rejection",
+      "severity": "LOW",
+      "file": "server/routes.ts",
+      "line_number": 177,
+      "description": "updateActivity middleware catches errors silently but doesn't handle potential unhandled rejections properly.",
+      "code_snippet": "storage.updateLastActive(req.session.userId).catch(() => {});",
+      "suggested_fix": "Log the error: .catch((err) => console.warn('[Activity] Update failed:', err));"
+    }
+  ],
+  "recommendations": {
+    "immediate_action_required": [
+      "Fix SEC-001: Password exposure in /api/users/:userId/profile-full - CRITICAL",
+      "Fix SEC-002, SEC-003, SEC-004: IDOR vulnerabilities in security/privacy endpoints - CRITICAL",
+      "Add input validation schemas for all POST/PATCH endpoints - HIGH"
+    ],
+    "short_term": [
+      "Add rate limiting to all story and scheduled post endpoints",
+      "Implement bulk query methods to resolve N+1 query problems",
+      "Add consistent error logging across all catch blocks",
+      "Add UUID validation middleware for all ID parameters"
+    ],
+    "long_term": [
+      "Standardize API response format using apiSuccess/apiError helpers",
+      "Implement session regeneration after authentication",
+      "Add password complexity requirements",
+      "Review and document cascade delete behavior for all foreign keys"
+    ]
+  }
+}

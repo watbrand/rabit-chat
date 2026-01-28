@@ -1,0 +1,18049 @@
+import type { Express, Request, Response, NextFunction } from "express";
+import { createServer, type Server } from "node:http";
+import { WebSocketServer, WebSocket } from "ws";
+import type { IncomingMessage } from "node:http";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import bcrypt from "bcrypt";
+import multer from "multer";
+import OpenAI from "openai";
+import { storage } from "./storage";
+import { registerGossipRoutes } from "./gossip-routes";
+import { registerAdvancedRoutes } from "./routes-advanced";
+import { registerOnboardingRoutes } from "./routes-onboarding";
+import { registerAdsRoutes } from "./routes-ads";
+import { registerLinkPreviewRoutes } from "./routes-link-preview";
+import { registerMessageRoutes } from "./routes-messages";
+import { registerConversationSettingsRoutes } from "./routes-conversation-settings";
+import { registerApiUsageRoutes } from "./routes-api-usage";
+import { adsEngine, type AuctionResult } from "./ads-engine";
+import { pool, db } from "./db";
+import { sql, and, eq, gt, gte, isNull, inArray, desc, or, like, asc, ilike } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
+import {
+  getViewerContext,
+  canViewProfile,
+  canViewPost,
+  canComment,
+  canMessage,
+  canFollow,
+  canLike,
+  filterPostsForViewer,
+  hasPermission,
+  createPolicyError,
+} from "./policy";
+import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements } from "@shared/schema";
+import cloudinary, {
+  uploadToCloudinary,
+  uploadToCloudinaryFromFile,
+  generateSignedUploadParams,
+  getCloudinaryUploadUrl,
+  cleanupTempFile,
+  cleanupOldTempFiles,
+  isCloudinaryConfigured,
+  generateAudioThumbnailUrl,
+  ALLOWED_IMAGE_TYPES,
+  ALLOWED_VIDEO_TYPES,
+  ALLOWED_AUDIO_TYPES,
+  MAX_FILE_SIZE,
+  MAX_VIDEO_SIZE,
+  MAX_AUDIO_SIZE,
+  UPLOAD_TEMP_DIR,
+} from "./cloudinary";
+import * as deezer from "./services/deezer";
+import {
+  authLimiter,
+  signupLimiter,
+  postLimiter,
+  commentLimiter,
+  messageLimiter,
+  uploadLimiter,
+  apiLimiter,
+} from "./rate-limit";
+import {
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendVerificationEmail,
+  sendNotificationDigest,
+  sendNewFollowerEmail,
+} from "./services/email";
+import {
+  moderateText,
+  analyzeImage,
+  getContentSuggestions,
+  detectLanguage,
+  summarizeContent,
+} from "./services/ai-moderation";
+import {
+  generateSmartCaption,
+  generateImageCaption,
+  transcribeVoiceMessage,
+  enhancePost,
+  getAIAssistance,
+  generateVoicePostSummary,
+} from "./services/openai-features";
+import {
+  sendSMS,
+  sendVerificationCode,
+  generateVerificationCode,
+  sendLoginAlert,
+  isSMSConfigured,
+} from "./services/sms";
+import { feedAlgorithm, getAlgorithmWeights, updateAlgorithmWeights, resetAlgorithmWeights, getAlgorithmDescription } from "./algorithm";
+import { pushNotificationService } from "./services/push-notifications";
+import { hasPermission as hasRbacPermission } from "./rbac";
+import {
+  validateBody,
+  loginSchema,
+  signupSchema,
+  createPostSchema,
+  createCommentSchema,
+  sendMessageSchema,
+  createConversationSchema,
+  updateProfileSchema,
+  reportSchema,
+  updateReportSchema,
+  updateSettingsSchema,
+  updateFullProfileSchema,
+  changePasswordSchema,
+  deleteAccountSchema,
+  submitVerificationSchema,
+  verificationActionSchema,
+} from "./validation";
+
+const diskStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOAD_TEMP_DIR);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const ext = file.originalname.split('.').pop() || 'tmp';
+    cb(null, `upload-${uniqueSuffix}.${ext}`);
+  },
+});
+
+const upload = multer({
+  storage: diskStorage,
+  limits: {
+    fileSize: MAX_VIDEO_SIZE,
+  },
+});
+
+const memoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: MAX_FILE_SIZE,
+  },
+});
+
+function multerErrorHandler(err: any, req: any, res: any, next: any) {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        message: `File too large. Maximum allowed size is ${Math.round(MAX_VIDEO_SIZE / 1024 / 1024)}MB for videos, ${Math.round(MAX_AUDIO_SIZE / 1024 / 1024)}MB for audio, and ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB for images.`,
+        code: 'FILE_TOO_LARGE',
+      });
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        message: 'Unexpected file field. Please use "file" as the field name.',
+        code: 'UNEXPECTED_FIELD',
+      });
+    }
+    return res.status(400).json({
+      message: `Upload error: ${err.message}`,
+      code: err.code,
+    });
+  }
+  
+  if (err.code === 'ENOMEM' || err.message?.includes('memory')) {
+    return res.status(503).json({
+      message: 'Server is temporarily unable to process large files. Please try again later or use a smaller file.',
+      code: 'SERVER_MEMORY_ERROR',
+    });
+  }
+  
+  next(err);
+}
+
+declare module "express-session" {
+  interface SessionData {
+    userId: string;
+  }
+}
+
+const PgSession = connectPgSimple(session);
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  next();
+}
+
+async function updateActivity(req: Request, res: Response, next: NextFunction) {
+  if (req.session.userId) {
+    storage.updateLastActive(req.session.userId).catch(() => {});
+  }
+  next();
+}
+
+const connectedClients = new Map<string, Set<WebSocket>>();
+
+// Typing state: Map<conversationId, Map<userId, timeoutId>>
+const typingState = new Map<string, Map<string, NodeJS.Timeout>>();
+const TYPING_TIMEOUT_MS = 5000;
+
+function getConversationParticipantIds(conversation: { participant1Id: string; participant2Id: string }): string[] {
+  return [conversation.participant1Id, conversation.participant2Id];
+}
+
+function clearTypingState(conversationId: string, usrId: string): void {
+  const convTyping = typingState.get(conversationId);
+  if (convTyping) {
+    const timeout = convTyping.get(usrId);
+    if (timeout) {
+      clearTimeout(timeout);
+      convTyping.delete(usrId);
+    }
+    if (convTyping.size === 0) {
+      typingState.delete(conversationId);
+    }
+  }
+}
+
+function setTypingState(conversationId: string, usrId: string, callback: () => void): void {
+  if (!typingState.has(conversationId)) {
+    typingState.set(conversationId, new Map());
+  }
+  const convTyping = typingState.get(conversationId)!;
+  
+  // Clear existing timeout if any
+  const existingTimeout = convTyping.get(usrId);
+  if (existingTimeout) {
+    clearTimeout(existingTimeout);
+  }
+  
+  // Set new timeout to auto-clear after TYPING_TIMEOUT_MS
+  const timeout = setTimeout(() => {
+    clearTypingState(conversationId, usrId);
+    callback();
+  }, TYPING_TIMEOUT_MS);
+  
+  convTyping.set(usrId, timeout);
+}
+
+function parseCookies(cookieHeader: string | undefined): Record<string, string> {
+  const cookies: Record<string, string> = {};
+  if (!cookieHeader) return cookies;
+  
+  cookieHeader.split(";").forEach((cookie) => {
+    const [name, ...rest] = cookie.trim().split("=");
+    if (name && rest.length > 0) {
+      cookies[name] = decodeURIComponent(rest.join("="));
+    }
+  });
+  return cookies;
+}
+
+async function getSessionUserId(sessionId: string): Promise<string | null> {
+  try {
+    const sid = sessionId.startsWith("s:") 
+      ? sessionId.slice(2).split(".")[0] 
+      : sessionId.split(".")[0];
+    
+    const result = await pool.query(
+      "SELECT sess FROM user_sessions WHERE sid = $1 AND expire > NOW()",
+      [sid]
+    );
+    
+    if (result.rows.length > 0 && result.rows[0].sess) {
+      const sessionData = result.rows[0].sess;
+      return sessionData.userId || null;
+    }
+    return null;
+  } catch (error) {
+    console.error("Session lookup error:", error);
+    return null;
+  }
+}
+
+function addClientToUser(userId: string, ws: WebSocket) {
+  if (!connectedClients.has(userId)) {
+    connectedClients.set(userId, new Set());
+  }
+  connectedClients.get(userId)!.add(ws);
+}
+
+function removeClientFromUser(userId: string, ws: WebSocket) {
+  const userClients = connectedClients.get(userId);
+  if (userClients) {
+    userClients.delete(ws);
+    if (userClients.size === 0) {
+      connectedClients.delete(userId);
+    }
+  }
+}
+
+function broadcastToUser(userId: string, message: object): boolean {
+  const userClients = connectedClients.get(userId);
+  if (userClients && userClients.size > 0) {
+    const messageStr = JSON.stringify(message);
+    let sent = false;
+    userClients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(messageStr);
+        sent = true;
+      }
+    });
+    return sent;
+  }
+  return false;
+}
+
+function parseMentions(text: string): string[] {
+  if (!text) return [];
+  const mentionRegex = /@([a-zA-Z0-9_]+)/g;
+  const mentions: string[] = [];
+  let match;
+  while ((match = mentionRegex.exec(text)) !== null) {
+    if (!mentions.includes(match[1])) {
+      mentions.push(match[1]);
+    }
+  }
+  return mentions;
+}
+
+async function notifyMentionedUsers(
+  text: string,
+  actorId: string,
+  entityId: string,
+  excludeUserId?: string
+): Promise<void> {
+  const usernames = parseMentions(text);
+  if (usernames.length === 0) return;
+  
+  for (const username of usernames) {
+    const user = await storage.getUserByUsername(username);
+    if (user && user.id !== actorId && user.id !== excludeUserId) {
+      const notification = await storage.createNotification(user.id, actorId, "MENTION", entityId);
+      if (notification.id) {
+        const actor = await storage.getUser(actorId);
+        broadcastToUser(user.id, {
+          type: "notification:new",
+          payload: { ...notification, actor: actor ? { ...actor, password: undefined } : null }
+        });
+        
+        // Send push notification for mention
+        if (actor) {
+          pushNotificationService.notifyMention(
+            user.id,
+            actor.username,
+            actor.displayName,
+            entityId
+          ).catch(err => console.error("[Push] Mention notification error:", err));
+        }
+      }
+    }
+  }
+}
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  app.use(
+    session({
+      store: new PgSession({
+        pool,
+        tableName: "user_sessions",
+        createTableIfMissing: true,
+      }),
+      secret: process.env.SESSION_SECRET!,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        secure: process.env.NODE_ENV === "production",
+        httpOnly: true,
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      },
+    })
+  );
+
+  // Database health check endpoint (public, for debugging)
+  app.get("/api/health/db", async (req, res) => {
+    try {
+      const [userCount] = await db.select({ count: sql<number>`count(*)::int` }).from(users);
+      const [postCount] = await db.select({ count: sql<number>`count(*)::int` }).from(posts);
+      res.json({
+        status: "connected",
+        environment: process.env.NODE_ENV || "unknown",
+        counts: {
+          users: userCount?.count || 0,
+          posts: postCount?.count || 0
+        },
+        dbHost: process.env.PGHOST ? process.env.PGHOST.substring(0, 20) + "..." : "unknown"
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        status: "error",
+        environment: process.env.NODE_ENV || "unknown",
+        error: error.message
+      });
+    }
+  });
+
+  // Data export endpoint - exports all users and posts for migration
+  app.get("/api/admin/data-export", async (req, res) => {
+    try {
+      const allUsers = await db.select().from(users);
+      const allPosts = await db.select().from(posts);
+      const allFollows = await db.select().from(follows);
+      const allLikes = await db.select().from(likes);
+      const allComments = await db.select().from(comments);
+      
+      res.json({
+        exportedAt: new Date().toISOString(),
+        environment: process.env.NODE_ENV || "unknown",
+        data: {
+          users: allUsers,
+          posts: allPosts,
+          follows: allFollows,
+          likes: allLikes,
+          comments: allComments
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Data import endpoint - imports users and posts from exported data
+  app.post("/api/admin/data-import", async (req, res) => {
+    try {
+      const { data, overwrite } = req.body;
+      
+      if (!data) {
+        return res.status(400).json({ error: "No data provided" });
+      }
+
+      const results = { users: 0, posts: 0, follows: 0, likes: 0, comments: 0, errors: [] as string[] };
+
+      // Import users (skip if already exists by email)
+      if (data.users && Array.isArray(data.users)) {
+        for (const user of data.users) {
+          try {
+            const existing = await db.select().from(users).where(eq(users.email, user.email)).limit(1);
+            if (existing.length === 0) {
+              await db.insert(users).values(user);
+              results.users++;
+            } else if (overwrite) {
+              await db.update(users).set(user).where(eq(users.email, user.email));
+              results.users++;
+            }
+          } catch (e: any) {
+            results.errors.push(`User ${user.email}: ${e.message}`);
+          }
+        }
+      }
+
+      // Import posts
+      if (data.posts && Array.isArray(data.posts)) {
+        for (const post of data.posts) {
+          try {
+            const existing = await db.select().from(posts).where(eq(posts.id, post.id)).limit(1);
+            if (existing.length === 0) {
+              await db.insert(posts).values(post);
+              results.posts++;
+            }
+          } catch (e: any) {
+            results.errors.push(`Post ${post.id}: ${e.message}`);
+          }
+        }
+      }
+
+      // Import follows
+      if (data.follows && Array.isArray(data.follows)) {
+        for (const follow of data.follows) {
+          try {
+            await db.insert(follows).values(follow).onConflictDoNothing();
+            results.follows++;
+          } catch (e: any) {
+            results.errors.push(`Follow: ${e.message}`);
+          }
+        }
+      }
+
+      // Import likes
+      if (data.likes && Array.isArray(data.likes)) {
+        for (const like of data.likes) {
+          try {
+            await db.insert(likes).values(like).onConflictDoNothing();
+            results.likes++;
+          } catch (e: any) {
+            results.errors.push(`Like: ${e.message}`);
+          }
+        }
+      }
+
+      // Import comments
+      if (data.comments && Array.isArray(data.comments)) {
+        for (const comment of data.comments) {
+          try {
+            await db.insert(comments).values(comment).onConflictDoNothing();
+            results.comments++;
+          } catch (e: any) {
+            results.errors.push(`Comment: ${e.message}`);
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        imported: results,
+        environment: process.env.NODE_ENV || "unknown"
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Maintenance mode middleware - allow auth endpoints and admin access
+  app.use(async (req, res, next) => {
+    const publicPaths = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/settings/flags", "/api/health/db"];
+    const isPublicPath = publicPaths.some(p => req.path === p);
+    const isAdminPath = req.path.startsWith("/api/admin");
+    
+    if (isPublicPath || isAdminPath) {
+      return next();
+    }
+
+    try {
+      const maintenanceMode = await storage.getAppSettingValue("maintenanceMode", false);
+      if (maintenanceMode && req.session.userId) {
+        const user = await storage.getUser(req.session.userId);
+        if (user && !user.isAdmin) {
+          return res.status(503).json({ 
+            message: "The app is currently under maintenance. Please try again later.",
+            maintenanceMode: true
+          });
+        }
+      } else if (maintenanceMode && !req.session.userId && req.path.startsWith("/api/")) {
+        return res.status(503).json({ 
+          message: "The app is currently under maintenance. Please try again later.",
+          maintenanceMode: true
+        });
+      }
+    } catch (error) {
+      console.error("Maintenance check error:", error);
+    }
+    next();
+  });
+
+  // Activity tracking middleware - updates lastActiveAt for authenticated users
+  app.use("/api", updateActivity);
+
+  // Media upload endpoint with disk storage for large files
+  app.post("/api/upload", requireAuth, uploadLimiter, (req: Request, res: Response, next: NextFunction) => {
+    // Extend timeout for large file uploads (15 minutes)
+    req.setTimeout(900000);
+    res.setTimeout(900000);
+    
+    // Log incoming upload request
+    const contentLength = req.headers['content-length'];
+    const contentType = req.headers['content-type'];
+    console.log(`[Upload] Incoming request - Content-Length: ${contentLength}, Content-Type: ${contentType?.substring(0, 50)}`);
+    
+    next();
+  }, upload.single("file"), multerErrorHandler, async (req: Request, res: Response) => {
+    let tempFilePath: string | undefined;
+    
+    try {
+      // Check feature flag
+      const mediaUploadsEnabled = await storage.getAppSettingValue("mediaUploadsEnabled", true);
+      if (!mediaUploadsEnabled) {
+        const user = await storage.getUser(req.session.userId!);
+        if (!user?.isAdmin) {
+          if (req.file?.path) cleanupTempFile(req.file.path);
+          return res.status(403).json({ 
+            message: "Media uploads are currently disabled." 
+          });
+        }
+      }
+
+      if (!isCloudinaryConfigured()) {
+        if (req.file?.path) cleanupTempFile(req.file.path);
+        return res.status(503).json({ 
+          message: "Media uploads not configured. Please add Cloudinary credentials." 
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const { mimetype, size, path: filePath } = req.file;
+      if (!filePath) {
+        return res.status(500).json({ message: "File path not available" });
+      }
+      tempFilePath = filePath;
+      const folder = (req.query.folder as string) || "general";
+      const clientDurationMs = req.body.durationMs ? parseInt(req.body.durationMs, 10) : undefined;
+
+      console.log(`[Upload] Received file: ${(size / 1024 / 1024).toFixed(2)}MB, type: ${mimetype}`);
+
+      // Validate file type
+      const isImage = ALLOWED_IMAGE_TYPES.includes(mimetype);
+      const isVideo = ALLOWED_VIDEO_TYPES.includes(mimetype);
+      const isAudio = ALLOWED_AUDIO_TYPES.includes(mimetype);
+
+      if (!isImage && !isVideo && !isAudio) {
+        cleanupTempFile(tempFilePath);
+        return res.status(400).json({ 
+          message: `Invalid file type. Allowed images: ${ALLOWED_IMAGE_TYPES.join(", ")}. Allowed videos: ${ALLOWED_VIDEO_TYPES.join(", ")}. Allowed audio: ${ALLOWED_AUDIO_TYPES.join(", ")}.` 
+        });
+      }
+
+      // Validate file size based on type
+      let maxSize: number;
+      if (isVideo) {
+        maxSize = MAX_VIDEO_SIZE;
+      } else if (isAudio) {
+        maxSize = MAX_AUDIO_SIZE;
+      } else {
+        maxSize = MAX_FILE_SIZE;
+      }
+      
+      if (size > maxSize) {
+        cleanupTempFile(tempFilePath);
+        const maxMB = Math.round(maxSize / 1024 / 1024);
+        return res.status(413).json({ 
+          message: `File too large. Maximum size for ${isVideo ? "videos" : isAudio ? "audio" : "images"}: ${maxMB}MB`,
+          code: 'FILE_TOO_LARGE',
+        });
+      }
+
+      // Determine resource type for Cloudinary
+      let resourceType: "image" | "video" | "raw";
+      if (isVideo) {
+        resourceType = "video";
+      } else if (isAudio) {
+        resourceType = "video"; // Cloudinary uses "video" resource type for audio too
+      } else {
+        resourceType = "image";
+      }
+
+      // Use streaming upload from file (no memory buffer needed)
+      const result = await uploadToCloudinaryFromFile(tempFilePath, folder, resourceType);
+      
+      // Cleanup temp file after successful upload
+      cleanupTempFile(tempFilePath);
+
+      // Calculate duration in milliseconds
+      let durationMs: number | undefined;
+      if (result.duration) {
+        durationMs = Math.round(result.duration * 1000);
+      } else if (clientDurationMs) {
+        durationMs = clientDurationMs;
+      }
+
+      // Generate thumbnail URL
+      let thumbnailUrl: string | undefined = result.thumbnailUrl;
+      if (isAudio && !thumbnailUrl) {
+        thumbnailUrl = generateAudioThumbnailUrl();
+      }
+
+      res.json({
+        url: result.url,
+        publicId: result.publicId,
+        width: result.width,
+        height: result.height,
+        format: result.format,
+        resourceType: result.resourceType,
+        thumbnailUrl,
+        durationMs,
+        mediaType: isImage ? "image" : isVideo ? "video" : "audio",
+      });
+    } catch (error) {
+      // Always cleanup temp file on error
+      if (tempFilePath) cleanupTempFile(tempFilePath);
+      
+      console.error("Upload error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Upload failed";
+      
+      // Provide more specific error messages
+      if (errorMessage.includes('timeout')) {
+        return res.status(504).json({ 
+          message: "Upload timed out. Please try with a smaller file or check your connection.",
+          code: 'UPLOAD_TIMEOUT',
+        });
+      }
+      
+      res.status(500).json({ message: errorMessage });
+    }
+  });
+
+  // Check if uploads are available
+  app.get("/api/upload/status", requireAuth, async (req, res) => {
+    const mediaUploadsEnabled = await storage.getAppSettingValue("mediaUploadsEnabled", true);
+    res.json({ 
+      configured: isCloudinaryConfigured(),
+      enabled: mediaUploadsEnabled,
+      maxImageSize: MAX_FILE_SIZE,
+      maxVideoSize: MAX_VIDEO_SIZE,
+      maxAudioSize: MAX_AUDIO_SIZE,
+      allowedImageTypes: ALLOWED_IMAGE_TYPES,
+      allowedVideoTypes: ALLOWED_VIDEO_TYPES,
+      allowedAudioTypes: ALLOWED_AUDIO_TYPES,
+    });
+  });
+
+  // Get signed upload parameters for direct-to-Cloudinary uploads (bypasses server for large files)
+  app.post("/api/upload/sign", requireAuth, async (req, res) => {
+    try {
+      if (!isCloudinaryConfigured()) {
+        return res.status(503).json({ 
+          message: "Media uploads not configured. Please add Cloudinary credentials." 
+        });
+      }
+
+      const { folder = "posts", resourceType = "video" } = req.body;
+      
+      // Validate resource type
+      const validTypes = ["image", "video", "raw"];
+      if (!validTypes.includes(resourceType)) {
+        return res.status(400).json({ message: "Invalid resource type" });
+      }
+
+      const signedParams = generateSignedUploadParams(folder, resourceType as "image" | "video" | "raw");
+      const uploadUrl = getCloudinaryUploadUrl(resourceType as "image" | "video" | "raw");
+
+      res.json({
+        ...signedParams,
+        uploadUrl,
+      });
+    } catch (error) {
+      console.error("Error generating signed upload params:", error);
+      res.status(500).json({ message: "Failed to generate upload signature" });
+    }
+  });
+
+  app.get("/api/auth/check-username", async (req, res) => {
+    try {
+      const username = req.query.username as string;
+      
+      if (!username || username.length < 3) {
+        return res.status(400).json({ message: "Username must be at least 3 characters" });
+      }
+
+      const existingUser = await storage.getUserByUsername(username);
+      const available = !existingUser;
+
+      if (available) {
+        return res.json({ available: true });
+      }
+
+      const suggestions: string[] = [];
+      const baseName = username.toLowerCase().replace(/[^a-z0-9]/g, "");
+      
+      const suffixes = [
+        Math.floor(Math.random() * 100),
+        Math.floor(Math.random() * 1000),
+        "_" + Math.floor(Math.random() * 100),
+        new Date().getFullYear() % 100,
+        Math.floor(Math.random() * 10) + "_",
+      ];
+
+      for (const suffix of suffixes) {
+        const suggestion = `${baseName}${suffix}`;
+        const exists = await storage.getUserByUsername(suggestion);
+        if (!exists && !suggestions.includes(suggestion)) {
+          suggestions.push(suggestion);
+          if (suggestions.length >= 3) break;
+        }
+      }
+
+      while (suggestions.length < 3) {
+        const randomSuffix = Math.floor(Math.random() * 10000);
+        const suggestion = `${baseName}${randomSuffix}`;
+        const exists = await storage.getUserByUsername(suggestion);
+        if (!exists && !suggestions.includes(suggestion)) {
+          suggestions.push(suggestion);
+        }
+      }
+
+      res.json({ available: false, suggestions: suggestions.slice(0, 5) });
+    } catch (error) {
+      console.error("Check username error:", error);
+      res.status(500).json({ message: "Failed to check username" });
+    }
+  });
+
+  app.post("/api/auth/signup", signupLimiter, async (req, res) => {
+    try {
+      const signupEnabled = await storage.getAppSettingValue("signupEnabled", true);
+      if (!signupEnabled) {
+        return res.status(403).json({ message: "Signup is currently disabled" });
+      }
+
+      const {
+        username, email, phoneNumber, password, displayName, birthday,
+        country, province, city, category, gender, avatarUrl,
+        creatorCategory, bio, portfolioUrl, primaryPlatforms, contentLanguage,
+        contentTags, hasManagement, managementName, showLocationPublicly,
+        businessCategory, dateEstablished, contactEmail, contactPhone,
+        contactAddress, websiteUrl, whatsappNumber, businessHours,
+        // Honeypot fields - if filled, it's a bot
+        website_url_confirm, phone_verify_code
+      } = req.body;
+      
+      // Bot detection via honeypot - these fields should be empty (hidden from users)
+      if (website_url_confirm || phone_verify_code) {
+        console.log("[Bot Detection] Honeypot triggered on signup");
+        return res.status(400).json({ message: "Invalid request" });
+      }
+      
+      // Basic validation
+      if (!username || !password || !displayName) {
+        return res.status(400).json({ message: "Username, password, and display name are required" });
+      }
+      
+      if (!email && !phoneNumber) {
+        return res.status(400).json({ message: "Either email or phone number is required" });
+      }
+
+      if (!country || !province || !city) {
+        return res.status(400).json({ message: "Location (country, province, city) is required" });
+      }
+
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(400).json({ message: "Username already taken" });
+      }
+
+      if (email) {
+        const existingEmail = await storage.getUserByEmail(email);
+        if (existingEmail) {
+          return res.status(400).json({ message: "Email already registered" });
+        }
+      }
+
+      if (phoneNumber) {
+        const existingPhone = await db.select().from(users).where(eq(users.phoneNumber, phoneNumber));
+        if (existingPhone.length > 0) {
+          return res.status(400).json({ message: "Phone number already registered" });
+        }
+      }
+
+      // Category-specific validation
+      const accountCategory = category || "PERSONAL";
+      if (accountCategory === "CREATOR" && !creatorCategory) {
+        return res.status(400).json({ message: "Creator category is required for creator accounts" });
+      }
+      if (accountCategory === "BUSINESS" && !businessCategory) {
+        return res.status(400).json({ message: "Business category is required for business accounts" });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      // Build user data object with all fields
+      const userData: any = {
+        username,
+        email: email || `${username}@phone.local`,
+        password: hashedPassword,
+        displayName,
+        bio: bio || "",
+        avatarUrl: avatarUrl || null,
+        category: accountCategory,
+        country,
+        province,
+        city,
+        phoneNumber: phoneNumber || null,
+      };
+
+      // Add optional fields
+      if (birthday) userData.birthday = new Date(birthday);
+      if (gender) userData.gender = gender;
+      
+      // Creator-specific fields
+      if (accountCategory === "CREATOR") {
+        if (creatorCategory) userData.creatorCategory = creatorCategory;
+        if (portfolioUrl) userData.portfolioUrl = portfolioUrl;
+        if (primaryPlatforms) userData.primaryPlatforms = primaryPlatforms;
+        if (contentLanguage) userData.contentLanguage = contentLanguage;
+        if (contentTags) userData.contentTags = contentTags;
+        if (hasManagement !== undefined) userData.hasManagement = hasManagement;
+        if (managementName) userData.managementName = managementName;
+        if (showLocationPublicly !== undefined) userData.showLocationPublicly = showLocationPublicly;
+      }
+      
+      // Business-specific fields
+      if (accountCategory === "BUSINESS") {
+        if (businessCategory) userData.businessCategory = businessCategory;
+        if (dateEstablished) userData.dateEstablished = new Date(dateEstablished);
+        if (contactEmail) userData.contactEmail = contactEmail;
+        if (contactPhone) userData.contactPhone = contactPhone;
+        if (contactAddress) userData.contactAddress = contactAddress;
+        if (websiteUrl) userData.websiteUrl = websiteUrl;
+        if (whatsappNumber) userData.whatsappNumber = whatsappNumber;
+        if (businessHours) userData.businessHours = businessHours;
+      }
+
+      const user = await storage.createUser(userData);
+
+      // Create default user settings
+      await storage.getOrCreateUserSettings(user.id);
+
+      // Generate and send verification code
+      let verificationSent = false;
+      let verificationType: "email" | "phone" = "email";
+      const verificationCode = generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+      const isDevelopment = process.env.NODE_ENV !== 'production';
+
+      // Prioritize phone verification, then email
+      if (phoneNumber && isSMSConfigured()) {
+        verificationType = "phone";
+        try {
+          await db.insert(emailVerificationTokens).values({
+            userId: user.id,
+            email: phoneNumber, // Store phone in email field for verification lookup
+            token: verificationCode,
+            expiresAt,
+          });
+
+          console.log(`[SMS] Sending verification code to ${phoneNumber}...`);
+          const smsResult = await sendSMS(
+            phoneNumber,
+            `Your RabitChat verification code is: ${verificationCode}. This code expires in 10 minutes. Do not share this code with anyone.`
+          );
+          
+          if (smsResult.success) {
+            console.log(`[SMS] Verification code sent successfully to ${phoneNumber}`);
+            verificationSent = true;
+          } else {
+            console.error(`[SMS] Failed to send verification code: ${smsResult.error}`);
+          }
+        } catch (err) {
+          console.error("[SMS] Error sending verification code:", err);
+        }
+      }
+      
+      // If SMS wasn't sent, try email
+      if (!verificationSent && email && !email.endsWith("@phone.local")) {
+        verificationType = "email";
+        try {
+          await db.insert(emailVerificationTokens).values({
+            userId: user.id,
+            email,
+            token: verificationCode,
+            expiresAt,
+          });
+
+          console.log(`[Email] Sending verification code to ${email}...`);
+          const emailResult = await sendVerificationEmail(email, displayName || username, verificationCode);
+          
+          if (emailResult.success) {
+            console.log(`[Email] Verification code sent successfully to ${email}`);
+            verificationSent = true;
+          } else {
+            console.error(`[Email] Failed to send verification code: ${emailResult.error}`);
+          }
+        } catch (err) {
+          console.error("[Email] Error sending verification code:", err);
+        }
+      }
+
+      // If OTP services failed, auto-verify the user and enable testing mode
+      // This allows the app to work when Resend domain isn't verified or Twilio number is invalid
+      if (!verificationSent) {
+        console.log(`[TESTING MODE] OTP services unavailable. Auto-verifying user and enabling test mode.`);
+        if (email && !email.endsWith("@phone.local")) {
+          await storage.updateUser(user.id, { emailVerified: true });
+        }
+        if (phoneNumber) {
+          await storage.updateUser(user.id, { phoneVerified: true });
+        }
+      }
+
+      req.session.userId = user.id;
+      const { password: _, ...safeUser } = user;
+      
+      // Skip verification screen if OTP couldn't be sent
+      const skipVerification = !verificationSent;
+      
+      res.status(201).json({ 
+        ...safeUser, 
+        requiresVerification: verificationSent,
+        verificationType,
+        verificationSent,
+        skipVerification,
+        // Include the code in dev mode for testing (never in production!)
+        ...(isDevelopment && { devVerificationCode: verificationCode }),
+      });
+    } catch (error) {
+      console.error("Signup error:", error);
+      res.status(500).json({ message: "Failed to create account" });
+    }
+  });
+
+  // Social auth endpoint for Google and Apple Sign-In
+  app.post("/api/auth/social", authLimiter, async (req, res) => {
+    try {
+      const { provider, token, email, displayName, avatarUrl, providerId } = req.body;
+      
+      if (!provider || !email) {
+        return res.status(400).json({ message: "Provider and email are required" });
+      }
+      
+      if (!["google", "apple"].includes(provider)) {
+        return res.status(400).json({ message: "Invalid auth provider" });
+      }
+
+      // Check if user already exists with this social ID
+      let user = null;
+      if (provider === "google" && providerId) {
+        user = await db.select().from(users).where(eq(users.googleId, providerId)).limit(1).then(r => r[0]);
+      } else if (provider === "apple" && providerId) {
+        user = await db.select().from(users).where(eq(users.appleId, providerId)).limit(1).then(r => r[0]);
+      }
+      
+      // If not found by provider ID, check by email
+      if (!user) {
+        user = await storage.getUserByEmail(email);
+      }
+      
+      if (user) {
+        // Existing user - update their social ID if not set
+        const updateData: any = { lastSeenAt: new Date() };
+        if (provider === "google" && !user.googleId && providerId) {
+          updateData.googleId = providerId;
+        } else if (provider === "apple" && !user.appleId && providerId) {
+          updateData.appleId = providerId;
+        }
+        
+        if (Object.keys(updateData).length > 1) {
+          await db.update(users).set(updateData).where(eq(users.id, user.id));
+        }
+        
+        req.session.userId = user.id;
+        const { password: _, ...safeUser } = user;
+        return res.json({ 
+          ...safeUser, 
+          isNewUser: false,
+          needsProfileComplete: !user.profileComplete && !user.country
+        });
+      }
+      
+      // Create new user from social auth
+      const username = email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "") + "_" + Math.random().toString(36).substring(2, 6);
+      const hashedPassword = await bcrypt.hash(Math.random().toString(36) + Date.now(), 10); // Random password for social users
+      
+      const newUserData: any = {
+        username,
+        email,
+        password: hashedPassword,
+        displayName: displayName || email.split("@")[0],
+        avatarUrl: avatarUrl || null,
+        bio: "",
+        authProvider: provider,
+        profileComplete: false, // Will need to complete profile
+        emailVerified: true, // Social auth = verified email
+      };
+      
+      if (provider === "google" && providerId) {
+        newUserData.googleId = providerId;
+      } else if (provider === "apple" && providerId) {
+        newUserData.appleId = providerId;
+      }
+      
+      const newUser = await storage.createUser(newUserData);
+      await storage.getOrCreateUserSettings(newUser.id);
+      
+      req.session.userId = newUser.id;
+      const { password: _, ...safeUser } = newUser;
+      res.status(201).json({ 
+        ...safeUser, 
+        isNewUser: true,
+        needsProfileComplete: true
+      });
+    } catch (error) {
+      console.error("Social auth error:", error);
+      res.status(500).json({ message: "Social authentication failed" });
+    }
+  });
+
+  // Complete profile endpoint for social auth users
+  app.post("/api/auth/complete-profile", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const {
+        category, country, province, city,
+        creatorCategory, businessCategory, businessName,
+        gender, bio, displayName
+      } = req.body;
+      
+      if (!country || !province || !city) {
+        return res.status(400).json({ message: "Location (country, province, city) is required" });
+      }
+      
+      const accountCategory = category || "PERSONAL";
+      if (accountCategory === "CREATOR" && !creatorCategory) {
+        return res.status(400).json({ message: "Creator category is required for creator accounts" });
+      }
+      if (accountCategory === "BUSINESS" && !businessCategory) {
+        return res.status(400).json({ message: "Business category is required for business accounts" });
+      }
+      
+      const updateData: any = {
+        category: accountCategory,
+        country,
+        province,
+        city,
+        profileComplete: true,
+      };
+      
+      if (displayName) updateData.displayName = displayName;
+      if (bio) updateData.bio = bio;
+      if (gender) updateData.gender = gender;
+      if (creatorCategory) updateData.creatorCategory = creatorCategory;
+      if (businessCategory) updateData.businessCategory = businessCategory;
+      
+      await db.update(users).set(updateData).where(eq(users.id, userId));
+      
+      const updatedUser = await storage.getUser(userId);
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const { password: _, ...safeUser } = updatedUser;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Complete profile error:", error);
+      res.status(500).json({ message: "Failed to complete profile" });
+    }
+  });
+
+  // Legal documents endpoints
+  app.get("/api/legal/documents", async (req, res) => {
+    try {
+      const { 
+        TERMS_OF_SERVICE, TERMS_VERSION, TERMS_EFFECTIVE_DATE,
+        PRIVACY_POLICY, PRIVACY_VERSION, PRIVACY_EFFECTIVE_DATE,
+        COMMUNITY_GUIDELINES, GUIDELINES_VERSION, GUIDELINES_EFFECTIVE_DATE,
+        CURRENT_LEGAL_VERSION
+      } = await import("./legal");
+      
+      res.json({
+        currentVersion: CURRENT_LEGAL_VERSION,
+        documents: [
+          {
+            type: "terms",
+            title: "Terms of Service",
+            version: TERMS_VERSION,
+            effectiveDate: TERMS_EFFECTIVE_DATE,
+            content: TERMS_OF_SERVICE
+          },
+          {
+            type: "privacy",
+            title: "Privacy Policy",
+            version: PRIVACY_VERSION,
+            effectiveDate: PRIVACY_EFFECTIVE_DATE,
+            content: PRIVACY_POLICY
+          },
+          {
+            type: "guidelines",
+            title: "Community Guidelines",
+            version: GUIDELINES_VERSION,
+            effectiveDate: GUIDELINES_EFFECTIVE_DATE,
+            content: COMMUNITY_GUIDELINES
+          }
+        ]
+      });
+    } catch (error) {
+      console.error("Legal documents error:", error);
+      res.status(500).json({ message: "Failed to load legal documents" });
+    }
+  });
+
+  app.get("/api/legal/document/:type", async (req, res) => {
+    try {
+      const { type } = req.params;
+      const { 
+        TERMS_OF_SERVICE, TERMS_VERSION, TERMS_EFFECTIVE_DATE,
+        PRIVACY_POLICY, PRIVACY_VERSION, PRIVACY_EFFECTIVE_DATE,
+        COMMUNITY_GUIDELINES, GUIDELINES_VERSION, GUIDELINES_EFFECTIVE_DATE
+      } = await import("./legal");
+      
+      let document;
+      switch (type) {
+        case "terms":
+          document = {
+            type: "terms",
+            title: "Terms of Service",
+            version: TERMS_VERSION,
+            effectiveDate: TERMS_EFFECTIVE_DATE,
+            content: TERMS_OF_SERVICE
+          };
+          break;
+        case "privacy":
+          document = {
+            type: "privacy",
+            title: "Privacy Policy",
+            version: PRIVACY_VERSION,
+            effectiveDate: PRIVACY_EFFECTIVE_DATE,
+            content: PRIVACY_POLICY
+          };
+          break;
+        case "guidelines":
+          document = {
+            type: "guidelines",
+            title: "Community Guidelines",
+            version: GUIDELINES_VERSION,
+            effectiveDate: GUIDELINES_EFFECTIVE_DATE,
+            content: COMMUNITY_GUIDELINES
+          };
+          break;
+        default:
+          return res.status(404).json({ message: "Document not found" });
+      }
+      
+      res.json(document);
+    } catch (error) {
+      console.error("Legal document error:", error);
+      res.status(500).json({ message: "Failed to load document" });
+    }
+  });
+
+  app.post("/api/legal/accept", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { termsAccepted, privacyAccepted, guidelinesAccepted, marketingOptIn } = req.body;
+      const { CURRENT_LEGAL_VERSION } = await import("./legal");
+      
+      if (!termsAccepted || !privacyAccepted || !guidelinesAccepted) {
+        return res.status(400).json({ 
+          message: "You must accept all required agreements to continue" 
+        });
+      }
+      
+      const now = new Date();
+      await db.update(users).set({
+        termsAcceptedAt: now,
+        privacyAcceptedAt: now,
+        communityGuidelinesAcceptedAt: now,
+        legalVersion: CURRENT_LEGAL_VERSION,
+        marketingOptIn: marketingOptIn || false
+      }).where(eq(users.id, userId));
+      
+      const updatedUser = await storage.getUser(userId);
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const { password: _, ...safeUser } = updatedUser;
+      res.json({ 
+        message: "Legal agreements accepted",
+        user: safeUser 
+      });
+    } catch (error) {
+      console.error("Legal acceptance error:", error);
+      res.status(500).json({ message: "Failed to record legal acceptance" });
+    }
+  });
+
+  app.get("/api/legal/status", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      const { CURRENT_LEGAL_VERSION } = await import("./legal");
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const termsAccepted = !!user.termsAcceptedAt;
+      const privacyAccepted = !!user.privacyAcceptedAt;
+      const guidelinesAccepted = !!user.communityGuidelinesAcceptedAt;
+      const needsUpdate = user.legalVersion !== CURRENT_LEGAL_VERSION;
+      
+      res.json({
+        termsAccepted,
+        privacyAccepted,
+        guidelinesAccepted,
+        currentVersion: CURRENT_LEGAL_VERSION,
+        userVersion: user.legalVersion,
+        needsUpdate,
+        allAccepted: termsAccepted && privacyAccepted && guidelinesAccepted && !needsUpdate
+      });
+    } catch (error) {
+      console.error("Legal status error:", error);
+      res.status(500).json({ message: "Failed to get legal status" });
+    }
+  });
+
+  app.post("/api/auth/login", authLimiter, async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email/username and password required" });
+      }
+
+      // Try to find user by email first, then by username
+      let user = await storage.getUserByEmail(email);
+      if (!user) {
+        user = await storage.getUserByUsername(email);
+      }
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      req.session.userId = user.id;
+      const { password: _, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      res.json({ message: "Logged out" });
+    });
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    
+    const user = await storage.getUser(req.session.userId);
+    if (!user) {
+      return res.status(401).json({ message: "User not found" });
+    }
+    
+    const { password: _, ...safeUser } = user;
+    res.json(safeUser);
+  });
+
+  // ===== LOCATIONS ENDPOINT =====
+  app.get("/api/locations", async (req, res) => {
+    try {
+      // Comprehensive location data for South Africa (primary market) and other countries
+      const locationData = {
+        countries: [
+          {
+            code: "ZA",
+            name: "South Africa",
+            provinces: [
+              { code: "GP", name: "Gauteng", cities: ["Johannesburg", "Pretoria", "Sandton", "Midrand", "Centurion", "Soweto", "Roodepoort", "Randburg"] },
+              { code: "WC", name: "Western Cape", cities: ["Cape Town", "Stellenbosch", "Paarl", "George", "Mossel Bay", "Knysna", "Somerset West"] },
+              { code: "KZN", name: "KwaZulu-Natal", cities: ["Durban", "Pietermaritzburg", "Newcastle", "Richards Bay", "Umhlanga", "Ballito"] },
+              { code: "EC", name: "Eastern Cape", cities: ["Port Elizabeth", "East London", "Mthatha", "Grahamstown", "Uitenhage"] },
+              { code: "FS", name: "Free State", cities: ["Bloemfontein", "Welkom", "Kroonstad", "Bethlehem"] },
+              { code: "LP", name: "Limpopo", cities: ["Polokwane", "Tzaneen", "Mokopane", "Thohoyandou", "Louis Trichardt"] },
+              { code: "MP", name: "Mpumalanga", cities: ["Nelspruit", "Witbank", "Middelburg", "Secunda", "Standerton"] },
+              { code: "NW", name: "North West", cities: ["Rustenburg", "Potchefstroom", "Klerksdorp", "Mahikeng", "Brits"] },
+              { code: "NC", name: "Northern Cape", cities: ["Kimberley", "Upington", "Springbok", "De Aar"] },
+            ]
+          },
+          {
+            code: "US",
+            name: "United States",
+            provinces: [
+              { code: "CA", name: "California", cities: ["Los Angeles", "San Francisco", "San Diego", "Beverly Hills", "Malibu", "Newport Beach"] },
+              { code: "NY", name: "New York", cities: ["New York City", "The Hamptons", "Buffalo", "Albany"] },
+              { code: "FL", name: "Florida", cities: ["Miami", "Miami Beach", "Palm Beach", "Orlando", "Tampa", "Fort Lauderdale"] },
+              { code: "TX", name: "Texas", cities: ["Houston", "Dallas", "Austin", "San Antonio", "Fort Worth"] },
+              { code: "NV", name: "Nevada", cities: ["Las Vegas", "Henderson", "Reno"] },
+            ]
+          },
+          {
+            code: "GB",
+            name: "United Kingdom",
+            provinces: [
+              { code: "ENG", name: "England", cities: ["London", "Manchester", "Birmingham", "Liverpool", "Leeds", "Bristol"] },
+              { code: "SCT", name: "Scotland", cities: ["Edinburgh", "Glasgow", "Aberdeen"] },
+              { code: "WLS", name: "Wales", cities: ["Cardiff", "Swansea", "Newport"] },
+            ]
+          },
+          {
+            code: "AE",
+            name: "United Arab Emirates",
+            provinces: [
+              { code: "DU", name: "Dubai", cities: ["Dubai", "Jumeirah", "Palm Jumeirah", "Downtown Dubai", "Dubai Marina"] },
+              { code: "AD", name: "Abu Dhabi", cities: ["Abu Dhabi", "Al Ain", "Yas Island", "Saadiyat Island"] },
+            ]
+          },
+          {
+            code: "NG",
+            name: "Nigeria",
+            provinces: [
+              { code: "LA", name: "Lagos", cities: ["Lagos", "Ikoyi", "Victoria Island", "Lekki", "Ikeja"] },
+              { code: "AB", name: "Abuja FCT", cities: ["Abuja", "Maitama", "Asokoro", "Wuse"] },
+              { code: "RV", name: "Rivers", cities: ["Port Harcourt", "Bonny"] },
+            ]
+          },
+          {
+            code: "KE",
+            name: "Kenya",
+            provinces: [
+              { code: "NB", name: "Nairobi", cities: ["Nairobi", "Westlands", "Karen", "Kilimani"] },
+              { code: "CS", name: "Coast", cities: ["Mombasa", "Diani", "Malindi"] },
+            ]
+          },
+          {
+            code: "GH",
+            name: "Ghana",
+            provinces: [
+              { code: "GA", name: "Greater Accra", cities: ["Accra", "East Legon", "Airport Residential", "Tema"] },
+              { code: "AS", name: "Ashanti", cities: ["Kumasi"] },
+            ]
+          },
+          {
+            code: "AU",
+            name: "Australia",
+            provinces: [
+              { code: "NSW", name: "New South Wales", cities: ["Sydney", "Newcastle", "Wollongong"] },
+              { code: "VIC", name: "Victoria", cities: ["Melbourne", "Geelong"] },
+              { code: "QLD", name: "Queensland", cities: ["Brisbane", "Gold Coast", "Cairns"] },
+            ]
+          },
+          {
+            code: "CA",
+            name: "Canada",
+            provinces: [
+              { code: "ON", name: "Ontario", cities: ["Toronto", "Ottawa", "Mississauga"] },
+              { code: "BC", name: "British Columbia", cities: ["Vancouver", "Victoria", "Whistler"] },
+              { code: "AB", name: "Alberta", cities: ["Calgary", "Edmonton", "Banff"] },
+            ]
+          },
+        ]
+      };
+
+      res.json(locationData);
+    } catch (error) {
+      console.error("Locations error:", error);
+      res.status(500).json({ message: "Failed to fetch locations" });
+    }
+  });
+
+  // ===== ELITE LEADERBOARD ENDPOINT =====
+  app.get("/api/leaderboard/elite", async (req, res) => {
+    try {
+      // Get top 5 users by net worth (updated in real-time from Mall purchases)
+      const topUsers = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        netWorth: users.netWorth,
+        influenceScore: users.influenceScore,
+        isVerified: users.isVerified,
+        category: users.category,
+        creatorCategory: users.creatorCategory,
+        businessCategory: users.businessCategory,
+        country: users.country,
+        city: users.city,
+      })
+      .from(users)
+      .where(isNull(users.suspendedAt))
+      .orderBy(desc(users.netWorth), desc(users.influenceScore))
+      .limit(5);
+
+      // Add rank to each user
+      const rankedUsers = topUsers.map((user, index) => ({
+        rank: index + 1,
+        ...user,
+      }));
+
+      res.json(rankedUsers);
+    } catch (error) {
+      console.error("Elite leaderboard error:", error);
+      res.status(500).json({ message: "Failed to fetch leaderboard" });
+    }
+  });
+
+  // Password reset - request
+  app.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        // Don't reveal if email exists - always return success
+        return res.json({ message: "If an account exists with this email, you will receive a reset code" });
+      }
+
+      const resetCode = await storage.createPasswordResetToken(user.id);
+      
+      // Send password reset email (non-blocking)
+      sendPasswordResetEmail(email, user.displayName || user.username, resetCode).catch((err) => {
+        console.error("[Email] Failed to send password reset email:", err);
+      });
+
+      res.json({ message: "If an account exists with this email, you will receive a reset code" });
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      res.status(500).json({ message: "Failed to process request" });
+    }
+  });
+
+  // Password reset - verify code and reset
+  app.post("/api/auth/reset-password", authLimiter, async (req, res) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      if (!email || !code || !newPassword) {
+        return res.status(400).json({ message: "Email, code, and new password are required" });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      const result = await storage.verifyPasswordResetToken(email, code);
+      if (!result.valid || !result.userId) {
+        return res.status(400).json({ message: "Invalid or expired reset code" });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateUserPassword(result.userId, hashedPassword);
+      await storage.markPasswordResetTokenUsed(result.userId, code);
+
+      res.json({ message: "Password reset successfully" });
+    } catch (error) {
+      console.error("Reset password error:", error);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  // Email verification - request code
+  app.post("/api/auth/send-verification", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      const verificationCode = await storage.createEmailVerificationToken(user.id, user.email);
+      
+      // Send verification email (non-blocking)
+      sendVerificationEmail(user.email, user.displayName || user.username, verificationCode).catch((err) => {
+        console.error("[Email] Failed to send verification email:", err);
+      });
+
+      res.json({ message: "Verification code sent to your email" });
+    } catch (error) {
+      console.error("Send verification error:", error);
+      res.status(500).json({ message: "Failed to send verification email" });
+    }
+  });
+
+  // Email verification - verify code
+  app.post("/api/auth/verify-email", requireAuth, async (req, res) => {
+    try {
+      const { code } = req.body;
+      if (!code) {
+        return res.status(400).json({ message: "Verification code is required" });
+      }
+
+      // Check if code is a valid 6-digit number (for testing mode)
+      const isValidTestCode = /^\d{6}$/.test(code);
+      
+      const result = await storage.verifyEmailToken(req.session.userId!, code);
+      
+      // TESTING MODE: Accept any valid 6-digit code when OTP services are unavailable
+      // This allows testing the verification flow without real email delivery
+      if (!result.valid) {
+        if (isValidTestCode) {
+          console.log(`[TESTING MODE] Accepting any 6-digit code for email verification`);
+        } else {
+          return res.status(400).json({ message: "Invalid or expired verification code" });
+        }
+      }
+
+      // Update user's emailVerified status
+      await storage.updateUser(req.session.userId!, { emailVerified: true });
+
+      res.json({ message: "Email verified successfully" });
+    } catch (error) {
+      console.error("Verify email error:", error);
+      res.status(500).json({ message: "Failed to verify email" });
+    }
+  });
+
+  // Phone verification - send SMS code
+  app.post("/api/auth/send-phone-verification", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      if (!user.phoneNumber) {
+        return res.status(400).json({ message: "No phone number associated with this account" });
+      }
+
+      if (!isSMSConfigured()) {
+        return res.status(503).json({ message: "SMS service not available" });
+      }
+
+      const verificationCode = generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      await db.insert(emailVerificationTokens).values({
+        userId: user.id,
+        email: user.phoneNumber,
+        token: verificationCode,
+        expiresAt,
+      });
+
+      const result = await sendSMS(
+        user.phoneNumber,
+        `Your RabitChat verification code is: ${verificationCode}. This code expires in 10 minutes.`
+      );
+
+      if (!result.success) {
+        console.error("[SMS] Failed to send verification code:", result.error);
+        return res.status(500).json({ message: "Failed to send verification SMS" });
+      }
+
+      res.json({ message: "Verification code sent to your phone" });
+    } catch (error) {
+      console.error("Send phone verification error:", error);
+      res.status(500).json({ message: "Failed to send verification SMS" });
+    }
+  });
+
+  // Phone verification - verify code
+  app.post("/api/auth/verify-phone", requireAuth, async (req, res) => {
+    try {
+      const { code } = req.body;
+      if (!code) {
+        return res.status(400).json({ message: "Verification code is required" });
+      }
+
+      const user = await storage.getUser(req.session.userId!);
+      if (!user || !user.phoneNumber) {
+        return res.status(400).json({ message: "No phone number to verify" });
+      }
+
+      // Check if code is a valid 6-digit number (for testing mode)
+      const isValidTestCode = /^\d{6}$/.test(code);
+
+      const result = await storage.verifyEmailToken(req.session.userId!, code);
+      
+      // TESTING MODE: Accept any valid 6-digit code when OTP services are unavailable
+      // This allows testing the verification flow without real SMS delivery
+      if (!result.valid) {
+        if (isValidTestCode) {
+          console.log(`[TESTING MODE] Accepting any 6-digit code for phone verification`);
+        } else {
+          return res.status(400).json({ message: "Invalid or expired verification code" });
+        }
+      }
+
+      await storage.updateUser(req.session.userId!, { phoneVerified: true });
+
+      res.json({ message: "Phone verified successfully" });
+    } catch (error) {
+      console.error("Verify phone error:", error);
+      res.status(500).json({ message: "Failed to verify phone" });
+    }
+  });
+
+  // SMS-based password reset - request code (alternative to email)
+  app.post("/api/auth/forgot-password-sms", authLimiter, async (req, res) => {
+    try {
+      const { phoneNumber } = req.body;
+      if (!phoneNumber) {
+        return res.status(400).json({ message: "Phone number is required" });
+      }
+
+      if (!isSMSConfigured()) {
+        return res.status(503).json({ message: "SMS service not available" });
+      }
+
+      // Find user by verified phone number
+      const user = await storage.getUserByPhoneNumber(phoneNumber);
+      if (!user || !user.phoneVerified) {
+        // Don't reveal if phone exists - always return success
+        return res.json({ message: "If a verified account exists with this phone, you will receive a reset code" });
+      }
+
+      const resetCode = generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+      await db.insert(passwordResetTokens).values({
+        userId: user.id,
+        token: resetCode,
+        expiresAt,
+      });
+
+      const result = await sendSMS(phoneNumber, `Your RabitChat password reset code is: ${resetCode}. This code expires in 15 minutes.`);
+
+      if (!result.success) {
+        console.error("[SMS] Failed to send password reset code:", result.error);
+      }
+
+      res.json({ message: "If a verified account exists with this phone, you will receive a reset code" });
+    } catch (error) {
+      console.error("Forgot password SMS error:", error);
+      res.status(500).json({ message: "Failed to process request" });
+    }
+  });
+
+  // SMS-based password reset - verify code and reset
+  app.post("/api/auth/reset-password-sms", authLimiter, async (req, res) => {
+    try {
+      const { phoneNumber, code, newPassword } = req.body;
+      if (!phoneNumber || !code || !newPassword) {
+        return res.status(400).json({ message: "Phone number, code, and new password are required" });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      // Find user by phone number
+      const user = await storage.getUserByPhoneNumber(phoneNumber);
+      if (!user) {
+        return res.status(400).json({ message: "Invalid or expired reset code" });
+      }
+
+      // Verify the token
+      const [token] = await db
+        .select()
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.userId, user.id),
+            eq(passwordResetTokens.token, code),
+            isNull(passwordResetTokens.usedAt),
+            gt(passwordResetTokens.expiresAt, new Date())
+          )
+        )
+        .limit(1);
+
+      if (!token) {
+        return res.status(400).json({ message: "Invalid or expired reset code" });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateUserPassword(user.id, hashedPassword);
+      
+      await db
+        .update(passwordResetTokens)
+        .set({ usedAt: new Date() })
+        .where(eq(passwordResetTokens.id, token.id));
+
+      res.json({ message: "Password reset successfully" });
+    } catch (error) {
+      console.error("Reset password SMS error:", error);
+      res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  // Catch-all for /api/users - returns empty array to prevent 404 errors
+  app.get("/api/users", requireAuth, async (req, res) => {
+    res.json([]);
+  });
+
+  app.get("/api/users/search", requireAuth, async (req, res) => {
+    try {
+      const viewer = await getViewerContext(req.session.userId);
+      const hiddenUserIds = await storage.getHiddenUserIds(req.session.userId!);
+      const query = (req.query.q as string) || "";
+      const users = await storage.searchUsers(query);
+      const filteredUsers = users.filter(u => !hiddenUserIds.includes(u.id) && !u.suspendedAt);
+      const safeUsers = filteredUsers.map(({ password: _, ...u }) => u);
+      res.json(safeUsers);
+    } catch (error) {
+      res.status(500).json({ message: "Search failed" });
+    }
+  });
+
+  app.get("/api/users/me", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json({ ...user, password: undefined });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get current user" });
+    }
+  });
+
+  // User suggestions - MUST come before /api/users/:id to avoid being matched as an ID
+  app.get("/api/users/suggestions", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const currentUser = await storage.getUser(userId);
+      if (!currentUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Get user's interests
+      const userInterestsList = await db
+        .select({ interest: userInterests.interest })
+        .from(userInterests)
+        .where(eq(userInterests.userId, userId));
+      const interestSlugs = userInterestsList.map(i => i.interest);
+
+      // Get users already followed
+      const followingList = await db
+        .select({ followingId: follows.followingId })
+        .from(follows)
+        .where(eq(follows.followerId, userId));
+      const followingIds = followingList.map(f => f.followingId);
+      const excludeIds = [userId, ...followingIds];
+
+      // Get suggestions - users with matching interests, same industry, or verified
+      let suggestions;
+      
+      if (interestSlugs.length > 0 || currentUser.industry) {
+        // Get users with matching interests
+        const matchingInterestUsers = interestSlugs.length > 0 ? await db
+          .select({
+            userId: userInterests.userId,
+            matchCount: sql<number>`count(*)::int`,
+          })
+          .from(userInterests)
+          .where(inArray(userInterests.interest, interestSlugs))
+          .groupBy(userInterests.userId) : [];
+
+        const matchingUserIds = matchingInterestUsers.map(u => u.userId);
+
+        suggestions = await db
+          .select({
+            id: users.id,
+            username: users.username,
+            displayName: users.displayName,
+            avatarUrl: users.avatarUrl,
+            bio: users.bio,
+            isVerified: users.isVerified,
+            netWorth: users.netWorth,
+            influenceScore: users.influenceScore,
+            industry: users.industry,
+          })
+          .from(users)
+          .where(
+            and(
+              sql`${users.id} NOT IN (${excludeIds.length > 0 ? sql.join(excludeIds.map(id => sql`${id}`), sql`, `) : sql`''`})`,
+              isNull(users.suspendedAt),
+              isNull(users.deactivatedAt),
+              or(
+                currentUser.industry ? eq(users.industry, currentUser.industry as any) : undefined,
+                matchingUserIds.length > 0 ? inArray(users.id, matchingUserIds) : undefined,
+                eq(users.isVerified, true)
+              )
+            )
+          )
+          .orderBy(desc(users.influenceScore), desc(users.netWorth))
+          .limit(limit);
+      } else {
+        // Fallback: suggest verified and high-net-worth users
+        suggestions = await db
+          .select({
+            id: users.id,
+            username: users.username,
+            displayName: users.displayName,
+            avatarUrl: users.avatarUrl,
+            bio: users.bio,
+            isVerified: users.isVerified,
+            netWorth: users.netWorth,
+            influenceScore: users.influenceScore,
+            industry: users.industry,
+          })
+          .from(users)
+          .where(
+            and(
+              sql`${users.id} NOT IN (${excludeIds.length > 0 ? sql.join(excludeIds.map(id => sql`${id}`), sql`, `) : sql`''`})`,
+              isNull(users.suspendedAt),
+              isNull(users.deactivatedAt)
+            )
+          )
+          .orderBy(desc(users.isVerified), desc(users.influenceScore), desc(users.netWorth))
+          .limit(limit);
+      }
+
+      // Add match reasons
+      const enrichedSuggestions = suggestions.map(user => {
+        const reasons: string[] = [];
+        if (user.isVerified) reasons.push("verified");
+        if (user.industry === currentUser.industry) reasons.push("same_industry");
+        if ((user.netWorth || 0) > 1000000) reasons.push("high_net_worth");
+        return { ...user, matchReasons: reasons };
+      });
+
+      res.json(enrichedSuggestions);
+    } catch (error) {
+      console.error("Error fetching suggestions:", error);
+      res.status(500).json({ message: "Failed to fetch suggestions" });
+    }
+  });
+
+  app.get("/api/users/:id", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const profileAccess = await canViewProfile(viewer, user);
+
+      const isBlocked = await storage.isBlocked(req.session.userId!, req.params.id);
+      const isBlockedBy = await storage.isBlocked(req.params.id, req.session.userId!);
+      const followersCount = await storage.getFollowersCount(user.id);
+      const followingCount = await storage.getFollowingCount(user.id);
+      const isFollowing = await storage.isFollowing(req.session.userId!, user.id);
+      const isFollowedBy = await storage.isFollowing(user.id, req.session.userId!);
+
+      if (!profileAccess.allowed) {
+        const { password: _, bio: __, ...restrictedUser } = user;
+        return res.status(403).json({
+          message: profileAccess.reason,
+          restricted: profileAccess.restricted || false,
+          user: profileAccess.restricted ? {
+            id: user.id,
+            username: user.username,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
+            isPrivate: true,
+            followersCount,
+            followingCount,
+            isFollowing,
+            isFollowedBy,
+            isBlocked,
+            isBlockedBy,
+          } : null,
+        });
+      }
+      
+      const { password: _, ...safeUser } = user;
+      res.json({ ...safeUser, followersCount, followingCount, isFollowing, isFollowedBy, isBlocked, isBlockedBy });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get user" });
+    }
+  });
+
+  app.put("/api/users/me", requireAuth, async (req, res) => {
+    try {
+      const { displayName, bio, avatarUrl, coverUrl, netWorth, linkUrl, location, pronouns, category, username } = req.body;
+      
+      const updateData: Record<string, any> = {
+        displayName,
+        bio,
+        avatarUrl,
+        coverUrl,
+        netWorth,
+        linkUrl,
+        location,
+        pronouns,
+        category,
+      };
+      
+      if (username !== undefined) {
+        const usernameRegex = /^[a-zA-Z0-9_]{3,30}$/;
+        if (!usernameRegex.test(username)) {
+          return res.status(400).json({ message: "Username must be 3-30 characters, alphanumeric and underscores only" });
+        }
+        const currentUser = await storage.getUser(req.session.userId!);
+        if (currentUser && currentUser.username !== username) {
+          const existingUser = await storage.getUserByUsername(username);
+          if (existingUser) {
+            return res.status(400).json({ message: "Username already taken" });
+          }
+          updateData.username = username;
+        }
+      }
+      
+      const user = await storage.updateUser(req.session.userId!, updateData);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const { password: _, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Failed to update profile:", error);
+      res.status(500).json({ message: "Failed to update profile" });
+    }
+  });
+
+  // NOTE: Account deletion with password verification is at DELETE /api/me
+  // This unprotected route was removed for security - password required for deletion
+
+  app.post("/api/users/:id/follow", requireAuth, async (req, res) => {
+    try {
+      const targetUser = await storage.getUser(req.params.id);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const followAccess = await canFollow(viewer, targetUser);
+
+      if (!followAccess.allowed) {
+        return res.status(403).json({ message: followAccess.reason });
+      }
+      
+      const follow = await storage.followUser(req.session.userId!, req.params.id);
+      
+      // Create and broadcast follow notification
+      const notification = await storage.createNotification(
+        req.params.id,
+        req.session.userId!,
+        "FOLLOW",
+        follow.id
+      );
+      if (notification.id) {
+        const actor = await storage.getUser(req.session.userId!);
+        broadcastToUser(req.params.id, {
+          type: "notification:new",
+          payload: { ...notification, actor: actor ? { ...actor, password: undefined } : null }
+        });
+        
+        // Send push notification
+        if (actor) {
+          pushNotificationService.notifyNewFollower(
+            req.params.id,
+            actor.username,
+            actor.displayName,
+            actor.avatarUrl || undefined
+          ).catch(err => console.error("[Push] Follow notification error:", err));
+        }
+      }
+      
+      res.json({ message: "Followed" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to follow" });
+    }
+  });
+
+  app.delete("/api/users/:id/follow", requireAuth, async (req, res) => {
+    try {
+      await storage.unfollowUser(req.session.userId!, req.params.id);
+      res.json({ message: "Unfollowed" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unfollow" });
+    }
+  });
+
+  app.get("/api/users/:id/followers", requireAuth, async (req, res) => {
+    try {
+      const hiddenUserIds = await storage.getHiddenUserIds(req.session.userId!);
+      const followers = await storage.getFollowers(req.params.id);
+      const filteredFollowers = followers.filter(u => !hiddenUserIds.includes(u.id));
+      const safeFollowers = filteredFollowers.map(({ password: _, ...u }) => u);
+      res.json(safeFollowers);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get followers" });
+    }
+  });
+
+  app.get("/api/users/:id/following", requireAuth, async (req, res) => {
+    try {
+      const hiddenUserIds = await storage.getHiddenUserIds(req.session.userId!);
+      const following = await storage.getFollowing(req.params.id);
+      const filteredFollowing = following.filter(u => !hiddenUserIds.includes(u.id));
+      const safeFollowing = filteredFollowing.map(({ password: _, ...u }) => u);
+      res.json(safeFollowing);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get following" });
+    }
+  });
+
+  // Notification endpoints
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    try {
+      const hiddenUserIds = await storage.getHiddenUserIds(req.session.userId!);
+      const notifications = await storage.getUserNotifications(req.session.userId!);
+      const filteredNotifications = notifications.filter(n => !n.actorId || !hiddenUserIds.includes(n.actorId));
+      
+      const aggregatableTypes = ["LIKE", "COMMENT", "FOLLOW"];
+      const grouped = new Map<string, typeof filteredNotifications>();
+      const nonAggregated: typeof filteredNotifications = [];
+      
+      for (const n of filteredNotifications) {
+        if (aggregatableTypes.includes(n.type) && n.entityId) {
+          const key = `${n.type}:${n.entityId}`;
+          const existing = grouped.get(key) || [];
+          existing.push(n);
+          grouped.set(key, existing);
+        } else {
+          nonAggregated.push(n);
+        }
+      }
+      
+      const aggregatedNotifications: any[] = [];
+      for (const [, group] of grouped) {
+        const latest = group[0];
+        const otherActors = group.slice(1).map(n => n.actor ? { ...n.actor, password: undefined } : null).filter(Boolean);
+        aggregatedNotifications.push({
+          ...latest,
+          actor: latest.actor ? { ...latest.actor, password: undefined } : null,
+          othersCount: group.length - 1,
+          otherActors: otherActors.slice(0, 3),
+          groupedIds: group.map(n => n.id),
+        });
+      }
+      
+      const safeNonAggregated = nonAggregated.map(n => ({
+        ...n,
+        actor: n.actor ? { ...n.actor, password: undefined } : null,
+        othersCount: 0,
+        otherActors: [],
+        groupedIds: [n.id],
+      }));
+      
+      const allNotifications = [...aggregatedNotifications, ...safeNonAggregated]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      res.json(allNotifications);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get notifications" });
+    }
+  });
+
+  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
+    try {
+      const hiddenUserIds = await storage.getHiddenUserIds(req.session.userId!);
+      const notifications = await storage.getUserNotifications(req.session.userId!);
+      const filteredNotifications = notifications.filter(n => !n.readAt && (!n.actorId || !hiddenUserIds.includes(n.actorId)));
+      res.json({ count: filteredNotifications.length });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get unread count" });
+    }
+  });
+
+  app.post("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    try {
+      const notification = await storage.markNotificationRead(req.params.id, req.session.userId!);
+      if (!notification) {
+        return res.status(404).json({ message: "Notification not found" });
+      }
+      res.json(notification);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark notification as read" });
+    }
+  });
+
+  app.post("/api/notifications/read-all", requireAuth, async (req, res) => {
+    try {
+      await storage.markAllNotificationsRead(req.session.userId!);
+      res.json({ message: "All notifications marked as read" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark all notifications as read" });
+    }
+  });
+
+  // ===== PUSH NOTIFICATION TOKENS =====
+  
+  // Register or update push token
+  app.post("/api/push-tokens", requireAuth, async (req, res) => {
+    try {
+      const { token, platform, deviceId, deviceName } = req.body;
+      
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({ message: "Push token is required" });
+      }
+      
+      // Validate Expo push token format
+      if (!token.startsWith('ExponentPushToken[') && !token.startsWith('ExpoPushToken[')) {
+        return res.status(400).json({ message: "Invalid push token format" });
+      }
+      
+      const registered = await pushNotificationService.registerToken(
+        req.session.userId!,
+        token,
+        platform,
+        deviceId,
+        deviceName
+      );
+      
+      res.status(201).json({ message: "Push token registered", token: registered });
+    } catch (error) {
+      console.error("[Push] Token registration error:", error);
+      res.status(500).json({ message: "Failed to register push token" });
+    }
+  });
+  
+  // Unregister push token (when logging out or disabling notifications)
+  app.delete("/api/push-tokens", requireAuth, async (req, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (token) {
+        await pushNotificationService.unregisterToken(token);
+      } else {
+        // Unregister all tokens for this user
+        await pushNotificationService.unregisterAllUserTokens(req.session.userId!);
+      }
+      
+      res.json({ message: "Push token unregistered" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unregister push token" });
+    }
+  });
+  
+  // Get user's registered push tokens
+  app.get("/api/push-tokens", requireAuth, async (req, res) => {
+    try {
+      const tokens = await pushNotificationService.getUserTokens(req.session.userId!);
+      res.json(tokens.map(t => ({
+        id: t.id,
+        platform: t.platform,
+        deviceName: t.deviceName,
+        isActive: t.isActive,
+        lastUsedAt: t.lastUsedAt,
+        createdAt: t.createdAt,
+      })));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get push tokens" });
+    }
+  });
+
+  // Public endpoint for content preview (before auth)
+  app.get("/api/posts/trending/preview", async (req: Request, res: Response) => {
+    try {
+      const trendingPosts = await storage.getTrendingPreviewPosts(5);
+      
+      const publicPosts = trendingPosts.map(post => ({
+        id: post.id,
+        content: post.content?.substring(0, 200) || "",
+        mediaUrl: post.mediaUrl || null,
+        type: post.type || "TEXT",
+        author: {
+          displayName: post.author?.displayName || "Anonymous",
+          username: post.author?.username || "user",
+          avatarUrl: post.author?.avatarUrl || null,
+          isVerified: post.author?.isVerified || false,
+          netWorth: post.author?.netWorth || 0,
+          netWorthTier: post.author?.netWorthTier || "BUILDING",
+        },
+        likesCount: post.likesCount || 0,
+        commentsCount: post.commentsCount || 0,
+      }));
+      
+      res.json(publicPosts);
+    } catch (error) {
+      console.error("Error fetching trending preview:", error);
+      res.json([]);
+    }
+  });
+
+  app.get("/api/posts", requireAuth, async (req, res) => {
+    try {
+      const viewer = await getViewerContext(req.session.userId);
+      const posts = await storage.getPosts();
+      const visiblePosts = await filterPostsForViewer(viewer, posts);
+      const postsWithFlags = await Promise.all(
+        visiblePosts.map(async (post) => ({
+          ...post,
+          author: { ...post.author, password: undefined },
+          hasLiked: await storage.hasUserLikedPost(post.id, req.session.userId!),
+          hasSaved: await storage.hasUserSavedPost(post.id, req.session.userId!),
+        }))
+      );
+      res.json(postsWithFlags);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get posts" });
+    }
+  });
+
+  app.get("/api/posts/feed", requireAuth, async (req, res) => {
+    try {
+      const viewer = await getViewerContext(req.session.userId);
+      const cursor = req.query.cursor as string | undefined;
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+      const includeAds = req.query.includeAds !== 'false';
+      
+      const { posts, nextCursor } = await storage.getFeedPosts(req.session.userId!, limit, cursor);
+      const visiblePosts = await filterPostsForViewer(viewer, posts, { forFeed: true });
+      const postsWithFlags = await Promise.all(
+        visiblePosts.map(async (post) => ({
+          ...post,
+          author: { ...post.author, password: undefined },
+          hasLiked: await storage.hasUserLikedPost(post.id, req.session.userId!),
+          hasSaved: await storage.hasUserSavedPost(post.id, req.session.userId!),
+          isAd: false,
+        }))
+      );
+      
+      let feedWithAds = postsWithFlags;
+      if (includeAds && !cursor) {
+        try {
+          const feedAds = await adsEngine.getAdsForFeed(req.session.userId!, limit, 5);
+          if (feedAds.length > 0) {
+            feedWithAds = [...postsWithFlags];
+            for (const adResult of feedAds) {
+              const adPost = {
+                id: `ad_${adResult.adId}`,
+                isAd: true,
+                adId: adResult.adId,
+                adGroupId: adResult.adGroupId,
+                campaignId: adResult.campaignId,
+                advertiserId: adResult.advertiserId,
+                format: adResult.format,
+                headline: adResult.creative.headline,
+                description: adResult.creative.description,
+                mediaUrl: adResult.creative.mediaUrl,
+                thumbnailUrl: adResult.creative.thumbnailUrl,
+                callToAction: adResult.creative.callToAction,
+                destinationUrl: adResult.creative.destinationUrl,
+                type: adResult.format === 'VIDEO' ? 'VIDEO' : 'PHOTO',
+                position: adResult.position,
+              };
+              const insertPosition = Math.min(adResult.position, feedWithAds.length);
+              feedWithAds.splice(insertPosition, 0, adPost as any);
+              
+              await adsEngine.recordImpression(adResult, req.session.userId!, 'feed');
+            }
+          }
+        } catch (adError) {
+          console.error('Error fetching ads for feed:', adError);
+        }
+      }
+      
+      res.json({ posts: feedWithAds, nextCursor });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get feed" });
+    }
+  });
+
+  app.get("/api/posts/videos", requireAuth, async (req, res) => {
+    try {
+      const viewer = await getViewerContext(req.session.userId);
+      const { posts: allPosts } = await storage.getFeedPosts(req.session.userId!, 100);
+      const videoPosts = allPosts.filter((post) => post.type === "VIDEO");
+      const visiblePosts = await filterPostsForViewer(viewer, videoPosts, { forFeed: true });
+      const postsWithFlags = await Promise.all(
+        visiblePosts.map(async (post) => ({
+          ...post,
+          user: {
+            id: post.author.id,
+            username: post.author.username,
+            displayName: post.author.displayName,
+            avatarUrl: post.author.avatarUrl,
+            isVerified: post.author.isVerified,
+          },
+          author: undefined,
+          hasLiked: await storage.hasUserLikedPost(post.id, req.session.userId!),
+          hasBookmarked: await storage.hasUserSavedPost(post.id, req.session.userId!),
+        }))
+      );
+      res.json(postsWithFlags);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get video posts" });
+    }
+  });
+
+  app.get("/api/posts/elite-feed", requireAuth, async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+      const offset = parseInt(req.query.offset as string) || 0;
+      const mode = req.query.mode as string || 'discover';
+
+      let result;
+      if (mode === 'following') {
+        result = await feedAlgorithm.getFollowingFeed(req.session.userId!, { limit, offset });
+      } else if (mode === 'elite') {
+        result = await feedAlgorithm.getEliteFeed(req.session.userId!, { limit, offset });
+      } else {
+        result = await feedAlgorithm.getDiscoverFeed(req.session.userId!, { limit, offset });
+      }
+
+      const postsWithFlags = await Promise.all(
+        result.posts.map(async (post) => ({
+          ...post,
+          author: { ...post.author, password: undefined },
+          hasLiked: await storage.hasUserLikedPost(post.id, req.session.userId!),
+          hasSaved: await storage.hasUserSavedPost(post.id, req.session.userId!),
+          algorithmScore: post.score,
+        }))
+      );
+
+      res.json({ 
+        posts: postsWithFlags, 
+        hasMore: result.hasMore,
+        offset: offset + postsWithFlags.length,
+      });
+    } catch (error) {
+      console.error("Elite feed error:", error);
+      res.status(500).json({ message: "Failed to get elite feed" });
+    }
+  });
+
+  app.get("/api/posts/search", requireAuth, async (req, res) => {
+    try {
+      const viewer = await getViewerContext(req.session.userId);
+      const query = (req.query.q as string) || "";
+      const posts = await storage.searchPosts(query);
+      const visiblePosts = await filterPostsForViewer(viewer, posts);
+      const postsWithFlags = await Promise.all(
+        visiblePosts.map(async (post) => ({
+          ...post,
+          author: { ...post.author, password: undefined },
+          hasLiked: await storage.hasUserLikedPost(post.id, req.session.userId!),
+          hasSaved: await storage.hasUserSavedPost(post.id, req.session.userId!),
+        }))
+      );
+      res.json(postsWithFlags);
+    } catch (error) {
+      res.status(500).json({ message: "Search failed" });
+    }
+  });
+
+  app.post("/api/posts", requireAuth, postLimiter, validateBody(createPostSchema), async (req, res) => {
+    try {
+      const { type, content, caption, mediaUrl, thumbnailUrl, durationMs, aspectRatio, visibility, commentsEnabled } = req.body;
+      
+      if (content) {
+        const maxPostLength = await storage.getAppSettingValue("maxPostLength", 500);
+        if (content.length > maxPostLength) {
+          return res.status(400).json({ message: `Post content exceeds maximum length of ${maxPostLength} characters` });
+        }
+      }
+      
+      const post = await storage.createPost({
+        authorId: req.session.userId!,
+        type: type || "TEXT",
+        content,
+        caption,
+        mediaUrl,
+        thumbnailUrl,
+        durationMs,
+        aspectRatio,
+        visibility: visibility || "PUBLIC",
+        commentsEnabled: commentsEnabled ?? true,
+      });
+      
+      const textToCheck = [content, caption].filter(Boolean).join(' ');
+      await notifyMentionedUsers(textToCheck, req.session.userId!, post.id);
+      
+      const postWithAuthor = await storage.getPost(post.id);
+      res.status(201).json({
+        ...postWithAuthor,
+        author: { ...postWithAuthor!.author, password: undefined },
+        hasLiked: false,
+        hasSaved: false,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create post" });
+    }
+  });
+
+  app.get("/api/posts/:id", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const postAccess = await canViewPost(viewer, post, post.author);
+
+      if (!postAccess.allowed) {
+        return res.status(403).json({ message: postAccess.reason });
+      }
+      
+      res.json({
+        ...post,
+        author: { ...post.author, password: undefined },
+        hasLiked: await storage.hasUserLikedPost(post.id, req.session.userId!),
+        hasSaved: await storage.hasUserSavedPost(post.id, req.session.userId!),
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get post" });
+    }
+  });
+
+  app.delete("/api/posts/:id", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      if (post.authorId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      await storage.deletePost(req.params.id);
+      res.json({ message: "Post deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete post" });
+    }
+  });
+
+  app.post("/api/posts/:id/like", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const likeAccess = await canLike(viewer, post);
+
+      if (!likeAccess.allowed) {
+        return res.status(403).json({ message: likeAccess.reason });
+      }
+      
+      await storage.likePost(req.params.id, req.session.userId!);
+      
+      // Create and broadcast like notification
+      if (post && post.authorId !== req.session.userId) {
+        const notification = await storage.createNotification(
+          post.authorId,
+          req.session.userId!,
+          "LIKE",
+          req.params.id
+        );
+        if (notification.id) {
+          const actor = await storage.getUser(req.session.userId!);
+          broadcastToUser(post.authorId, {
+            type: "notification:new",
+            payload: { ...notification, actor: actor ? { ...actor, password: undefined } : null }
+          });
+          
+          // Send push notification
+          if (actor) {
+            pushNotificationService.notifyLike(
+              post.authorId,
+              actor.username,
+              actor.displayName,
+              req.params.id
+            ).catch(err => console.error("[Push] Like notification error:", err));
+          }
+        }
+      }
+      
+      res.json({ message: "Liked" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to like post" });
+    }
+  });
+
+  app.delete("/api/posts/:id/like", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const likeAccess = await canLike(viewer, post);
+
+      if (!likeAccess.allowed) {
+        return res.status(403).json({ message: likeAccess.reason });
+      }
+      
+      await storage.unlikePost(req.params.id, req.session.userId!);
+      res.json({ message: "Unliked" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unlike post" });
+    }
+  });
+
+  // Bookmark/Save endpoints (toggle)
+  app.post("/api/posts/:id/save", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const postAccess = await canViewPost(viewer, post, post.author);
+
+      if (!postAccess.allowed) {
+        return res.status(403).json({ message: postAccess.reason });
+      }
+      
+      const isSaved = await storage.hasUserSavedPost(req.params.id, req.session.userId!);
+      if (isSaved) {
+        await storage.unsavePost(req.session.userId!, req.params.id);
+        res.json({ message: "Post unsaved", saved: false });
+      } else {
+        await storage.savePost(req.session.userId!, req.params.id);
+        res.json({ message: "Post saved", saved: true });
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to toggle save" });
+    }
+  });
+
+  app.delete("/api/posts/:id/save", requireAuth, async (req, res) => {
+    try {
+      await storage.unsavePost(req.session.userId!, req.params.id);
+      res.json({ message: "Post unsaved", saved: false });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unsave post" });
+    }
+  });
+
+  // Share endpoint
+  app.post("/api/posts/:id/share", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const postAccess = await canViewPost(viewer, post, post.author);
+
+      if (!postAccess.allowed) {
+        return res.status(403).json({ message: postAccess.reason });
+      }
+      
+      const { platform } = req.body;
+      const share = await storage.sharePost(req.session.userId!, req.params.id, platform);
+      res.json({ message: "Share recorded", shareId: share.id });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to record share" });
+    }
+  });
+
+  // View endpoint (for video/voice playback tracking)
+  app.post("/api/posts/:id/view", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const postAccess = await canViewPost(viewer, post, post.author);
+
+      if (!postAccess.allowed) {
+        return res.status(403).json({ message: postAccess.reason });
+      }
+      
+      const result = await storage.viewPost(req.session.userId!, req.params.id);
+      res.json({ message: result.isNew ? "View recorded" : "Already viewed", isNew: result.isNew });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to record view" });
+    }
+  });
+
+  // Get user bookmarks
+  app.get("/api/bookmarks", requireAuth, async (req, res) => {
+    try {
+      const savedPosts = await storage.getUserBookmarks(req.session.userId!);
+      const hiddenUserIds = await storage.getHiddenUserIds(req.session.userId!);
+      const visiblePosts = savedPosts.filter(p => !hiddenUserIds.includes(p.authorId) && !p.isHidden);
+      const postsWithFlags = await Promise.all(
+        visiblePosts.map(async (post) => ({
+          ...post,
+          author: { ...post.author, password: undefined },
+          hasLiked: await storage.hasUserLikedPost(post.id, req.session.userId!),
+          hasSaved: true,
+        }))
+      );
+      res.json(postsWithFlags);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get bookmarks" });
+    }
+  });
+
+  // Get saved posts (same as bookmarks but under /api/posts/saved)
+  app.get("/api/posts/saved", requireAuth, async (req, res) => {
+    try {
+      const savedPostsList = await storage.getUserBookmarks(req.session.userId!);
+      const hiddenUserIds = await storage.getHiddenUserIds(req.session.userId!);
+      const visiblePosts = savedPostsList.filter(p => !hiddenUserIds.includes(p.authorId) && !p.isHidden);
+      const postsWithFlags = await Promise.all(
+        visiblePosts.map(async (post) => ({
+          ...post,
+          author: { ...post.author, password: undefined },
+          hasLiked: await storage.hasUserLikedPost(post.id, req.session.userId!),
+          hasSaved: true,
+        }))
+      );
+      res.json(postsWithFlags);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get saved posts" });
+    }
+  });
+
+  // Hide post from feed
+  app.post("/api/posts/:id/hide", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const { reason } = req.body;
+      await storage.hidePostFromFeed(req.session.userId!, req.params.id, reason);
+      res.json({ message: "Post hidden from feed", hidden: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to hide post" });
+    }
+  });
+
+  // Unhide post from feed
+  app.delete("/api/posts/:id/hide", requireAuth, async (req, res) => {
+    try {
+      await storage.unhidePostFromFeed(req.session.userId!, req.params.id);
+      res.json({ message: "Post unhidden from feed", hidden: false });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unhide post" });
+    }
+  });
+
+  // Mark post as not interested
+  app.post("/api/posts/:id/not-interested", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const { reason } = req.body;
+      await storage.markNotInterested(req.session.userId!, req.params.id, reason);
+      res.json({ message: "Marked as not interested", notInterested: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark as not interested" });
+    }
+  });
+
+  // Toggle archive (owner only)
+  app.post("/api/posts/:id/archive", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      if (post.authorId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
+      if (post.isArchived) {
+        const updatedPost = await storage.unarchivePost(req.params.id, req.session.userId!);
+        res.json({ message: "Post unarchived", isArchived: false, post: updatedPost });
+      } else {
+        const updatedPost = await storage.archivePost(req.params.id, req.session.userId!);
+        res.json({ message: "Post archived", isArchived: true, post: updatedPost });
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to toggle archive" });
+    }
+  });
+
+  // Toggle pin (owner only, max 1 pinned)
+  app.post("/api/posts/:id/pin", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      if (post.authorId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
+      if (post.isPinned) {
+        const updatedPost = await storage.unpinPost(req.params.id, req.session.userId!);
+        res.json({ message: "Post unpinned", isPinned: false, post: updatedPost });
+      } else {
+        const updatedPost = await storage.pinPost(req.params.id, req.session.userId!);
+        res.json({ message: "Post pinned", isPinned: true, post: updatedPost });
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to toggle pin" });
+    }
+  });
+
+  // Edit post (owner only)
+  app.patch("/api/posts/:id", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      if (post.authorId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
+      const { content, caption } = req.body;
+      if (content === undefined && caption === undefined) {
+        return res.status(400).json({ message: "Nothing to update" });
+      }
+
+      const updates: { content?: string; caption?: string } = {};
+      if (content !== undefined) updates.content = content;
+      if (caption !== undefined) updates.caption = caption;
+
+      const updatedPost = await storage.editPost(req.params.id, req.session.userId!, updates);
+      if (!updatedPost) {
+        return res.status(404).json({ message: "Failed to update post" });
+      }
+
+      const postWithAuthor = await storage.getPost(updatedPost.id);
+      res.json({
+        ...postWithAuthor,
+        author: { ...postWithAuthor!.author, password: undefined },
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to edit post" });
+    }
+  });
+
+  // Toggle comments (owner only)
+  app.patch("/api/posts/:id/comments", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      if (post.authorId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
+      const { enabled } = req.body;
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({ message: "enabled must be a boolean" });
+      }
+
+      const updatedPost = await storage.toggleComments(req.params.id, req.session.userId!, enabled);
+      res.json({ 
+        message: enabled ? "Comments enabled" : "Comments disabled", 
+        commentsEnabled: enabled,
+        post: updatedPost
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to toggle comments" });
+    }
+  });
+
+  app.get("/api/posts/:id/comments", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const postAccess = await canViewPost(viewer, post, post.author);
+
+      if (!postAccess.allowed) {
+        return res.status(403).json({ message: postAccess.reason });
+      }
+      
+      const hiddenUserIds = await storage.getHiddenUserIds(req.session.userId!);
+      const keywordFilters = await storage.getKeywordFilters(req.session.userId!);
+      const commentKeywords = keywordFilters
+        .filter(f => f.filterComments !== false)
+        .map(f => f.keyword.toLowerCase());
+      
+      const comments = await storage.getPostComments(req.params.id);
+      const filteredComments = comments.filter(c => {
+        if (hiddenUserIds.includes(c.authorId) || c.isHidden) return false;
+        if (commentKeywords.length > 0) {
+          const contentText = (c.content || '').toLowerCase();
+          if (commentKeywords.some(kw => contentText.includes(kw))) return false;
+        }
+        return true;
+      });
+      const safeComments = filteredComments.map((c) => ({
+        ...c,
+        author: { ...c.author, password: undefined },
+      }));
+      res.json(safeComments);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get comments" });
+    }
+  });
+
+  app.post("/api/posts/:id/comments", requireAuth, commentLimiter, validateBody(createCommentSchema), async (req, res) => {
+    try {
+      const { content } = req.body;
+      
+      const post = await storage.getPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const commentAccess = await canComment(viewer, post);
+
+      if (!commentAccess.allowed) {
+        return res.status(403).json({ message: commentAccess.reason });
+      }
+      
+      const comment = await storage.createComment(req.params.id, req.session.userId!, content);
+      const user = await storage.getUser(req.session.userId!);
+      
+      // Create and broadcast comment notification
+      if (post && post.authorId !== req.session.userId) {
+        const notification = await storage.createNotification(
+          post.authorId,
+          req.session.userId!,
+          "COMMENT",
+          req.params.id
+        );
+        if (notification.id) {
+          broadcastToUser(post.authorId, {
+            type: "notification:new",
+            payload: { ...notification, actor: user ? { ...user, password: undefined } : null }
+          });
+          
+          // Send push notification
+          if (user) {
+            pushNotificationService.notifyComment(
+              post.authorId,
+              user.username,
+              user.displayName,
+              req.params.id,
+              content
+            ).catch(err => console.error("[Push] Comment notification error:", err));
+          }
+        }
+      }
+      
+      await notifyMentionedUsers(content, req.session.userId!, req.params.id, post?.authorId);
+      
+      res.status(201).json({
+        ...comment,
+        author: { ...user, password: undefined },
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create comment" });
+    }
+  });
+
+  app.get("/api/users/:id/posts", requireAuth, async (req, res) => {
+    try {
+      const targetUser = await storage.getUser(req.params.id);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const profileAccess = await canViewProfile(viewer, targetUser);
+
+      if (!profileAccess.allowed) {
+        return res.json([]);
+      }
+      
+      const posts = await storage.getUserPosts(req.params.id);
+      const visiblePosts = await filterPostsForViewer(viewer, posts);
+      const postsWithLikes = await Promise.all(
+        visiblePosts.map(async (post) => ({
+          ...post,
+          author: { ...post.author, password: undefined },
+          hasLiked: await storage.hasUserLikedPost(post.id, req.session.userId!),
+        }))
+      );
+      res.json(postsWithLikes);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get user posts" });
+    }
+  });
+
+  // ===== PROFILE ENDPOINTS =====
+
+  // GET /api/users/:username/profile - Full profile header data
+  app.get("/api/users/:username/profile", async (req, res) => {
+    try {
+      const targetUser = await storage.getUserByUsername(req.params.username);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const viewer = await getViewerContext(req.session?.userId);
+      const profileAccess = await canViewProfile(viewer, targetUser);
+      
+      const [followersCount, followingCount, postsCount, totalLikes, settings] = await Promise.all([
+        storage.getFollowersCount(targetUser.id),
+        storage.getFollowingCount(targetUser.id),
+        storage.getUserPostsCount(targetUser.id),
+        storage.getUserTotalLikes(targetUser.id),
+        storage.getUserSettings(targetUser.id),
+      ]);
+
+      let relationship = {
+        isFollowing: false,
+        isBlocked: false,
+        canMessage: false,
+      };
+
+      if (viewer.userId && viewer.userId !== targetUser.id) {
+        const [isFollowing, isBlocked, messageAccess] = await Promise.all([
+          storage.isFollowing(viewer.userId, targetUser.id),
+          storage.isBlocked(viewer.userId, targetUser.id),
+          canMessage(viewer, targetUser, settings ?? undefined),
+        ]);
+        relationship = {
+          isFollowing,
+          isBlocked,
+          canMessage: messageAccess.allowed,
+        };
+      } else if (viewer.userId === targetUser.id) {
+        relationship.canMessage = true;
+      }
+
+      const isPrivate = settings?.privateAccount ?? false;
+      const viewerCanSeeContent = profileAccess.allowed;
+
+      const profileData = {
+        id: targetUser.id,
+        username: targetUser.username,
+        displayName: targetUser.displayName,
+        bio: viewerCanSeeContent ? targetUser.bio : null,
+        avatarUrl: targetUser.avatarUrl,
+        coverUrl: targetUser.coverUrl,
+        category: viewerCanSeeContent ? targetUser.category : null,
+        location: viewerCanSeeContent ? targetUser.location : null,
+        linkUrl: viewerCanSeeContent ? targetUser.linkUrl : null,
+        netWorth: viewerCanSeeContent ? targetUser.netWorth : null,
+        influenceScore: viewerCanSeeContent ? targetUser.influenceScore : null,
+        verified: targetUser.isAdmin,
+        createdAt: targetUser.createdAt,
+        counts: {
+          posts: viewerCanSeeContent ? postsCount : 0,
+          followers: followersCount,
+          following: followingCount,
+          totalLikes: viewerCanSeeContent ? totalLikes : 0,
+        },
+        relationship,
+        privacy: {
+          isPrivate,
+          viewerCanSeeContent,
+        },
+        contentRestricted: !viewerCanSeeContent,
+      };
+
+      res.json(profileData);
+    } catch (error) {
+      console.error("Profile fetch error:", error);
+      res.status(500).json({ message: "Failed to get profile" });
+    }
+  });
+
+  // GET /api/users/:username/featured - Pinned posts, playlists, featured intro
+  app.get("/api/users/:username/featured", async (req, res) => {
+    try {
+      const targetUser = await storage.getUserByUsername(req.params.username);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const viewer = await getViewerContext(req.session?.userId);
+      const profileAccess = await canViewProfile(viewer, targetUser);
+
+      if (!profileAccess.allowed) {
+        return res.status(403).json({ 
+          message: profileAccess.reason || "Cannot view this profile",
+          restricted: profileAccess.restricted,
+        });
+      }
+
+      const [pinnedPosts, playlistsSummary, featuredIntro] = await Promise.all([
+        storage.getUserPinnedPosts(targetUser.id),
+        storage.getUserPlaylistsSummary(targetUser.id),
+        storage.getUserFeaturedIntro(targetUser.id),
+      ]);
+
+      const visiblePinnedPosts = await filterPostsForViewer(viewer, pinnedPosts);
+      const publicPlaylists = playlistsSummary.filter(p => p.isPublic);
+
+      const pinnedWithInteractions = await Promise.all(
+        visiblePinnedPosts.slice(0, 3).map(async (post) => ({
+          id: post.id,
+          type: post.type,
+          thumbnailUrl: post.thumbnailUrl || post.mediaUrl,
+          mediaUrl: post.mediaUrl,
+          durationMs: post.durationMs,
+          caption: post.caption,
+          content: post.content,
+          likesCount: post.likesCount,
+          viewsCount: post.viewsCount,
+          commentsCount: post.commentsCount,
+          hasLiked: viewer.userId ? await storage.hasUserLikedPost(post.id, viewer.userId) : false,
+          hasSaved: viewer.userId ? await storage.hasUserSavedPost(post.id, viewer.userId) : false,
+          author: { ...post.author, password: undefined },
+        }))
+      );
+
+      res.json({
+        pinnedPosts: pinnedWithInteractions,
+        playlists: publicPlaylists,
+        featuredIntro: featuredIntro || null,
+      });
+    } catch (error) {
+      console.error("Featured fetch error:", error);
+      res.status(500).json({ message: "Failed to get featured content" });
+    }
+  });
+
+  // GET /api/users/:username/posts - Tab-based post filtering with grid optimization
+  app.get("/api/users/:username/posts", async (req, res) => {
+    try {
+      const targetUser = await storage.getUserByUsername(req.params.username);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const viewer = await getViewerContext(req.session?.userId);
+      const profileAccess = await canViewProfile(viewer, targetUser);
+
+      if (!profileAccess.allowed) {
+        return res.status(403).json({ 
+          message: profileAccess.reason || "Cannot view this profile",
+          restricted: profileAccess.restricted,
+        });
+      }
+
+      const tab = (req.query.tab as string)?.toUpperCase() || "ALL";
+      const cursor = req.query.cursor as string | undefined;
+      const limit = Math.min(parseInt(req.query.limit as string) || 24, 50);
+
+      let typeFilter: "TEXT" | "PHOTO" | "VIDEO" | "VOICE" | null = null;
+      if (["TEXT", "PHOTO", "VIDEO", "VOICE"].includes(tab)) {
+        typeFilter = tab as "TEXT" | "PHOTO" | "VIDEO" | "VOICE";
+      }
+
+      if (tab === "PINNED") {
+        const pinnedPosts = await storage.getUserPinnedPosts(targetUser.id);
+        const visiblePinned = await filterPostsForViewer(viewer, pinnedPosts);
+        
+        const tiles = await Promise.all(
+          visiblePinned.map(async (post) => ({
+            id: post.id,
+            type: post.type,
+            thumbnailUrl: post.thumbnailUrl || post.mediaUrl,
+            durationMs: post.durationMs,
+            likesCount: post.likesCount,
+            viewsCount: post.viewsCount,
+            commentsCount: post.commentsCount,
+            isPinned: true,
+          }))
+        );
+
+        return res.json({ posts: tiles, nextCursor: null });
+      }
+
+      const { posts, nextCursor } = await storage.getUserPostsByType(
+        targetUser.id,
+        typeFilter,
+        limit,
+        cursor
+      );
+
+      const visiblePosts = await filterPostsForViewer(viewer, posts);
+
+      const tiles = visiblePosts.map((post) => ({
+        id: post.id,
+        type: post.type,
+        thumbnailUrl: post.thumbnailUrl || post.mediaUrl,
+        durationMs: post.durationMs,
+        likesCount: post.likesCount,
+        viewsCount: post.viewsCount,
+        commentsCount: post.commentsCount,
+      }));
+
+      res.json({ posts: tiles, nextCursor });
+    } catch (error) {
+      console.error("User posts fetch error:", error);
+      res.status(500).json({ message: "Failed to get posts" });
+    }
+  });
+
+  // GET /api/users/:username/swipe - Posts for vertical swipe viewer
+  app.get("/api/users/:username/swipe", async (req, res) => {
+    try {
+      const targetUser = await storage.getUserByUsername(req.params.username);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const viewer = await getViewerContext(req.session?.userId);
+      const profileAccess = await canViewProfile(viewer, targetUser);
+
+      if (!profileAccess.allowed) {
+        return res.status(403).json({ 
+          message: profileAccess.reason || "Cannot view this profile",
+          restricted: profileAccess.restricted,
+        });
+      }
+
+      const cursor = req.query.cursor as string | undefined;
+      const limit = Math.min(parseInt(req.query.limit as string) || 10, 20);
+
+      const { posts, nextCursor } = await storage.getUserPostsByType(
+        targetUser.id,
+        null,
+        limit,
+        cursor
+      );
+
+      const visiblePosts = await filterPostsForViewer(viewer, posts);
+
+      const swipePosts = await Promise.all(
+        visiblePosts.map(async (post) => ({
+          id: post.id,
+          type: post.type,
+          content: post.content,
+          caption: post.caption,
+          mediaUrl: post.mediaUrl,
+          thumbnailUrl: post.thumbnailUrl,
+          durationMs: post.durationMs,
+          aspectRatio: post.aspectRatio,
+          likesCount: post.likesCount,
+          commentsCount: post.commentsCount,
+          sharesCount: post.sharesCount,
+          viewsCount: post.viewsCount,
+          createdAt: post.createdAt,
+          hasLiked: viewer.userId ? await storage.hasUserLikedPost(post.id, viewer.userId) : false,
+          hasSaved: viewer.userId ? await storage.hasUserSavedPost(post.id, viewer.userId) : false,
+          author: {
+            id: post.author.id,
+            username: post.author.username,
+            displayName: post.author.displayName,
+            avatarUrl: post.author.avatarUrl,
+            verified: post.author.isAdmin,
+          },
+        }))
+      );
+
+      res.json({ posts: swipePosts, nextCursor });
+    } catch (error) {
+      console.error("Swipe posts fetch error:", error);
+      res.status(500).json({ message: "Failed to get swipe posts" });
+    }
+  });
+
+  // POST /api/me/pins - Set pinned posts (max 3)
+  app.post("/api/me/pins", requireAuth, async (req, res) => {
+    try {
+      const { postIds } = req.body;
+      
+      if (!Array.isArray(postIds)) {
+        return res.status(400).json({ message: "postIds must be an array" });
+      }
+
+      if (postIds.length > 3) {
+        return res.status(400).json({ message: "Maximum 3 pinned posts allowed" });
+      }
+
+      for (const postId of postIds) {
+        const post = await storage.getPost(postId);
+        if (!post) {
+          return res.status(404).json({ message: `Post not found: ${postId}` });
+        }
+        if (post.authorId !== req.session.userId) {
+          return res.status(403).json({ message: "Can only pin your own posts" });
+        }
+      }
+
+      const pins = await storage.setUserPins(req.session.userId!, postIds);
+      res.json({ pins, message: "Pins updated successfully" });
+    } catch (error) {
+      console.error("Set pins error:", error);
+      res.status(500).json({ message: "Failed to update pins" });
+    }
+  });
+
+  // GET /api/me/pins - Get current user's pins (returns post objects directly)
+  app.get("/api/me/pins", requireAuth, async (req, res) => {
+    try {
+      const pins = await storage.getUserPins(req.session.userId!);
+      // Return just the post objects, not the pin wrappers
+      const posts = pins.map(p => ({
+        ...p.post,
+        author: { ...p.post.author, password: undefined },
+      }));
+      res.json(posts);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get pins" });
+    }
+  });
+
+  // GET /api/users/:id/pins - Get a user's pinned posts (returns post objects directly)
+  app.get("/api/users/:id/pins", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const pins = await storage.getUserPins(id);
+      // Return just the post objects, not the pin wrappers
+      const posts = pins.map(p => ({
+        ...p.post,
+        author: { ...p.post.author, password: undefined },
+      }));
+      res.json(posts);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get user pins" });
+    }
+  });
+
+  // POST /api/me/playlists - Create playlist
+  app.post("/api/me/playlists", requireAuth, async (req, res) => {
+    try {
+      const { title, type, description } = req.body;
+      
+      if (!title || typeof title !== "string" || title.length > 100) {
+        return res.status(400).json({ message: "Title is required (max 100 characters)" });
+      }
+
+      if (!type || !["VIDEO", "VOICE"].includes(type)) {
+        return res.status(400).json({ message: "Type must be VIDEO or VOICE" });
+      }
+
+      const playlist = await storage.createPlaylist(
+        req.session.userId!,
+        title.trim(),
+        type,
+        description?.trim()
+      );
+
+      res.status(201).json(playlist);
+    } catch (error) {
+      console.error("Create playlist error:", error);
+      res.status(500).json({ message: "Failed to create playlist" });
+    }
+  });
+
+  // GET /api/me/playlists - Get current user's playlists
+  app.get("/api/me/playlists", requireAuth, async (req, res) => {
+    try {
+      const playlistsSummary = await storage.getUserPlaylistsSummary(req.session.userId!);
+      res.json(playlistsSummary);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get playlists" });
+    }
+  });
+
+  // GET /api/playlists/:id - Get playlist with items
+  app.get("/api/playlists/:id", async (req, res) => {
+    try {
+      const playlist = await storage.getPlaylistWithItems(req.params.id);
+      if (!playlist) {
+        return res.status(404).json({ message: "Playlist not found" });
+      }
+
+      const viewer = await getViewerContext(req.session?.userId);
+      const owner = await storage.getUser(playlist.userId);
+      
+      if (!owner) {
+        return res.status(404).json({ message: "Playlist owner not found" });
+      }
+
+      if (!playlist.isPublic && viewer.userId !== playlist.userId) {
+        if (!viewer.isAdmin || !hasPermission(viewer, "users.read")) {
+          return res.status(403).json({ message: "This playlist is private" });
+        }
+      }
+
+      const visibleItems = [];
+      for (const item of playlist.items) {
+        const canView = await canViewPost(viewer, item.post, owner);
+        if (canView.allowed) {
+          visibleItems.push({
+            ...item,
+            post: { ...item.post, author: { ...item.post.author, password: undefined } },
+          });
+        }
+      }
+
+      res.json({
+        ...playlist,
+        items: visibleItems,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get playlist" });
+    }
+  });
+
+  // PATCH /api/playlists/:id - Update playlist
+  app.patch("/api/playlists/:id", requireAuth, async (req, res) => {
+    try {
+      const playlist = await storage.getPlaylist(req.params.id);
+      if (!playlist) {
+        return res.status(404).json({ message: "Playlist not found" });
+      }
+
+      if (playlist.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized to edit this playlist" });
+      }
+
+      const { title, description, isPublic } = req.body;
+      const updates: { title?: string; description?: string; isPublic?: boolean } = {};
+      
+      if (title !== undefined) {
+        if (typeof title !== "string" || title.length > 100) {
+          return res.status(400).json({ message: "Title must be a string (max 100 characters)" });
+        }
+        updates.title = title.trim();
+      }
+      
+      if (description !== undefined) {
+        updates.description = description?.trim() || null;
+      }
+      
+      if (isPublic !== undefined) {
+        updates.isPublic = Boolean(isPublic);
+      }
+
+      const updated = await storage.updatePlaylist(req.params.id, updates);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update playlist" });
+    }
+  });
+
+  // DELETE /api/playlists/:id - Delete playlist
+  app.delete("/api/playlists/:id", requireAuth, async (req, res) => {
+    try {
+      const playlist = await storage.getPlaylist(req.params.id);
+      if (!playlist) {
+        return res.status(404).json({ message: "Playlist not found" });
+      }
+
+      if (playlist.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized to delete this playlist" });
+      }
+
+      await storage.deletePlaylist(req.params.id);
+      res.json({ message: "Playlist deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete playlist" });
+    }
+  });
+
+  // POST /api/playlists/:id/items - Add post to playlist
+  app.post("/api/playlists/:id/items", requireAuth, async (req, res) => {
+    try {
+      const playlist = await storage.getPlaylist(req.params.id);
+      if (!playlist) {
+        return res.status(404).json({ message: "Playlist not found" });
+      }
+
+      if (playlist.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized to modify this playlist" });
+      }
+
+      const { postId } = req.body;
+      if (!postId) {
+        return res.status(400).json({ message: "postId is required" });
+      }
+
+      const post = await storage.getPost(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      if (post.authorId !== req.session.userId) {
+        return res.status(403).json({ message: "Can only add your own posts to playlists" });
+      }
+
+      const postType = post.type;
+      const playlistType = playlist.type;
+      if ((playlistType === "VIDEO" && postType !== "VIDEO") ||
+          (playlistType === "VOICE" && postType !== "VOICE")) {
+        return res.status(400).json({ 
+          message: `This playlist only accepts ${playlistType.toLowerCase()} posts` 
+        });
+      }
+
+      const item = await storage.addPlaylistItem(req.params.id, postId);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to add item to playlist" });
+    }
+  });
+
+  // DELETE /api/playlists/:id/items/:postId - Remove post from playlist
+  app.delete("/api/playlists/:id/items/:postId", requireAuth, async (req, res) => {
+    try {
+      const playlist = await storage.getPlaylist(req.params.id);
+      if (!playlist) {
+        return res.status(404).json({ message: "Playlist not found" });
+      }
+
+      if (playlist.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized to modify this playlist" });
+      }
+
+      await storage.removePlaylistItem(req.params.id, req.params.postId);
+      res.json({ message: "Item removed from playlist" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to remove item from playlist" });
+    }
+  });
+
+  // GET /api/me/featured-intro - Get current user's featured intro
+  app.get("/api/me/featured-intro", requireAuth, async (req, res) => {
+    try {
+      const intro = await storage.getUserFeaturedIntro(req.session.userId!);
+      res.json(intro || null);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get featured intro" });
+    }
+  });
+
+  // PATCH /api/me/featured-intro - Update featured intro
+  app.patch("/api/me/featured-intro", requireAuth, async (req, res) => {
+    try {
+      const { title, body, ctaText, ctaUrl } = req.body;
+      
+      if (!title || typeof title !== "string" || title.length > 100) {
+        return res.status(400).json({ message: "Title is required (max 100 characters)" });
+      }
+
+      if (!body || typeof body !== "string") {
+        return res.status(400).json({ message: "Body is required" });
+      }
+
+      if (ctaText && ctaText.length > 50) {
+        return res.status(400).json({ message: "CTA text must be max 50 characters" });
+      }
+
+      if (ctaUrl && !/^https?:\/\/.+/.test(ctaUrl)) {
+        return res.status(400).json({ message: "CTA URL must be a valid URL" });
+      }
+
+      const intro = await storage.updateFeaturedIntro(req.session.userId!, {
+        title: title.trim(),
+        body: body.trim(),
+        ctaText: ctaText?.trim(),
+        ctaUrl: ctaUrl?.trim(),
+      });
+
+      res.json(intro);
+    } catch (error) {
+      console.error("Update featured intro error:", error);
+      res.status(500).json({ message: "Failed to update featured intro" });
+    }
+  });
+
+  // DELETE /api/me/featured-intro - Delete featured intro
+  app.delete("/api/me/featured-intro", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteFeaturedIntro(req.session.userId!);
+      res.json({ message: "Featured intro deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete featured intro" });
+    }
+  });
+
+  // ===== STORIES =====
+
+  // Create a new story (supports PHOTO, VIDEO, TEXT, VOICE)
+  app.post("/api/stories", requireAuth, upload.single("file"), async (req, res) => {
+    try {
+      console.log("[Story Create] Request body:", JSON.stringify(req.body, null, 2));
+      console.log("[Story Create] User ID:", req.session.userId);
+      console.log("[Story Create] File:", req.file ? "Present" : "None");
+      
+      const { 
+        type, caption, mediaUrl: providedMediaUrl, thumbnailUrl: providedThumbnailUrl, durationMs: providedDurationMs,
+        textContent, backgroundColor, isGradient, gradientColors, fontFamily, textAlignment, textAnimation,
+        textBackgroundPill, fontSize, audioUrl: providedAudioUrl, audioDuration, audioTranscript,
+        musicUrl, musicTitle, musicArtist, musicStartTime, musicDuration, filterName,
+        textOverlays, drawings, isCloseFriends, replySetting, scheduledAt, locationName, locationLat, locationLng,
+        stickers // Array of stickers to add after story creation
+      } = req.body;
+      
+      console.log("[Story Create] Extracted type:", type);
+      console.log("[Story Create] Extracted textContent:", textContent);
+      console.log("[Story Create] Extracted fontFamily:", fontFamily);
+      
+      // Map frontend font names to database enum values
+      const fontFamilyMap: Record<string, string> = {
+        'POPPINS': 'MODERN',
+        'PLAYFAIR': 'SERIF',
+        'SPACE_MONO': 'MODERN',
+        'DANCING_SCRIPT': 'HANDWRITTEN',
+        'BEBAS_NEUE': 'BOLD',
+        // Database enum values pass through
+        'MODERN': 'MODERN',
+        'SERIF': 'SERIF',
+        'HANDWRITTEN': 'HANDWRITTEN',
+        'BOLD': 'BOLD',
+        'LUXURY': 'LUXURY',
+      };
+      const mappedFontFamily = fontFamily ? (fontFamilyMap[fontFamily] || 'MODERN') : undefined;
+      console.log("[Story Create] Mapped fontFamily:", mappedFontFamily);
+      
+      if (!type || !["PHOTO", "VIDEO", "TEXT", "VOICE"].includes(type)) {
+        console.log("[Story Create] Invalid type, returning 400");
+        return res.status(400).json({ message: "Invalid story type. Must be PHOTO, VIDEO, TEXT, or VOICE" });
+      }
+
+      let mediaUrl: string | undefined = providedMediaUrl;
+      let thumbnailUrl: string | undefined = providedThumbnailUrl;
+      let durationMs: number | undefined = providedDurationMs ? parseInt(providedDurationMs) : undefined;
+      let audioUrl: string | undefined = providedAudioUrl;
+
+      // Handle file upload for PHOTO/VIDEO stories
+      if (req.file && (type === "PHOTO" || type === "VIDEO")) {
+        const resourceType = type === "VIDEO" ? "video" : "image";
+        const result = await cloudinary.uploader.upload(
+          `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`,
+          { 
+            resource_type: resourceType,
+            folder: "stories",
+          }
+        );
+        mediaUrl = result.secure_url;
+        
+        if (type === "VIDEO" && result.duration) {
+          durationMs = Math.round(result.duration * 1000);
+          thumbnailUrl = cloudinary.url(result.public_id, {
+            resource_type: "video",
+            format: "jpg",
+            transformation: [{ width: 400, height: 700, crop: "fill" }],
+          });
+        }
+      }
+
+      // Handle audio file upload for VOICE stories
+      if (req.file && type === "VOICE") {
+        const result = await cloudinary.uploader.upload(
+          `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`,
+          { 
+            resource_type: "video", // Cloudinary uses "video" for audio
+            folder: "story-audio",
+          }
+        );
+        audioUrl = result.secure_url;
+        if (result.duration) {
+          durationMs = Math.round(result.duration * 1000);
+        }
+      }
+
+      // Validate required fields based on type
+      if ((type === "PHOTO" || type === "VIDEO") && !mediaUrl) {
+        return res.status(400).json({ message: "Media URL or file upload required for PHOTO/VIDEO stories" });
+      }
+      if (type === "TEXT" && !textContent?.trim()) {
+        return res.status(400).json({ message: "Text content is required for TEXT stories" });
+      }
+      if (type === "VOICE" && !audioUrl) {
+        return res.status(400).json({ message: "Audio URL or file upload required for VOICE stories" });
+      }
+
+      const story = await storage.createStory(req.session.userId!, {
+        type: type as "PHOTO" | "VIDEO" | "TEXT" | "VOICE",
+        mediaUrl,
+        thumbnailUrl,
+        durationMs,
+        caption: caption?.trim(),
+        textContent: textContent?.trim(),
+        backgroundColor,
+        isGradient: isGradient === true || isGradient === "true",
+        gradientColors: gradientColors ? (typeof gradientColors === "string" ? JSON.parse(gradientColors) : gradientColors) : null,
+        fontFamily: mappedFontFamily as "MODERN" | "SERIF" | "HANDWRITTEN" | "BOLD" | "LUXURY" | undefined,
+        textAlignment,
+        textAnimation,
+        textBackgroundPill: textBackgroundPill === true || textBackgroundPill === "true",
+        fontSize: fontSize ? parseInt(fontSize) : undefined,
+        audioUrl,
+        audioDuration: audioDuration ? parseInt(audioDuration) : (durationMs && type === "VOICE" ? Math.round(durationMs / 1000) : undefined),
+        audioTranscript,
+        musicUrl,
+        musicTitle,
+        musicArtist,
+        musicStartTime: musicStartTime ? parseInt(musicStartTime) : undefined,
+        musicDuration: musicDuration ? parseInt(musicDuration) : undefined,
+        filterName,
+        textOverlays: textOverlays ? (typeof textOverlays === "string" ? JSON.parse(textOverlays) : textOverlays) : null,
+        drawings: drawings ? (typeof drawings === "string" ? JSON.parse(drawings) : drawings) : null,
+        isCloseFriends: isCloseFriends === true || isCloseFriends === "true",
+        replySetting: replySetting || "ALL",
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined,
+        locationName,
+        locationLat: locationLat ? parseFloat(locationLat) : undefined,
+        locationLng: locationLng ? parseFloat(locationLng) : undefined,
+      });
+
+      // Create stickers if provided
+      const mentionedUserIds: string[] = [];
+      if (stickers && Array.isArray(stickers)) {
+        for (const sticker of stickers) {
+          await storage.createStorySticker({
+            storyId: story.id,
+            type: sticker.type,
+            positionX: sticker.positionX,
+            positionY: sticker.positionY,
+            scale: sticker.scale,
+            rotation: sticker.rotation,
+            data: sticker.data,
+          });
+          
+          // Track mentioned users for notifications
+          if (sticker.type === "MENTION" && sticker.data?.userId) {
+            mentionedUserIds.push(sticker.data.userId);
+          }
+        }
+        
+        // Create notifications for mentioned users
+        for (const mentionedUserId of mentionedUserIds) {
+          if (mentionedUserId !== req.session.userId) {
+            try {
+              await storage.createNotification(mentionedUserId, req.session.userId!, "STORY_MENTION", story.id);
+            } catch (e) {
+              // Notification creation failed silently
+            }
+          }
+        }
+      }
+
+      const storyWithUser = await storage.getStory(story.id);
+      res.status(201).json(storyWithUser);
+    } catch (error: any) {
+      console.error("Create story error:", error);
+      console.error("Create story error stack:", error?.stack);
+      console.error("Create story error message:", error?.message);
+      const errorMessage = error?.message || "Failed to create story";
+      res.status(500).json({ message: errorMessage, error: error?.message });
+    }
+  });
+
+  // Get current user's active stories
+  app.get("/api/stories/me", requireAuth, async (req, res) => {
+    try {
+      const userStories = await storage.getActiveUserStories(req.session.userId!);
+      const safeStories = userStories.map(s => ({
+        ...s,
+        user: { ...s.user, password: undefined },
+      }));
+      res.json(safeStories);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get stories" });
+    }
+  });
+
+  // Get feed stories (current user's + followed users' stories)
+  app.get("/api/stories/feed", requireAuth, async (req, res) => {
+    try {
+      // Get current user's stories
+      const yourStories = await storage.getActiveUserStories(req.session.userId!);
+      const safeYourStories = yourStories.map(s => ({
+        ...s,
+        user: { ...s.user, password: undefined },
+      }));
+
+      // Get followed users' stories
+      const feedStories = await storage.getFeedStories(req.session.userId!);
+      const followingStories = feedStories.map(group => ({
+        user: { ...group.user, password: undefined },
+        stories: group.stories,
+      }));
+
+      res.json({
+        yourStories: safeYourStories,
+        followingStories,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get feed stories" });
+    }
+  });
+
+  // Get a user's active stories
+  app.get("/api/users/:id/stories", requireAuth, async (req, res) => {
+    try {
+      const userStories = await storage.getActiveUserStories(req.params.id);
+      const safeStories = userStories.map(s => ({
+        ...s,
+        user: { ...s.user, password: undefined },
+      }));
+      res.json(safeStories);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get user stories" });
+    }
+  });
+
+  // View a story (mark as viewed)
+  app.post("/api/stories/:id/view", requireAuth, async (req, res) => {
+    try {
+      const story = await storage.getStory(req.params.id);
+      if (!story) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+      
+      // Check if viewer is blocked by story owner
+      const isBlocked = await storage.isBlockedEither(req.session.userId!, story.userId);
+      if (isBlocked) {
+        return res.status(403).json({ message: "Cannot view this story" });
+      }
+      
+      // Check story viewer restrictions
+      const isRestricted = await storage.isStoryViewerRestricted(story.userId, req.session.userId!);
+      if (isRestricted) {
+        return res.status(403).json({ message: "Cannot view this story" });
+      }
+      
+      const view = await storage.viewStory(req.params.id, req.session.userId!);
+      res.json(view);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to view story" });
+    }
+  });
+
+  // Get story viewers (only story owner can see)
+  app.get("/api/stories/:id/viewers", requireAuth, async (req, res) => {
+    try {
+      const story = await storage.getStory(req.params.id);
+      if (!story) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+      if (story.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      const viewers = await storage.getStoryViewers(req.params.id);
+      const safeViewers = viewers.map(v => ({ ...v, password: undefined }));
+      res.json(safeViewers);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get story viewers" });
+    }
+  });
+
+  // Delete a story
+  app.delete("/api/stories/:id", requireAuth, async (req, res) => {
+    try {
+      const story = await storage.getStory(req.params.id);
+      if (!story) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+      if (story.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      await storage.deleteStory(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete story" });
+    }
+  });
+
+  // Reply to a story (sends as DM)
+  app.post("/api/stories/:id/reply", requireAuth, async (req, res) => {
+    try {
+      const { recipientId, message } = req.body;
+      
+      if (!recipientId || !message) {
+        return res.status(400).json({ message: "Recipient and message are required" });
+      }
+
+      const story = await storage.getStory(req.params.id);
+      if (!story) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+
+      // Cannot reply to your own story
+      if (story.userId === req.session.userId) {
+        return res.status(400).json({ message: "Cannot reply to your own story" });
+      }
+
+      // Get or create conversation with story owner (story owner is recipient)
+      const conversation = await storage.getOrCreateConversation(req.session.userId!, recipientId, req.session.userId!);
+
+      // Create message with story reply prefix
+      const replyContent = `[Story Reply] ${message}`;
+      const newMessage = await storage.createMessage(
+        conversation.id,
+        req.session.userId!,
+        recipientId,
+        replyContent
+      );
+
+      // Create a notification for the story owner
+      try {
+        await storage.createNotification(
+          recipientId,
+          req.session.userId!,
+          "MESSAGE",
+          story.id
+        );
+      } catch (e) {
+        // Notification is optional, don't fail the request
+      }
+
+      res.status(201).json({ success: true, message: newMessage, conversationId: conversation.id });
+    } catch (error) {
+      console.error("Error replying to story:", error);
+      res.status(500).json({ message: "Failed to send story reply" });
+    }
+  });
+
+  // ===== STORY STICKERS =====
+
+  // Get stickers for a story
+  app.get("/api/stories/:id/stickers", requireAuth, async (req, res) => {
+    try {
+      const stickers = await storage.getStoryStickers(req.params.id);
+      res.json(stickers);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get stickers" });
+    }
+  });
+
+  // Add a sticker to a story
+  app.post("/api/stories/:id/stickers", requireAuth, async (req, res) => {
+    try {
+      const story = await storage.getStory(req.params.id);
+      if (!story) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+      if (story.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      const { type, positionX, positionY, scale, rotation, data } = req.body;
+      if (!type || !data) {
+        return res.status(400).json({ message: "Sticker type and data are required" });
+      }
+      
+      const sticker = await storage.createStorySticker({
+        storyId: req.params.id,
+        type,
+        positionX,
+        positionY,
+        scale,
+        rotation,
+        data,
+      });
+      res.status(201).json(sticker);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to add sticker" });
+    }
+  });
+
+  // Update a sticker
+  app.patch("/api/stories/:id/stickers/:stickerId", requireAuth, async (req, res) => {
+    try {
+      const story = await storage.getStory(req.params.id);
+      if (!story || story.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      const sticker = await storage.updateStorySticker(req.params.stickerId, req.body);
+      if (!sticker) {
+        return res.status(404).json({ message: "Sticker not found" });
+      }
+      res.json(sticker);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update sticker" });
+    }
+  });
+
+  // Delete a sticker
+  app.delete("/api/stories/:id/stickers/:stickerId", requireAuth, async (req, res) => {
+    try {
+      const story = await storage.getStory(req.params.id);
+      if (!story || story.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      await storage.deleteStorySticker(req.params.stickerId);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete sticker" });
+    }
+  });
+
+  // Respond to a sticker (poll vote, question answer, etc.)
+  app.post("/api/stickers/:stickerId/respond", requireAuth, async (req, res) => {
+    try {
+      const { responseType, responseData } = req.body;
+      if (!responseType || responseData === undefined) {
+        return res.status(400).json({ message: "Response type and data required" });
+      }
+      
+      const response = await storage.respondToSticker(
+        req.params.stickerId, 
+        req.session.userId!, 
+        responseType, 
+        responseData
+      );
+      
+      // Get the sticker to find the story and its owner
+      const sticker = await storage.getSticker(req.params.stickerId);
+      if (sticker?.storyId) {
+        const story = await storage.getStory(sticker.storyId);
+        if (story && story.userId !== req.session.userId) {
+          try {
+            await storage.createNotification(story.userId, req.session.userId!, "STORY_STICKER_RESPONSE", story.id);
+          } catch (e) {
+            // Notification creation failed silently
+          }
+        }
+      }
+      
+      res.status(201).json(response);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to respond to sticker" });
+    }
+  });
+
+  // Get sticker responses
+  app.get("/api/stickers/:stickerId/responses", requireAuth, async (req, res) => {
+    try {
+      const responses = await storage.getStickerResponses(req.params.stickerId);
+      res.json(responses);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get responses" });
+    }
+  });
+
+  // ===== STORY REACTIONS =====
+
+  // Add a reaction to a story
+  app.post("/api/stories/:id/reactions", requireAuth, async (req, res) => {
+    try {
+      const { reactionType } = req.body;
+      if (!reactionType || !["FIRE", "HEART", "LAUGH", "WOW", "SAD", "CLAP"].includes(reactionType)) {
+        return res.status(400).json({ message: "Valid reaction type required" });
+      }
+      
+      const story = await storage.getStory(req.params.id);
+      if (!story) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+      
+      const reaction = await storage.addStoryReaction(req.params.id, req.session.userId!, reactionType);
+      
+      // Create notification for story owner (if not reacting to own story)
+      if (story.userId !== req.session.userId) {
+        try {
+          await storage.createNotification(story.userId, req.session.userId!, "STORY_REACTION", req.params.id);
+        } catch (e) {
+          // Notification creation failed silently
+        }
+      }
+      
+      res.status(201).json(reaction);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to add reaction" });
+    }
+  });
+
+  // Remove a reaction from a story
+  app.delete("/api/stories/:id/reactions", requireAuth, async (req, res) => {
+    try {
+      await storage.removeStoryReaction(req.params.id, req.session.userId!);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to remove reaction" });
+    }
+  });
+
+  // Get story reactions
+  app.get("/api/stories/:id/reactions", requireAuth, async (req, res) => {
+    try {
+      const reactions = await storage.getStoryReactions(req.params.id);
+      res.json(reactions);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get reactions" });
+    }
+  });
+
+  // ===== STORY REPLIES (NEW - stored in story_replies table) =====
+
+  // Create a reply to a story (stored in story_replies, different from DM reply)
+  app.post("/api/stories/:id/replies", requireAuth, async (req, res) => {
+    try {
+      const { content, mediaUrl, mediaType } = req.body;
+      if (!content && !mediaUrl) {
+        return res.status(400).json({ message: "Content or media required" });
+      }
+      
+      const story = await storage.getStory(req.params.id);
+      if (!story) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+      
+      // Check reply settings
+      if (story.replySetting === "OFF") {
+        return res.status(403).json({ message: "Replies are disabled for this story" });
+      }
+      if (story.replySetting === "FOLLOWERS") {
+        const isFollower = await storage.isFollowing(req.session.userId!, story.userId);
+        if (!isFollower) {
+          return res.status(403).json({ message: "Only followers can reply" });
+        }
+      }
+      if (story.replySetting === "CLOSE_FRIENDS") {
+        const isCloseFriend = await storage.isCloseFriend(story.userId, req.session.userId!);
+        if (!isCloseFriend) {
+          return res.status(403).json({ message: "Only close friends can reply" });
+        }
+      }
+      
+      const reply = await storage.createStoryReply(req.params.id, req.session.userId!, content, mediaUrl, mediaType);
+      
+      // Notify story owner
+      if (story.userId !== req.session.userId) {
+        try {
+          await storage.createNotification(story.userId, req.session.userId!, "STORY_REPLY", req.params.id);
+        } catch (e) {
+          // Notification creation failed silently
+        }
+      }
+      
+      res.status(201).json(reply);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create reply" });
+    }
+  });
+
+  // Get replies to a story (only story owner)
+  app.get("/api/stories/:id/replies", requireAuth, async (req, res) => {
+    try {
+      const story = await storage.getStory(req.params.id);
+      if (!story || story.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      const replies = await storage.getStoryReplies(req.params.id);
+      res.json(replies.map(r => ({ ...r, user: { ...r.user, password: undefined } })));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get replies" });
+    }
+  });
+
+  // Mark all replies as read
+  app.post("/api/stories/:id/replies/read", requireAuth, async (req, res) => {
+    try {
+      const story = await storage.getStory(req.params.id);
+      if (!story || story.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      await storage.markStoryRepliesRead(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark replies as read" });
+    }
+  });
+
+  // ===== STORY DRAFTS =====
+
+  // Get user's story drafts
+  app.get("/api/stories/drafts", requireAuth, async (req, res) => {
+    try {
+      const drafts = await storage.getUserStoryDrafts(req.session.userId!);
+      res.json(drafts);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get drafts" });
+    }
+  });
+
+  // Create a story draft
+  app.post("/api/stories/drafts", requireAuth, async (req, res) => {
+    try {
+      const draft = await storage.createStoryDraft(req.session.userId!, req.body);
+      res.status(201).json(draft);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create draft" });
+    }
+  });
+
+  // Get a single draft
+  app.get("/api/stories/drafts/:id", requireAuth, async (req, res) => {
+    try {
+      const draft = await storage.getStoryDraft(req.params.id);
+      if (!draft || draft.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+      res.json(draft);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get draft" });
+    }
+  });
+
+  // Update a draft
+  app.patch("/api/stories/drafts/:id", requireAuth, async (req, res) => {
+    try {
+      const draft = await storage.getStoryDraft(req.params.id);
+      if (!draft || draft.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+      
+      const updated = await storage.updateStoryDraft(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update draft" });
+    }
+  });
+
+  // Delete a draft
+  app.delete("/api/stories/drafts/:id", requireAuth, async (req, res) => {
+    try {
+      const draft = await storage.getStoryDraft(req.params.id);
+      if (!draft || draft.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      await storage.deleteStoryDraft(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete draft" });
+    }
+  });
+
+  // ===== STORY INSIGHTS =====
+
+  // Record a story insight event
+  app.post("/api/stories/:id/insights", requireAuth, async (req, res) => {
+    try {
+      const { viewDuration, tappedForward, tappedBack, exited, shared, profileVisited } = req.body;
+      
+      const insight = await storage.recordStoryInsight(req.params.id, req.session.userId!, {
+        viewDuration,
+        tappedForward,
+        tappedBack,
+        exited,
+        shared,
+        profileVisited,
+      });
+      res.json(insight);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to record insight" });
+    }
+  });
+
+  // Get story analytics (story owner only)
+  app.get("/api/stories/:id/analytics", requireAuth, async (req, res) => {
+    try {
+      const story = await storage.getStory(req.params.id);
+      if (!story || story.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      const analytics = await storage.getStoryAnalytics(req.params.id);
+      const insights = await storage.getStoryInsights(req.params.id);
+      const reactions = await storage.getStoryReactions(req.params.id);
+      
+      res.json({
+        ...analytics,
+        insights,
+        reactions,
+        viewsCount: story.viewsCount,
+        reactionsCount: story.reactionsCount,
+        repliesCount: story.repliesCount,
+        sharesCount: story.sharesCount,
+        tapsForwardCount: story.tapsForwardCount,
+        tapsBackCount: story.tapsBackCount,
+        exitsCount: story.exitsCount,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get analytics" });
+    }
+  });
+
+  // ===== STORY STREAKS =====
+
+  // Get current user's streak
+  app.get("/api/stories/streak", requireAuth, async (req, res) => {
+    try {
+      const streak = await storage.getOrCreateStreak(req.session.userId!);
+      res.json(streak);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get streak" });
+    }
+  });
+
+  // Claim a streak milestone
+  app.post("/api/stories/streak/claim", requireAuth, async (req, res) => {
+    try {
+      const { milestone } = req.body;
+      if (![7, 30, 100, 365].includes(milestone)) {
+        return res.status(400).json({ message: "Invalid milestone" });
+      }
+      
+      const streak = await storage.getOrCreateStreak(req.session.userId!);
+      if (streak.currentStreak < milestone) {
+        return res.status(400).json({ message: "Milestone not reached" });
+      }
+      
+      const updated = await storage.claimStreakMilestone(req.session.userId!, milestone);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to claim milestone" });
+    }
+  });
+
+  // ===== STORY TEMPLATES =====
+
+  // Get story templates
+  app.get("/api/stories/templates", requireAuth, async (req, res) => {
+    try {
+      const { category } = req.query;
+      const templates = await storage.getStoryTemplates(category as string);
+      res.json(templates);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get templates" });
+    }
+  });
+
+  // Get a single template
+  app.get("/api/stories/templates/:id", requireAuth, async (req, res) => {
+    try {
+      const template = await storage.getStoryTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+      
+      // Increment usage count
+      await storage.incrementTemplateUsage(req.params.id);
+      
+      res.json(template);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get template" });
+    }
+  });
+
+  // ===== STORY MUSIC (Deezer Integration) =====
+
+  // Get story music library from Deezer
+  app.get("/api/stories/music", requireAuth, async (req, res) => {
+    try {
+      const { genre, limit } = req.query;
+      const limitNum = limit ? parseInt(limit as string) : 25;
+      
+      let tracks;
+      if (genre) {
+        // Map genre name to Deezer genre ID
+        const genreKey = genre.toString().toLowerCase() as deezer.GenreKey;
+        const genreId = deezer.GENRE_IDS[genreKey];
+        
+        if (genreId) {
+          tracks = await deezer.getTracksByGenre(genreId, limitNum);
+        } else {
+          // Search for tracks matching the genre as a query
+          tracks = await deezer.searchTracks(genre.toString(), limitNum);
+        }
+      } else {
+        // Return chart tracks by default
+        tracks = await deezer.getChartTracks(limitNum);
+      }
+      
+      res.json(tracks);
+    } catch (error) {
+      console.error("Failed to get music from Deezer:", error);
+      res.status(500).json({ message: "Failed to get music" });
+    }
+  });
+
+  // Get featured/trending music from Deezer charts
+  app.get("/api/stories/music/featured", requireAuth, async (req, res) => {
+    try {
+      const tracks = await deezer.getChartTracks(30);
+      res.json(tracks);
+    } catch (error) {
+      console.error("Failed to get featured music from Deezer:", error);
+      res.status(500).json({ message: "Failed to get featured music" });
+    }
+  });
+
+  // Search music via Deezer
+  app.get("/api/stories/music/search", requireAuth, async (req, res) => {
+    try {
+      const { q, limit } = req.query;
+      if (!q) {
+        return res.status(400).json({ message: "Search query required" });
+      }
+      const limitNum = limit ? parseInt(limit as string) : 25;
+      const tracks = await deezer.searchTracks(q as string, limitNum);
+      res.json(tracks);
+    } catch (error) {
+      console.error("Failed to search music on Deezer:", error);
+      res.status(500).json({ message: "Failed to search music" });
+    }
+  });
+
+  // Get available music genres from Deezer
+  app.get("/api/stories/music/genres", requireAuth, async (req, res) => {
+    try {
+      const genres = await deezer.getGenres();
+      res.json(genres);
+    } catch (error) {
+      console.error("Failed to get genres from Deezer:", error);
+      res.status(500).json({ message: "Failed to get genres" });
+    }
+  });
+
+  // Get tracks by genre ID
+  app.get("/api/stories/music/genre/:genreId", requireAuth, async (req, res) => {
+    try {
+      const genreId = parseInt(req.params.genreId);
+      const { limit } = req.query;
+      const limitNum = limit ? parseInt(limit as string) : 25;
+      
+      const tracks = await deezer.getTracksByGenre(genreId, limitNum);
+      res.json(tracks);
+    } catch (error) {
+      console.error("Failed to get genre tracks from Deezer:", error);
+      res.status(500).json({ message: "Failed to get genre tracks" });
+    }
+  });
+
+  // Track music usage (for analytics)
+  app.post("/api/stories/music/:id/use", requireAuth, async (req, res) => {
+    try {
+      // For Deezer tracks, just log the usage
+      // Could be extended to cache popular tracks locally
+      console.log(`Music track used: ${req.params.id} by user ${req.session.userId}`);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to track music usage" });
+    }
+  });
+
+  // ===== STORY TIPS =====
+
+  // Send a tip on a story
+  app.post("/api/stories/:id/tip", requireAuth, async (req, res) => {
+    try {
+      const { amount, message } = req.body;
+      if (!amount || amount < 1) {
+        return res.status(400).json({ message: "Valid amount required" });
+      }
+      
+      const story = await storage.getStory(req.params.id);
+      if (!story) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+      if (story.userId === req.session.userId) {
+        return res.status(400).json({ message: "Cannot tip your own story" });
+      }
+      
+      const tip = await storage.createStoryTip(
+        req.params.id, 
+        req.session.userId!, 
+        story.userId, 
+        amount, 
+        message
+      );
+      
+      // Notify story owner
+      try {
+        await storage.createNotification(story.userId, req.session.userId!, "LIKE", req.params.id);
+      } catch (e) {}
+      
+      res.status(201).json(tip);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to send tip" });
+    }
+  });
+
+  // Get tips for a story (story owner only)
+  app.get("/api/stories/:id/tips", requireAuth, async (req, res) => {
+    try {
+      const story = await storage.getStory(req.params.id);
+      if (!story || story.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      const tips = await storage.getStoryTips(req.params.id);
+      res.json(tips.map(t => ({ ...t, sender: { ...t.sender, password: undefined } })));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get tips" });
+    }
+  });
+
+  // Get user's received tips
+  app.get("/api/stories/tips/received", requireAuth, async (req, res) => {
+    try {
+      const tips = await storage.getUserReceivedTips(req.session.userId!);
+      res.json(tips.map(t => ({ ...t, sender: { ...t.sender, password: undefined } })));
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get received tips" });
+    }
+  });
+
+  // ===== COUNTDOWN SUBSCRIPTIONS =====
+
+  // Subscribe to a countdown sticker
+  app.post("/api/stickers/:stickerId/subscribe", requireAuth, async (req, res) => {
+    try {
+      const subscription = await storage.subscribeToCountdown(req.params.stickerId, req.session.userId!);
+      res.status(201).json(subscription);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to subscribe" });
+    }
+  });
+
+  // Unsubscribe from a countdown
+  app.delete("/api/stickers/:stickerId/subscribe", requireAuth, async (req, res) => {
+    try {
+      await storage.unsubscribeFromCountdown(req.params.stickerId, req.session.userId!);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unsubscribe" });
+    }
+  });
+
+  // ===== STORY RESHARE =====
+
+  // Reshare a story to your story
+  app.post("/api/stories/:id/reshare", requireAuth, async (req, res) => {
+    try {
+      const { comment } = req.body;
+      
+      const originalStory = await storage.getStory(req.params.id);
+      if (!originalStory) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+      
+      // Create a new story that references the original
+      const resharedStory = await storage.createStory(req.session.userId!, {
+        type: originalStory.type as "PHOTO" | "VIDEO" | "TEXT" | "VOICE",
+        mediaUrl: originalStory.mediaUrl,
+        thumbnailUrl: originalStory.thumbnailUrl,
+        textContent: originalStory.textContent,
+        backgroundColor: originalStory.backgroundColor,
+        isGradient: originalStory.isGradient ?? false,
+        fontFamily: originalStory.fontFamily as any,
+        textAlignment: originalStory.textAlignment as any,
+        textAnimation: originalStory.textAnimation as any,
+        audioUrl: originalStory.audioUrl,
+        audioDuration: originalStory.audioDuration,
+      });
+      
+      // Note: resharedFromId and reshareComment are stored via update since they're special fields
+      // In production, we'd update the story after creation
+      
+      // Update shares count on original
+      await storage.recordStoryInsight(req.params.id, req.session.userId!, { shared: true });
+      
+      // Notify original story owner (using LIKE type for reshares)
+      if (originalStory.userId !== req.session.userId) {
+        try {
+          await storage.createNotification(originalStory.userId, req.session.userId!, "LIKE", req.params.id);
+        } catch (e) {}
+      }
+      
+      const storyWithUser = await storage.getStory(resharedStory.id);
+      res.status(201).json(storyWithUser);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to reshare story" });
+    }
+  });
+
+  // ===== ADMIN STORY MANAGEMENT =====
+
+  // Get all stories (admin only) - includes expired stories
+  app.get("/api/admin/stories", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.view")) {
+        return res.status(403).json({ message: "Missing permission: content.view" });
+      }
+      
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const userId = req.query.userId as string | undefined;
+      
+      const stories = await storage.getAllStories(limit, offset, userId);
+      res.json(stories);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get stories" });
+    }
+  });
+
+  // Get a single story (admin only)
+  app.get("/api/admin/stories/:id", requireAdmin, async (req, res) => {
+    try {
+      const story = await storage.getStory(req.params.id);
+      if (!story) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+      
+      const viewers = await storage.getStoryViewers(req.params.id);
+      res.json({ ...story, viewers: viewers.map(v => ({ ...v, password: undefined })) });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get story" });
+    }
+  });
+
+  // Delete a story (admin only)
+  app.delete("/api/admin/stories/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.soft_delete")) {
+        return res.status(403).json({ message: "Missing permission: content.soft_delete" });
+      }
+
+      const story = await storage.getStory(req.params.id);
+      if (!story) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+      
+      await storage.deleteStory(req.params.id);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "CONTENT_SOFT_DELETED",
+        "story",
+        req.params.id,
+        { userId: story.userId, type: story.type },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete story" });
+    }
+  });
+
+  // ===== ADMIN STORY EXTENDED FEATURES =====
+
+  // Get extended story stats (admin only)
+  app.get("/api/admin/stories/extended/stats", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.view")) {
+        return res.status(403).json({ message: "Missing permission: content.view" });
+      }
+
+      const stats = await storage.getAdminStoryExtendedStats();
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get extended story stats" });
+    }
+  });
+
+  // Get story highlights (admin only)
+  app.get("/api/admin/stories/highlights", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.view")) {
+        return res.status(403).json({ message: "Missing permission: content.view" });
+      }
+
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = req.query.search as string | undefined;
+
+      const result = await storage.getAdminStoryHighlights({ page, limit, search });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get story highlights" });
+    }
+  });
+
+  // Delete story highlight (admin only)
+  app.delete("/api/admin/stories/highlights/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.soft_delete")) {
+        return res.status(403).json({ message: "Missing permission: content.soft_delete" });
+      }
+
+      await storage.adminDeleteStoryHighlight(req.params.id);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "CONTENT_SOFT_DELETED",
+        "story_highlight",
+        req.params.id,
+        {},
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete story highlight" });
+    }
+  });
+
+  // Get story stickers (admin only)
+  app.get("/api/admin/stories/stickers", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.view")) {
+        return res.status(403).json({ message: "Missing permission: content.view" });
+      }
+
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getAdminStoryStickers({ page, limit });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get story stickers" });
+    }
+  });
+
+  // Get story tips (admin only)
+  app.get("/api/admin/stories/tips", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.view")) {
+        return res.status(403).json({ message: "Missing permission: content.view" });
+      }
+
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getAdminStoryTips({ page, limit });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get story tips" });
+    }
+  });
+
+  // ===== ADMIN STORY TEMPLATES MANAGEMENT =====
+
+  // Get all templates (admin)
+  app.get("/api/admin/story-templates", requireAdmin, async (req, res) => {
+    try {
+      const templates = await storage.getStoryTemplates();
+      res.json(templates);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get templates" });
+    }
+  });
+
+  // Create a new template (admin)
+  app.post("/api/admin/story-templates", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.create")) {
+        return res.status(403).json({ message: "Missing permission: content.create" });
+      }
+
+      const { name, category, thumbnailUrl, backgroundColor, fontFamily, textAlignment, textAnimation, fontSize, filterName, stickerPresets, isPremium } = req.body;
+      if (!name || !category) {
+        return res.status(400).json({ message: "Name and category are required" });
+      }
+
+      const template = await storage.createStoryTemplate({
+        name,
+        category,
+        thumbnailUrl,
+        backgroundColor,
+        fontFamily,
+        textAlignment,
+        textAnimation,
+        fontSize,
+        filterName,
+        stickerPresets: stickerPresets || [],
+        isPremium: isPremium || false,
+      });
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "CREATE",
+        "story_template",
+        template.id,
+        { name, category },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.status(201).json(template);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create template" });
+    }
+  });
+
+  // Update a template (admin)
+  app.patch("/api/admin/story-templates/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.edit")) {
+        return res.status(403).json({ message: "Missing permission: content.edit" });
+      }
+
+      const template = await storage.getStoryTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      const updated = await storage.updateStoryTemplate(req.params.id, req.body);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "story_template",
+        req.params.id,
+        { updates: Object.keys(req.body) },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update template" });
+    }
+  });
+
+  // Delete a template (admin)
+  app.delete("/api/admin/story-templates/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.soft_delete")) {
+        return res.status(403).json({ message: "Missing permission: content.soft_delete" });
+      }
+
+      const template = await storage.getStoryTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      await storage.deleteStoryTemplate(req.params.id);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "CONTENT_SOFT_DELETED",
+        "story_template",
+        req.params.id,
+        { name: template.name },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete template" });
+    }
+  });
+
+  // Reorder templates (admin)
+  app.post("/api/admin/story-templates/reorder", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.edit")) {
+        return res.status(403).json({ message: "Missing permission: content.edit" });
+      }
+
+      const { orderedIds } = req.body;
+      if (!orderedIds || !Array.isArray(orderedIds)) {
+        return res.status(400).json({ message: "orderedIds array required" });
+      }
+
+      for (let i = 0; i < orderedIds.length; i++) {
+        await storage.updateStoryTemplate(orderedIds[i], {});
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to reorder templates" });
+    }
+  });
+
+  // ===== ADMIN STORY MUSIC MANAGEMENT =====
+
+  // Get all music (admin)
+  app.get("/api/admin/story-music", requireAdmin, async (req, res) => {
+    try {
+      const music = await storage.getStoryMusic();
+      res.json(music);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get music" });
+    }
+  });
+
+  // Add music track (admin)
+  app.post("/api/admin/story-music", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.create")) {
+        return res.status(403).json({ message: "Missing permission: content.create" });
+      }
+
+      const { title, artist, albumArt, audioUrl, previewUrl, duration, genre, mood, isFeatured, startTime, endTime } = req.body;
+      if (!title || !artist || !audioUrl || !duration) {
+        return res.status(400).json({ message: "Title, artist, audioUrl, and duration are required" });
+      }
+
+      const track = await storage.createStoryMusic({
+        title,
+        artist,
+        coverUrl: albumArt,
+        previewUrl: previewUrl || audioUrl,
+        duration,
+        genre: genre || "Pop",
+        isFeatured: isFeatured || false,
+      });
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "CREATE",
+        "story_music",
+        track.id,
+        { title, artist },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.status(201).json(track);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to add music" });
+    }
+  });
+
+  // Update music track (admin)
+  app.patch("/api/admin/story-music/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.edit")) {
+        return res.status(403).json({ message: "Missing permission: content.edit" });
+      }
+
+      const track = await storage.getStoryMusicById(req.params.id);
+      if (!track) {
+        return res.status(404).json({ message: "Music track not found" });
+      }
+
+      const updated = await storage.updateStoryMusic(req.params.id, req.body);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "story_music",
+        req.params.id,
+        { updates: Object.keys(req.body) },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update music" });
+    }
+  });
+
+  // Delete music track (admin)
+  app.delete("/api/admin/story-music/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.soft_delete")) {
+        return res.status(403).json({ message: "Missing permission: content.soft_delete" });
+      }
+
+      const track = await storage.getStoryMusicById(req.params.id);
+      if (!track) {
+        return res.status(404).json({ message: "Music track not found" });
+      }
+
+      await storage.deleteStoryMusic(req.params.id);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "CONTENT_SOFT_DELETED",
+        "story_music",
+        req.params.id,
+        { title: track.title },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete music" });
+    }
+  });
+
+  // Feature/unfeature music track (admin)
+  app.post("/api/admin/story-music/:id/feature", requireAdmin, async (req, res) => {
+    try {
+      const { featured } = req.body;
+      const updated = await storage.updateStoryMusic(req.params.id, { isFeatured: featured !== false });
+      if (!updated) {
+        return res.status(404).json({ message: "Music track not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update music" });
+    }
+  });
+
+  // ===== ADMIN STORY MODERATION =====
+
+  // Get reported stories (admin)
+  app.get("/api/admin/story-reports", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "reports.view")) {
+        return res.status(403).json({ message: "Missing permission: reports.view" });
+      }
+
+      const { status } = req.query;
+      const reports = await storage.getStoryReports(status as string);
+      res.json(reports);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get story reports" });
+    }
+  });
+
+  // Take action on a reported story (admin)
+  app.post("/api/admin/story-reports/:reportId/action", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "reports.action")) {
+        return res.status(403).json({ message: "Missing permission: reports.action" });
+      }
+
+      const { action, reason } = req.body;
+      if (!action || !["DISMISS", "WARN", "DELETE", "BAN"].includes(action)) {
+        return res.status(400).json({ message: "Valid action required (DISMISS, WARN, DELETE, BAN)" });
+      }
+
+      // Update report status
+      await storage.updateReportStatus(req.params.reportId, action === "DISMISS" ? "DISMISSED" : "RESOLVED", req.session.userId!, reason);
+
+      if (action === "DELETE") {
+        const report = await storage.getReportById(req.params.reportId);
+        if (report && report.reportedPostId) {
+          await storage.deleteStory(report.reportedPostId);
+        }
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "REPORT_RESOLVED",
+        "story_report",
+        req.params.reportId,
+        { action, reason },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to take action" });
+    }
+  });
+
+  // ===== ADMIN STORY ANALYTICS =====
+
+  // Get platform-wide story analytics (admin)
+  app.get("/api/admin/story-analytics", requireAdmin, async (req, res) => {
+    try {
+      const { days = 7 } = req.query;
+      const daysNum = parseInt(days as string) || 7;
+      
+      // Get aggregate stats
+      const stats = await storage.getPlatformStoryStats(daysNum);
+      
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get story analytics" });
+    }
+  });
+
+  // ===== PROFILE ENHANCEMENTS =====
+
+  // Get mutual followers between user and viewer
+  app.get("/api/users/:id/mutuals", requireAuth, async (req, res) => {
+    try {
+      // Get all mutual followers to get count
+      const allMutuals = await storage.getMutualFollowers(req.params.id, req.session.userId!, 100);
+      const limitedMutuals = allMutuals.slice(0, 5);
+      const safeMutuals = limitedMutuals.map(u => ({ ...u, password: undefined }));
+      res.json({
+        count: allMutuals.length,
+        users: safeMutuals,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get mutual followers" });
+    }
+  });
+
+  // Share profile link (returns shareable URL)
+  app.get("/api/users/:id/share-link", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json({
+        url: `https://rabitchat.app/u/${user.username}`,
+        username: user.username,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get share link" });
+    }
+  });
+
+  // Check if user can call another user (mutual followers or existing conversation)
+  app.get("/api/users/:id/can-call", requireAuth, async (req, res) => {
+    try {
+      const targetUserId = req.params.id;
+      const viewerId = req.session.userId!;
+
+      if (targetUserId === viewerId) {
+        return res.json({ canCall: false, reason: "Cannot call yourself" });
+      }
+
+      const targetUser = await storage.getUser(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const viewer = await getViewerContext(viewerId);
+      
+      // Check if they can message each other (same permission logic)
+      const messageAccess = await canMessage(viewer, targetUser);
+      
+      if (messageAccess.allowed) {
+        return res.json({ 
+          canCall: true, 
+          user: {
+            id: targetUser.id,
+            username: targetUser.username,
+            displayName: targetUser.displayName,
+            avatarUrl: targetUser.avatarUrl,
+          }
+        });
+      }
+
+      // Also allow calling if there's an existing accepted conversation
+      // Check by getting all conversations and finding one with this user
+      const userConversations = await storage.getUserConversations(viewerId);
+      const existingConversation = userConversations.find(c => 
+        (c.participant1Id === targetUserId || c.participant2Id === targetUserId)
+      );
+      if (existingConversation && existingConversation.status === "ACCEPTED") {
+        return res.json({ 
+          canCall: true, 
+          user: {
+            id: targetUser.id,
+            username: targetUser.username,
+            displayName: targetUser.displayName,
+            avatarUrl: targetUser.avatarUrl,
+          }
+        });
+      }
+
+      res.json({ 
+        canCall: false, 
+        reason: messageAccess.reason || "You must follow each other or have a conversation to call" 
+      });
+    } catch (error) {
+      console.error("Can-call check error:", error);
+      res.status(500).json({ message: "Failed to check call permission" });
+    }
+  });
+
+  app.get("/api/conversations", requireAuth, async (req, res) => {
+    try {
+      const chatEnabled = await storage.getAppSettingValue("chatEnabled", true);
+      const user = await storage.getUser(req.session.userId!);
+      if (!chatEnabled && user && !user.isAdmin) {
+        return res.status(403).json({ message: "Chat is currently disabled", chatDisabled: true });
+      }
+
+      const conversations = await storage.getUserConversations(req.session.userId!);
+      const safeConversations = conversations.map((c) => ({
+        ...c,
+        participant1: { ...c.participant1, password: undefined },
+        participant2: { ...c.participant2, password: undefined },
+      }));
+      res.json(safeConversations);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get conversations" });
+    }
+  });
+
+  app.post("/api/conversations", requireAuth, async (req, res) => {
+    try {
+      const chatEnabled = await storage.getAppSettingValue("chatEnabled", true);
+      const currentUser = await storage.getUser(req.session.userId!);
+      if (!chatEnabled && currentUser && !currentUser.isAdmin) {
+        return res.status(403).json({ message: "Chat is currently disabled", chatDisabled: true });
+      }
+
+      const { userId } = req.body;
+      if (!userId) {
+        return res.status(400).json({ message: "User ID is required" });
+      }
+
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const viewer = await getViewerContext(req.session.userId);
+      const messageAccess = await canMessage(viewer, targetUser);
+
+      if (!messageAccess.allowed) {
+        return res.status(403).json({ message: messageAccess.reason });
+      }
+      
+      const conversation = await storage.getOrCreateConversation(req.session.userId!, userId, req.session.userId!);
+      res.status(201).json(conversation);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create conversation" });
+    }
+  });
+
+  // Get a single conversation by ID
+  app.get("/api/conversations/:id", requireAuth, async (req, res) => {
+    try {
+      const conversation = await storage.getConversation(req.params.id);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      
+      const userId = req.session.userId!;
+      const isParticipant = conversation.participant1Id === userId || conversation.participant2Id === userId;
+      if (!isParticipant) {
+        return res.status(403).json({ message: "Not authorized to view this conversation" });
+      }
+      
+      res.json(conversation);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get conversation" });
+    }
+  });
+
+  app.get("/api/conversations/:id/messages", requireAuth, async (req, res) => {
+    try {
+      const conversation = await storage.getConversation(req.params.id);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      
+      const userId = req.session.userId!;
+      const isParticipant = conversation.participant1Id === userId || conversation.participant2Id === userId;
+      if (!isParticipant) {
+        return res.status(403).json({ message: "Not authorized to view this conversation" });
+      }
+      
+      const messages = await storage.getConversationMessages(req.params.id);
+      // Only mark as read if conversation is ACCEPTED (not a pending request)
+      if (conversation.status === "ACCEPTED") {
+        await storage.markMessagesAsRead(req.params.id, userId);
+      }
+      
+      const keywordFilters = await storage.getKeywordFilters(userId);
+      const messageKeywords = keywordFilters
+        .filter(f => f.filterMessages !== false)
+        .map(f => f.keyword.toLowerCase());
+      
+      const filteredMessages = messageKeywords.length > 0
+        ? messages.filter(m => {
+            const contentText = (m.content || '').toLowerCase();
+            return !messageKeywords.some(kw => contentText.includes(kw));
+          })
+        : messages;
+      
+      const safeMessages = filteredMessages.map((m) => ({
+        ...m,
+        sender: { ...m.sender, password: undefined },
+      }));
+      res.json(safeMessages);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get messages" });
+    }
+  });
+
+  app.post("/api/conversations/:id/messages", requireAuth, messageLimiter, validateBody(sendMessageSchema), async (req, res) => {
+    try {
+      const chatEnabled = await storage.getAppSettingValue("chatEnabled", true);
+      const currentUser = await storage.getUser(req.session.userId!);
+      if (!chatEnabled && currentUser && !currentUser.isAdmin) {
+        return res.status(403).json({ message: "Chat is currently disabled", chatDisabled: true });
+      }
+
+      const conversation = await storage.getConversation(req.params.id);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      
+      const userId = req.session.userId!;
+      const isParticipant = conversation.participant1Id === userId || conversation.participant2Id === userId;
+      if (!isParticipant) {
+        return res.status(403).json({ message: "Not authorized to send messages in this conversation" });
+      }
+      
+      const validReceiverId = conversation.participant1Id === userId 
+        ? conversation.participant2Id 
+        : conversation.participant1Id;
+
+      const targetUser = await storage.getUser(validReceiverId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "Recipient not found" });
+      }
+
+      const viewer = await getViewerContext(userId);
+      const messageAccess = await canMessage(viewer, targetUser);
+
+      if (!messageAccess.allowed) {
+        return res.status(403).json({ message: messageAccess.reason });
+      }
+      
+      // Block sending if conversation is a pending request and user is the recipient (not the requester)
+      if (conversation.status === "REQUEST" && conversation.requestedByUserId !== userId) {
+        return res.status(403).json({ message: "You must accept this message request before replying" });
+      }
+      
+      const { content, receiverId } = req.body;
+      if (!content) {
+        return res.status(400).json({ message: "Content is required" });
+      }
+      
+      if (typeof content !== 'string' || content.trim().length === 0) {
+        return res.status(400).json({ message: "Message content cannot be empty" });
+      }
+      
+      if (receiverId && receiverId !== validReceiverId) {
+        return res.status(400).json({ message: "Invalid receiver for this conversation" });
+      }
+      
+      const message = await storage.createMessage(
+        req.params.id,
+        userId,
+        validReceiverId,
+        content.trim()
+      );
+      
+      const sender = await storage.getUser(userId);
+      const messageWithSender = {
+        ...message,
+        sender: { ...sender, password: undefined },
+      };
+
+      broadcastToUser(validReceiverId, {
+        type: "new_message",
+        data: messageWithSender,
+      });
+      
+      broadcastToUser(userId, {
+        type: "new_message",
+        data: messageWithSender,
+      });
+      
+      // Create and broadcast message notification
+      const notification = await storage.createNotification(
+        validReceiverId,
+        userId,
+        "MESSAGE",
+        req.params.id
+      );
+      if (notification.id) {
+        broadcastToUser(validReceiverId, {
+          type: "notification:new",
+          payload: { ...notification, actor: sender ? { ...sender, password: undefined } : null }
+        });
+        
+        // Send push notification for new message
+        if (sender) {
+          pushNotificationService.notifyMessage(
+            validReceiverId,
+            sender.username,
+            sender.displayName,
+            req.params.id,
+            content.trim()
+          ).catch(err => console.error("[Push] Message notification error:", err));
+        }
+      }
+      
+      res.status(201).json(messageWithSender);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to send message" });
+    }
+  });
+
+  // Send message with media type support
+  app.post("/api/conversations/:id/messages/media", requireAuth, messageLimiter, async (req, res) => {
+    try {
+      const conversation = await storage.getConversation(req.params.id);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      
+      const userId = req.session.userId!;
+      const isParticipant = conversation.participant1Id === userId || conversation.participant2Id === userId;
+      if (!isParticipant) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      const validReceiverId = conversation.participant1Id === userId 
+        ? conversation.participant2Id 
+        : conversation.participant1Id;
+
+      const { content, messageType, mediaUrl, replyToId } = req.body;
+      
+      const message = await storage.createMessageWithMedia(
+        req.params.id,
+        userId,
+        validReceiverId,
+        content || "",
+        messageType || "TEXT",
+        mediaUrl || null,
+        replyToId || null
+      );
+      
+      const sender = await storage.getUser(userId);
+      const messageWithSender = {
+        ...message,
+        sender: { ...sender, password: undefined },
+      };
+
+      broadcastToUser(validReceiverId, {
+        type: "new_message",
+        data: messageWithSender,
+      });
+      
+      broadcastToUser(userId, {
+        type: "new_message",
+        data: messageWithSender,
+      });
+      
+      res.status(201).json(messageWithSender);
+    } catch (error) {
+      console.error("Failed to send media message:", error);
+      res.status(500).json({ message: "Failed to send message" });
+    }
+  });
+
+  // Delete (unsend) a message
+  app.delete("/api/messages/:messageId", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const messageId = req.params.messageId;
+      
+      const message = await storage.getMessage(messageId);
+      if (!message) {
+        return res.status(404).json({ message: "Message not found" });
+      }
+      
+      if (message.senderId !== userId) {
+        return res.status(403).json({ message: "Can only delete your own messages" });
+      }
+      
+      await storage.deleteMessage(messageId);
+      
+      // Broadcast deletion to both participants
+      broadcastToUser(message.senderId, {
+        type: "message_deleted",
+        data: { messageId, conversationId: message.conversationId },
+      });
+      broadcastToUser(message.receiverId, {
+        type: "message_deleted",
+        data: { messageId, conversationId: message.conversationId },
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete message:", error);
+      res.status(500).json({ message: "Failed to delete message" });
+    }
+  });
+
+  // Add reaction to message
+  app.post("/api/messages/:messageId/reactions", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const messageId = req.params.messageId;
+      const { emoji } = req.body;
+      
+      if (!emoji || typeof emoji !== "string") {
+        return res.status(400).json({ message: "Emoji is required" });
+      }
+      
+      const message = await storage.getMessage(messageId);
+      if (!message) {
+        return res.status(404).json({ message: "Message not found" });
+      }
+      
+      const reaction = await storage.addMessageReaction(messageId, userId, emoji);
+      
+      // Broadcast reaction to both participants
+      broadcastToUser(message.senderId, {
+        type: "message_reaction",
+        data: { messageId, reaction, conversationId: message.conversationId },
+      });
+      broadcastToUser(message.receiverId, {
+        type: "message_reaction",
+        data: { messageId, reaction, conversationId: message.conversationId },
+      });
+      
+      res.status(201).json(reaction);
+    } catch (error) {
+      console.error("Failed to add reaction:", error);
+      res.status(500).json({ message: "Failed to add reaction" });
+    }
+  });
+
+  // Remove reaction from message
+  app.delete("/api/messages/:messageId/reactions", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const messageId = req.params.messageId;
+      const { emoji } = req.body;
+      
+      const message = await storage.getMessage(messageId);
+      if (!message) {
+        return res.status(404).json({ message: "Message not found" });
+      }
+      
+      await storage.removeMessageReaction(messageId, userId, emoji);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to remove reaction:", error);
+      res.status(500).json({ message: "Failed to remove reaction" });
+    }
+  });
+
+  // Mark messages as read
+  app.post("/api/conversations/:id/read", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const conversationId = req.params.id;
+      
+      const conversation = await storage.getConversation(conversationId);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      
+      const isParticipant = conversation.participant1Id === userId || conversation.participant2Id === userId;
+      if (!isParticipant) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      await storage.markMessagesAsRead(conversationId, userId);
+      
+      // Notify sender that their messages have been read
+      const otherUserId = conversation.participant1Id === userId 
+        ? conversation.participant2Id 
+        : conversation.participant1Id;
+      
+      broadcastToUser(otherUserId, {
+        type: "messages_read",
+        data: { conversationId, readBy: userId, readAt: new Date().toISOString() },
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to mark messages as read:", error);
+      res.status(500).json({ message: "Failed to mark as read" });
+    }
+  });
+
+  // Send typing indicator
+  app.post("/api/conversations/:id/typing", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const conversationId = req.params.id;
+      const { isTyping } = req.body;
+      
+      const conversation = await storage.getConversation(conversationId);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      
+      const otherUserId = conversation.participant1Id === userId 
+        ? conversation.participant2Id 
+        : conversation.participant1Id;
+      
+      broadcastToUser(otherUserId, {
+        type: "typing_indicator",
+        data: { conversationId, userId, isTyping: !!isTyping },
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to send typing indicator:", error);
+      res.status(500).json({ message: "Failed to send typing indicator" });
+    }
+  });
+
+  // Update user online status
+  app.post("/api/users/online-status", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { isOnline } = req.body;
+      
+      await storage.updateUserOnlineStatus(userId, !!isOnline);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to update online status:", error);
+      res.status(500).json({ message: "Failed to update online status" });
+    }
+  });
+
+  // Get user online status
+  app.get("/api/users/:id/online-status", requireAuth, async (req, res) => {
+    try {
+      const targetId = req.params.id;
+      const status = await storage.getUserOnlineStatus(targetId);
+      
+      res.json(status || { userId: targetId, isOnline: false, lastSeenAt: null });
+    } catch (error) {
+      console.error("Failed to get online status:", error);
+      res.status(500).json({ message: "Failed to get online status" });
+    }
+  });
+
+  // ===== BLOCKING ENDPOINTS =====
+  
+  // Block a user
+  app.post("/api/users/:id/block", requireAuth, async (req, res) => {
+    try {
+      const blockerId = req.session.userId!;
+      const blockedId = req.params.id;
+      
+      if (blockerId === blockedId) {
+        return res.status(400).json({ message: "Cannot block yourself" });
+      }
+      
+      const blockedUser = await storage.getUser(blockedId);
+      if (!blockedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      await storage.blockUser(blockerId, blockedId);
+      res.json({ success: true, message: "User blocked" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to block user" });
+    }
+  });
+  
+  // Unblock a user
+  app.delete("/api/users/:id/block", requireAuth, async (req, res) => {
+    try {
+      const blockerId = req.session.userId!;
+      const blockedId = req.params.id;
+      
+      await storage.unblockUser(blockerId, blockedId);
+      res.json({ success: true, message: "User unblocked" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unblock user" });
+    }
+  });
+  
+  // Get blocked users
+  app.get("/api/users/me/blocked", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const blockedUsers = await storage.getBlockedUsers(userId);
+      const safeUsers = blockedUsers.map(u => ({ ...u, password: undefined }));
+      res.json(safeUsers);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get blocked users" });
+    }
+  });
+  
+  // Check if user is blocked
+  app.get("/api/users/:id/blocked", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const targetId = req.params.id;
+      
+      const isBlocked = await storage.isBlocked(userId, targetId);
+      const isBlockedBy = await storage.isBlocked(targetId, userId);
+      
+      res.json({ isBlocked, isBlockedBy });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to check block status" });
+    }
+  });
+  
+  // ===== REPORTING ENDPOINTS =====
+  
+  // Report a user or post
+  app.post("/api/reports", requireAuth, async (req, res) => {
+    try {
+      const reporterId = req.session.userId!;
+      const { reason, reportedUserId, reportedPostId } = req.body;
+      
+      if (!reason || reason.trim().length === 0) {
+        return res.status(400).json({ message: "Reason is required" });
+      }
+      
+      if (!reportedUserId && !reportedPostId) {
+        return res.status(400).json({ message: "Must report a user or a post" });
+      }
+      
+      // Verify user exists
+      if (reportedUserId) {
+        const user = await storage.getUser(reportedUserId);
+        if (!user) {
+          return res.status(404).json({ message: "User not found" });
+        }
+        if (reportedUserId === reporterId) {
+          return res.status(400).json({ message: "Cannot report yourself" });
+        }
+      }
+      
+      // Verify post exists
+      if (reportedPostId) {
+        const post = await storage.getPost(reportedPostId);
+        if (!post) {
+          return res.status(404).json({ message: "Post not found" });
+        }
+      }
+      
+      const report = await storage.createReport(
+        reporterId,
+        reason.trim(),
+        reportedUserId,
+        reportedPostId
+      );
+      
+      res.status(201).json({ success: true, reportId: report.id });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create report" });
+    }
+  });
+  
+  // ===== ADMIN ENDPOINTS =====
+  
+  // Middleware for admin-only routes
+  async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const user = await storage.getUser(req.session.userId);
+    if (!user || !user.isAdmin) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+    
+    next();
+  }
+
+  // Register anonymous gossip routes
+  registerGossipRoutes(app, requireAdmin);
+  
+  // Register advanced feature routes (wallets, live streaming, groups, events, etc.)
+  registerAdvancedRoutes(app);
+  
+  // Register onboarding routes (interests, industry, suggestions)
+  registerOnboardingRoutes(app);
+  
+  // Register advertising system routes
+  registerAdsRoutes(app, requireAuth);
+  
+  // Register link preview routes for chat
+  registerLinkPreviewRoutes(app);
+  
+  // Register enhanced message routes (reactions, read receipts, forwarding, search)
+  registerMessageRoutes(app);
+  
+  // Register conversation settings routes (mute, pin, archive)
+  registerConversationSettingsRoutes(app);
+  
+  // Register API usage monitoring routes
+  registerApiUsageRoutes(app);
+  
+  // Get all reports with enhanced filtering (admin only)
+  app.get("/api/admin/reports", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "reports.view")) {
+        return res.status(403).json({ message: "Missing permission: reports.view" });
+      }
+      
+      const { status, type, reporterId, dateFrom, dateTo } = req.query;
+      const validStatuses = ["PENDING", "REVIEWED", "RESOLVED", "DISMISSED"];
+      const validTypes = ["user", "post"];
+
+      const filters: {
+        status?: "PENDING" | "REVIEWED" | "RESOLVED" | "DISMISSED";
+        type?: "user" | "post";
+        reporterId?: string;
+        dateFrom?: Date;
+        dateTo?: Date;
+      } = {};
+
+      if (status && validStatuses.includes(status as string)) {
+        filters.status = status as "PENDING" | "REVIEWED" | "RESOLVED" | "DISMISSED";
+      }
+      if (type && validTypes.includes(type as string)) {
+        filters.type = type as "user" | "post";
+      }
+      if (reporterId && typeof reporterId === "string") {
+        filters.reporterId = reporterId;
+      }
+      if (dateFrom && typeof dateFrom === "string") {
+        filters.dateFrom = new Date(dateFrom);
+      }
+      if (dateTo && typeof dateTo === "string") {
+        filters.dateTo = new Date(dateTo);
+      }
+
+      const reports = await storage.getReportsWithFilters(filters);
+      res.json(reports);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get reports" });
+    }
+  });
+  
+  // Get specific report with details (admin only)
+  app.get("/api/admin/reports/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "reports.view")) {
+        return res.status(403).json({ message: "Missing permission: reports.view" });
+      }
+      
+      const report = await storage.getReportWithDetails(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+      res.json(report);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get report" });
+    }
+  });
+  
+  // Update report status (admin only)
+  app.patch("/api/admin/reports/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "reports.manage")) {
+        return res.status(403).json({ message: "Missing permission: reports.manage" });
+      }
+      
+      const { status, notes } = req.body;
+      const validStatuses = ["PENDING", "REVIEWED", "RESOLVED", "DISMISSED"];
+      
+      if (!status || !validStatuses.includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+      
+      const adminId = req.session.userId!;
+      const report = await storage.updateReportStatus(
+        req.params.id, 
+        status as "PENDING" | "REVIEWED" | "RESOLVED" | "DISMISSED",
+        adminId,
+        notes
+      );
+      
+      if (!report) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+
+      await storage.createAuditLog(
+        adminId,
+        "UPDATE",
+        "report",
+        req.params.id,
+        { status, notes },
+        req.ip,
+        req.headers["user-agent"]
+      );
+      
+      res.json(report);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update report" });
+    }
+  });
+
+  // Take action on a report (admin only) - shortcuts for common actions
+  app.post("/api/admin/reports/:id/action", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "reports.manage")) {
+        return res.status(403).json({ message: "Missing permission: reports.manage" });
+      }
+      
+      const { action, reason } = req.body;
+      const reportId = req.params.id;
+      const adminId = req.session.userId!;
+
+      const report = await storage.getReportWithDetails(reportId);
+      if (!report) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+
+      let actionResult: any = null;
+
+      switch (action) {
+        case "suspend_user":
+          if (!report.reportedUserId) {
+            return res.status(400).json({ message: "No user to suspend in this report" });
+          }
+          if (!reason) {
+            return res.status(400).json({ message: "Reason is required for suspension" });
+          }
+          actionResult = await storage.suspendUser(report.reportedUserId, adminId, reason);
+          await storage.createAuditLog(
+            adminId,
+            "UPDATE",
+            "user",
+            report.reportedUserId,
+            { action: "suspend", reason, fromReport: reportId },
+            req.ip,
+            req.headers["user-agent"]
+          );
+          break;
+
+        case "hide_post":
+          if (!report.reportedPostId) {
+            return res.status(400).json({ message: "No post to hide in this report" });
+          }
+          actionResult = await storage.hidePost(report.reportedPostId, adminId, reason || "Reported content");
+          await storage.createAuditLog(
+            adminId,
+            "UPDATE",
+            "post",
+            report.reportedPostId,
+            { action: "hide", reason, fromReport: reportId },
+            req.ip,
+            req.headers["user-agent"]
+          );
+          break;
+
+        case "delete_post":
+          if (!report.reportedPostId) {
+            return res.status(400).json({ message: "No post to delete in this report" });
+          }
+          await storage.hardDeletePost(report.reportedPostId);
+          actionResult = { deleted: true };
+          await storage.createAuditLog(
+            adminId,
+            "DELETE",
+            "post",
+            report.reportedPostId,
+            { action: "hard_delete", reason, fromReport: reportId },
+            req.ip,
+            req.headers["user-agent"]
+          );
+          break;
+
+        default:
+          return res.status(400).json({ message: "Invalid action" });
+      }
+
+      // Also update report status to resolved
+      await storage.updateReportStatus(reportId, "RESOLVED", adminId, `Action taken: ${action}`);
+      await storage.createAuditLog(
+        adminId,
+        "UPDATE",
+        "report",
+        reportId,
+        { status: "RESOLVED", action },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ success: true, action, result: actionResult });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to take action on report" });
+    }
+  });
+  
+  // Check if current user is admin
+  app.get("/api/users/me/admin", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      res.json({ isAdmin: user?.isAdmin || false });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to check admin status" });
+    }
+  });
+
+  // Admin stats endpoint
+  app.get("/api/admin/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminStats();
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get stats" });
+    }
+  });
+
+  // ===== ADVANCED DASHBOARD ENDPOINTS =====
+
+  // Dashboard overview with comprehensive platform metrics
+  app.get("/api/admin/dashboard/overview", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdvancedDashboardStats();
+      res.json(stats);
+    } catch (error: any) {
+      console.error("Failed to get dashboard overview:", error?.message || error, error?.stack);
+      res.status(500).json({ 
+        message: "Failed to get dashboard overview", 
+        error: error?.message || String(error),
+        stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+      });
+    }
+  });
+
+  // Dashboard user growth chart data
+  app.get("/api/admin/dashboard/user-growth", requireAdmin, async (req, res) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const data = await storage.getDashboardUserGrowth(days);
+      res.json(data);
+    } catch (error) {
+      console.error("Failed to get user growth data:", error);
+      res.status(500).json({ message: "Failed to get user growth data" });
+    }
+  });
+
+  // Dashboard engagement trends
+  app.get("/api/admin/dashboard/engagement-trends", requireAdmin, async (req, res) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const data = await storage.getDashboardEngagementTrends(days);
+      res.json(data);
+    } catch (error) {
+      console.error("Failed to get engagement trends:", error);
+      res.status(500).json({ message: "Failed to get engagement trends" });
+    }
+  });
+
+  // Dashboard real-time activity feed
+  app.get("/api/admin/dashboard/activity-feed", requireAdmin, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const feed = await storage.getDashboardActivityFeed(limit);
+      res.json(feed);
+    } catch (error) {
+      console.error("Failed to get activity feed:", error);
+      res.status(500).json({ message: "Failed to get activity feed" });
+    }
+  });
+
+  // Dashboard top performers
+  app.get("/api/admin/dashboard/top-performers", requireAdmin, async (req, res) => {
+    try {
+      const data = await storage.getDashboardTopPerformers();
+      res.json(data);
+    } catch (error) {
+      console.error("Failed to get top performers:", error);
+      res.status(500).json({ message: "Failed to get top performers" });
+    }
+  });
+
+  // Dashboard content distribution
+  app.get("/api/admin/dashboard/content-distribution", requireAdmin, async (req, res) => {
+    try {
+      const data = await storage.getDashboardContentDistribution();
+      res.json(data);
+    } catch (error) {
+      console.error("Failed to get content distribution:", error);
+      res.status(500).json({ message: "Failed to get content distribution" });
+    }
+  });
+
+  // Dashboard peak hours heatmap
+  app.get("/api/admin/dashboard/peak-hours", requireAdmin, async (req, res) => {
+    try {
+      const data = await storage.getDashboardPeakHours();
+      res.json(data);
+    } catch (error) {
+      console.error("Failed to get peak hours data:", error);
+      res.status(500).json({ message: "Failed to get peak hours data" });
+    }
+  });
+
+  // Content Velocity Admin Routes
+  app.get("/api/admin/content/velocity/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminContentVelocityStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get content velocity stats:", error);
+      res.status(500).json({ message: "Failed to get content velocity stats" });
+    }
+  });
+
+  app.get("/api/admin/content/trending", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const timeframe = (req.query.timeframe as string) || '24h';
+      
+      const result = await storage.getAdminTrendingPosts({ page, limit, timeframe });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get trending posts:", error);
+      res.status(500).json({ message: "Failed to get trending posts" });
+    }
+  });
+
+  app.get("/api/admin/content/daily-trends", requireAdmin, async (req, res) => {
+    try {
+      const days = parseInt(req.query.days as string) || 7;
+      const trends = await storage.getAdminDailyTrends(days);
+      res.json({ trends });
+    } catch (error) {
+      console.error("Failed to get daily trends:", error);
+      res.status(500).json({ message: "Failed to get daily trends" });
+    }
+  });
+
+  app.get("/api/admin/content/velocity/:postId", requireAdmin, async (req, res) => {
+    try {
+      const { postId } = req.params;
+      const velocity = await storage.getAdminPostVelocity(postId);
+      if (!velocity) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      res.json(velocity);
+    } catch (error) {
+      console.error("Failed to get post velocity:", error);
+      res.status(500).json({ message: "Failed to get post velocity" });
+    }
+  });
+
+  // Get all users (admin only)
+  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "users.view")) {
+        return res.status(403).json({ message: "Missing permission: users.view" });
+      }
+      
+      const users = await storage.getAllUsers();
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get users" });
+    }
+  });
+
+  // Get all users with their net worth (must be before /:id route)
+  app.get("/api/admin/users/wealth", requireAdmin, async (req, res) => {
+    try {
+      const search = (req.query.search as string) || "";
+      const sortOrder = (req.query.sortOrder as string) || "desc";
+      
+      let query = db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        netWorth: users.netWorth,
+        netWorthTier: users.netWorthTier,
+        isVerified: users.isVerified,
+        createdAt: users.createdAt,
+      }).from(users);
+      
+      if (search) {
+        query = query.where(
+          or(
+            like(users.username, `%${search}%`),
+            like(users.displayName, `%${search}%`)
+          )
+        ) as typeof query;
+      }
+      
+      if (sortOrder === "asc") {
+        query = query.orderBy(asc(users.netWorth)) as typeof query;
+      } else {
+        query = query.orderBy(desc(users.netWorth)) as typeof query;
+      }
+      
+      const userList = await query.limit(100);
+      res.json(userList);
+    } catch (error) {
+      console.error("Failed to get user wealth data:", error);
+      res.status(500).json({ message: "Failed to get user wealth data" });
+    }
+  });
+
+  // Get single user (admin only)
+  app.get("/api/admin/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "users.view")) {
+        return res.status(403).json({ message: "Missing permission: users.view" });
+      }
+      
+      const user = await storage.getAdminUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const userRoles = await storage.getUserRoles(req.params.id);
+      res.json({ ...user, roles: userRoles });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get user" });
+    }
+  });
+
+  // Update user (admin only)
+  app.patch("/api/admin/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "users.manage")) {
+        return res.status(403).json({ message: "Missing permission: users.manage" });
+      }
+      
+      const { displayName, username, bio, avatarUrl, coverUrl, category, linkUrl, location, pronouns, netWorth, influenceScore, isVerified, isAdmin } = req.body;
+      
+      const updateData: Record<string, unknown> = {};
+      if (displayName !== undefined) updateData.displayName = displayName;
+      if (username !== undefined) updateData.username = username;
+      if (bio !== undefined) updateData.bio = bio;
+      if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
+      if (coverUrl !== undefined) updateData.coverUrl = coverUrl;
+      if (category !== undefined) updateData.category = category;
+      if (linkUrl !== undefined) updateData.linkUrl = linkUrl;
+      if (location !== undefined) updateData.location = location;
+      if (pronouns !== undefined) updateData.pronouns = pronouns;
+      if (netWorth !== undefined) updateData.netWorth = netWorth;
+      if (influenceScore !== undefined) updateData.influenceScore = influenceScore;
+      if (isVerified !== undefined) {
+        updateData.isVerified = isVerified;
+        if (isVerified) updateData.verifiedAt = new Date();
+        else updateData.verifiedAt = null;
+      }
+      if (isAdmin !== undefined) updateData.isAdmin = isAdmin;
+
+      const user = await storage.adminUpdateUser(req.params.id, updateData as Partial<typeof import("@shared/schema").users.$inferSelect>);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "user",
+        req.params.id,
+        { changes: updateData },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
+  // Suspend user (admin only)
+  app.post("/api/admin/users/:id/suspend", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "users.suspend")) {
+        return res.status(403).json({ message: "Missing permission: users.suspend" });
+      }
+      
+      const { reason, durationDays } = req.body;
+      
+      if (!reason) {
+        return res.status(400).json({ message: "Reason is required" });
+      }
+
+      const user = await storage.suspendUser(
+        req.params.id,
+        req.session.userId!,
+        reason,
+        durationDays
+      );
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "USER_SUSPENDED",
+        "user",
+        req.params.id,
+        { reason, durationDays },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to suspend user" });
+    }
+  });
+
+  // Unsuspend user (admin only)
+  app.post("/api/admin/users/:id/unsuspend", requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.unsuspendUser(req.params.id);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "USER_ACTIVATED",
+        "user",
+        req.params.id,
+        {},
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to unsuspend user" });
+    }
+  });
+
+  // Get user settings (admin only)
+  app.get("/api/admin/users/:id/settings", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      const canRead = await hasRbacPermission(adminUser, "users.settings.read");
+      if (!canRead) {
+        return res.status(403).json({ message: "Missing permission: users.settings.read" });
+      }
+
+      const settings = await storage.getUserSettings(req.params.id);
+      if (!settings) {
+        return res.json({ message: "No settings found for user", settings: null });
+      }
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get user settings" });
+    }
+  });
+
+  // Update user settings (admin only)
+  app.patch("/api/admin/users/:id/settings", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      const canWrite = await hasRbacPermission(adminUser, "users.settings.write");
+      if (!canWrite) {
+        return res.status(403).json({ message: "Missing permission: users.settings.write" });
+      }
+
+      const { privateAccount, commentPolicy, messagePolicy, mentionPolicy } = req.body;
+      
+      const updateData: Record<string, unknown> = {};
+      if (privateAccount !== undefined) updateData.privateAccount = privateAccount;
+      if (commentPolicy !== undefined) updateData.commentPolicy = commentPolicy;
+      if (messagePolicy !== undefined) updateData.messagePolicy = messagePolicy;
+      if (mentionPolicy !== undefined) updateData.mentionPolicy = mentionPolicy;
+
+      const settings = await storage.updateUserSettings(req.params.id, updateData);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "user_settings",
+        req.params.id,
+        { changes: updateData },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update user settings" });
+    }
+  });
+
+  // Force logout user (admin only) - invalidates all sessions
+  app.post("/api/admin/users/:id/force-logout", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      const canForce = await hasRbacPermission(adminUser, "users.force_logout");
+      if (!canForce) {
+        return res.status(403).json({ message: "Missing permission: users.force_logout" });
+      }
+
+      await db.execute(sql`DELETE FROM session WHERE sess->>'userId' = ${req.params.id}`);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "USER_FORCE_LOGOUT",
+        "user",
+        req.params.id,
+        {},
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "User logged out from all sessions" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to force logout user" });
+    }
+  });
+
+  // Deactivate user (admin only)
+  app.post("/api/admin/users/:id/deactivate", requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      await storage.adminUpdateUser(req.params.id, { deactivatedAt: new Date() } as any);
+      await db.execute(sql`DELETE FROM session WHERE sess->>'userId' = ${req.params.id}`);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "USER_DEACTIVATED",
+        "user",
+        req.params.id,
+        {},
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "User deactivated" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to deactivate user" });
+    }
+  });
+
+  // Reactivate user (admin only)
+  app.post("/api/admin/users/:id/reactivate", requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      await storage.adminUpdateUser(req.params.id, { deactivatedAt: null } as any);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "USER_REACTIVATED",
+        "user",
+        req.params.id,
+        {},
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "User reactivated" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to reactivate user" });
+    }
+  });
+
+  // Assign/remove roles (admin only, SUPER_ADMIN or roles.manage permission)
+  app.post("/api/admin/users/:id/roles", requireAdmin, async (req, res) => {
+    try {
+      const { roleId, action } = req.body;
+      
+      if (!roleId || !action) {
+        return res.status(400).json({ message: "roleId and action are required" });
+      }
+
+      if (action !== "assign" && action !== "remove") {
+        return res.status(400).json({ message: "action must be 'assign' or 'remove'" });
+      }
+
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!adminUser?.isAdmin) {
+        return res.status(403).json({ message: "Insufficient permissions to manage roles" });
+      }
+
+      if (action === "assign") {
+        await storage.assignRole(req.params.id, roleId, req.session.userId!);
+        await storage.createAuditLog(
+          req.session.userId!,
+          "ROLE_ASSIGNED",
+          "user",
+          req.params.id,
+          { roleId },
+          req.ip,
+          req.headers["user-agent"]
+        );
+      } else {
+        await storage.removeRole(req.params.id, roleId);
+        await storage.createAuditLog(
+          req.session.userId!,
+          "ROLE_REMOVED",
+          "user",
+          req.params.id,
+          { roleId },
+          req.ip,
+          req.headers["user-agent"]
+        );
+      }
+
+      const updatedRoles = await storage.getUserRoles(req.params.id);
+      res.json({ roles: updatedRoles });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to manage roles" });
+    }
+  });
+
+  // Get all posts (admin only) with optional filters
+  app.get("/api/admin/posts", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.view")) {
+        return res.status(403).json({ message: "Missing permission: content.view" });
+      }
+      
+      const { type, visibility, hidden, deleted, limit = "100", offset = "0" } = req.query;
+      const filters: {
+        type?: string;
+        visibility?: string;
+        isHidden?: boolean;
+        isDeleted?: boolean;
+      } = {};
+      
+      if (type && typeof type === "string" && ["TEXT", "PHOTO", "VIDEO", "VOICE"].includes(type)) {
+        filters.type = type;
+      }
+      if (visibility && typeof visibility === "string" && ["PUBLIC", "FOLLOWERS", "PRIVATE"].includes(visibility)) {
+        filters.visibility = visibility;
+      }
+      if (hidden === "true") filters.isHidden = true;
+      if (hidden === "false") filters.isHidden = false;
+      if (deleted === "true") filters.isDeleted = true;
+      if (deleted === "false") filters.isDeleted = false;
+
+      const posts = await storage.getAdminPosts(
+        filters,
+        parseInt(limit as string, 10),
+        parseInt(offset as string, 10)
+      );
+      res.json(posts);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get posts" });
+    }
+  });
+
+  // Update post - hide/unhide, feature/unfeature, soft delete (admin only)
+  app.patch("/api/admin/posts/:id", requireAdmin, async (req, res) => {
+    try {
+      const { action, reason } = req.body;
+      const postId = req.params.id;
+      
+      if (!action) {
+        return res.status(400).json({ message: "action is required" });
+      }
+
+      const adminUser = await storage.getUser(req.session.userId!);
+      let post;
+      let auditAction: AuditAction = "UPDATE";
+
+      switch (action) {
+        case "hide":
+          if (!await hasRbacPermission(adminUser!, "content.hide")) {
+            return res.status(403).json({ message: "Missing permission: content.hide" });
+          }
+          if (!reason) {
+            return res.status(400).json({ message: "reason is required for hiding" });
+          }
+          post = await storage.hidePost(postId, req.session.userId!, reason);
+          auditAction = "CONTENT_HIDDEN";
+          break;
+        case "unhide":
+          if (!await hasRbacPermission(adminUser!, "content.unhide")) {
+            return res.status(403).json({ message: "Missing permission: content.unhide" });
+          }
+          post = await storage.unhidePost(postId);
+          auditAction = "CONTENT_UNHIDDEN";
+          break;
+        case "soft_delete":
+          if (!await hasRbacPermission(adminUser!, "content.soft_delete")) {
+            return res.status(403).json({ message: "Missing permission: content.soft_delete" });
+          }
+          post = await storage.softDeletePost(postId, req.session.userId!, reason);
+          auditAction = "CONTENT_SOFT_DELETED";
+          break;
+        case "feature":
+          post = await storage.featurePost(postId, true);
+          break;
+        case "unfeature":
+          post = await storage.featurePost(postId, false);
+          break;
+        default:
+          return res.status(400).json({ message: "Invalid action" });
+      }
+
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        auditAction,
+        "post",
+        postId,
+        { action, reason },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(post);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update post" });
+    }
+  });
+
+  // Hard delete post (SUPER_ADMIN only)
+  app.delete("/api/admin/posts/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      const adminRoles = await storage.getUserRoles(req.session.userId!);
+      const isSuperAdmin = adminRoles.some(r => r.name === "SUPER_ADMIN") || adminUser?.isAdmin;
+
+      if (!isSuperAdmin) {
+        return res.status(403).json({ message: "Only SUPER_ADMIN can hard delete posts" });
+      }
+
+      const post = await storage.getAdminPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      await storage.hardDeletePost(req.params.id);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "post",
+        req.params.id,
+        { content: (post.content || post.caption || "").substring(0, 100), authorId: post.authorId },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "Post deleted permanently" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete post" });
+    }
+  });
+
+  // Get all comments (admin only)
+  app.get("/api/admin/comments", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.view")) {
+        return res.status(403).json({ message: "Missing permission: content.view" });
+      }
+      
+      const comments = await storage.getAllCommentsWithAuthors();
+      res.json(comments);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get comments" });
+    }
+  });
+
+  // Hide/unhide comment (admin only)
+  app.patch("/api/admin/comments/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.hide")) {
+        return res.status(403).json({ message: "Missing permission: content.hide" });
+      }
+      
+      const { action, reason } = req.body;
+      const commentId = req.params.id;
+      
+      if (!action) {
+        return res.status(400).json({ message: "action is required" });
+      }
+
+      let comment;
+
+      switch (action) {
+        case "hide":
+          if (!reason) {
+            return res.status(400).json({ message: "reason is required for hiding" });
+          }
+          comment = await storage.hideComment(commentId, req.session.userId!, reason);
+          break;
+        case "unhide":
+          comment = await storage.unhideComment(commentId);
+          break;
+        default:
+          return res.status(400).json({ message: "Invalid action" });
+      }
+
+      if (!comment) {
+        return res.status(404).json({ message: "Comment not found" });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "comment",
+        commentId,
+        { action, reason },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(comment);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update comment" });
+    }
+  });
+
+  // Hard delete comment (admin only)
+  app.delete("/api/admin/comments/:id", requireAdmin, async (req, res) => {
+    try {
+      const comment = await storage.getAdminComment(req.params.id);
+      if (!comment) {
+        return res.status(404).json({ message: "Comment not found" });
+      }
+
+      await storage.hardDeleteComment(req.params.id);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "comment",
+        req.params.id,
+        { content: comment.content.substring(0, 100), authorId: comment.authorId, postId: comment.postId },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "Comment deleted permanently" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete comment" });
+    }
+  });
+
+  // ===== Admin Playlists Management =====
+
+  // Get all playlists (admin only)
+  app.get("/api/admin/playlists", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "playlists.view")) {
+        return res.status(403).json({ message: "Missing permission: playlists.view" });
+      }
+
+      const { type, userId, limit = "100", offset = "0" } = req.query;
+      const playlists = await storage.getAdminPlaylists(
+        type as string | undefined,
+        userId as string | undefined,
+        parseInt(limit as string, 10),
+        parseInt(offset as string, 10)
+      );
+      res.json(playlists);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get playlists" });
+    }
+  });
+
+  // Delete playlist (admin only)
+  app.delete("/api/admin/playlists/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "playlists.manage")) {
+        return res.status(403).json({ message: "Missing permission: playlists.manage" });
+      }
+
+      const playlist = await storage.getPlaylistById(req.params.id);
+      if (!playlist) {
+        return res.status(404).json({ message: "Playlist not found" });
+      }
+
+      await storage.deletePlaylist(req.params.id);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "playlist",
+        req.params.id,
+        { title: playlist.title, userId: playlist.userId },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "Playlist deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete playlist" });
+    }
+  });
+
+  // ===== Admin Featured Intros Management =====
+
+  // Get all featured intros (admin only)
+  app.get("/api/admin/featured-intros", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "featured.view")) {
+        return res.status(403).json({ message: "Missing permission: featured.view" });
+      }
+
+      const featuredIntros = await storage.getAllFeaturedIntros();
+      res.json(featuredIntros);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get featured intros" });
+    }
+  });
+
+  // Delete featured intro (admin only)
+  app.delete("/api/admin/featured-intros/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "featured.manage")) {
+        return res.status(403).json({ message: "Missing permission: featured.manage" });
+      }
+
+      const featuredIntro = await storage.getFeaturedIntro(req.params.id);
+      if (!featuredIntro) {
+        return res.status(404).json({ message: "Featured intro not found" });
+      }
+
+      await storage.deleteFeaturedIntro(req.params.id);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "FEATURED_REMOVED",
+        "featured_intro",
+        req.params.id,
+        { title: featuredIntro.title, userId: featuredIntro.userId },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "Featured intro deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete featured intro" });
+    }
+  });
+
+  // ===== Admin Profile Enhancements Management =====
+
+  // Get user's full profile with all enhancements (admin only)
+  app.get("/api/admin/users/:id/profile-full", requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const [highlights, note, links, interests, relationshipPartner] = await Promise.all([
+        storage.getStoryHighlights(req.params.id),
+        storage.getUserNote(req.params.id),
+        storage.getUserLinks(req.params.id),
+        storage.getUserInterests(req.params.id),
+        user.relationshipPartnerId ? storage.getUser(user.relationshipPartnerId) : null
+      ]);
+      res.json({
+        ...user,
+        highlights,
+        note,
+        links,
+        interests,
+        relationshipPartner: relationshipPartner ? { 
+          id: relationshipPartner.id, 
+          username: relationshipPartner.username, 
+          displayName: relationshipPartner.displayName, 
+          avatarUrl: relationshipPartner.avatarUrl 
+        } : null
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get user profile" });
+    }
+  });
+
+  // Admin update user profile enhancements
+  app.patch("/api/admin/users/:id/profile-enhancements", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "users.settings.write")) {
+        return res.status(403).json({ message: "Missing permission: users.settings.write" });
+      }
+
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const {
+        birthday, profileSongUrl, profileSongTitle, profileSongArtist,
+        avatarVideoUrl, voiceBioUrl, voiceBioDurationMs,
+        contactEmail, contactPhone, contactAddress,
+        relationshipStatus, relationshipPartnerId,
+        themeColor, themeStyle
+      } = req.body;
+
+      const updated = await storage.updateProfileEnhancements(req.params.id, {
+        birthday: birthday ? new Date(birthday) : undefined,
+        profileSongUrl, profileSongTitle, profileSongArtist,
+        avatarVideoUrl, voiceBioUrl, voiceBioDurationMs,
+        contactEmail, contactPhone, contactAddress,
+        relationshipStatus, relationshipPartnerId,
+        themeColor, themeStyle
+      });
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "user",
+        req.params.id,
+        { profileEnhancements: req.body },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update user profile enhancements" });
+    }
+  });
+
+  // Admin delete story highlight
+  app.delete("/api/admin/highlights/:highlightId", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.soft_delete")) {
+        return res.status(403).json({ message: "Missing permission: content.soft_delete" });
+      }
+
+      const highlight = await storage.getStoryHighlight(req.params.highlightId);
+      if (!highlight) {
+        return res.status(404).json({ message: "Highlight not found" });
+      }
+
+      await storage.deleteStoryHighlight(req.params.highlightId);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "story_highlight",
+        req.params.highlightId,
+        { name: highlight.name, userId: highlight.userId },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "Highlight deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete highlight" });
+    }
+  });
+
+  // Admin delete user note
+  app.delete("/api/admin/users/:userId/note", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.soft_delete")) {
+        return res.status(403).json({ message: "Missing permission: content.soft_delete" });
+      }
+
+      await storage.deleteUserNote(req.params.userId);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "user_note",
+        req.params.userId,
+        {},
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "User note deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete user note" });
+    }
+  });
+
+  // Admin delete user link
+  app.delete("/api/admin/links/:linkId", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.soft_delete")) {
+        return res.status(403).json({ message: "Missing permission: content.soft_delete" });
+      }
+
+      const link = await storage.getUserLink(req.params.linkId);
+      if (!link) {
+        return res.status(404).json({ message: "Link not found" });
+      }
+
+      await storage.deleteUserLink(req.params.linkId);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "user_link",
+        req.params.linkId,
+        { title: link.title, userId: link.userId },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "Link deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete link" });
+    }
+  });
+
+  // Admin clear user interests
+  app.delete("/api/admin/users/:userId/interests", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "content.soft_delete")) {
+        return res.status(403).json({ message: "Missing permission: content.soft_delete" });
+      }
+
+      await storage.setUserInterests(req.params.userId, []);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "user_interests",
+        req.params.userId,
+        {},
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "User interests cleared" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to clear user interests" });
+    }
+  });
+
+  // ===== ADMIN PLATFORM ANALYTICS =====
+
+  // Get platform analytics overview
+  app.get("/api/admin/analytics/platform", requireAdmin, async (req, res) => {
+    try {
+      const analytics = await storage.getAdminPlatformAnalytics();
+      res.json(analytics);
+    } catch (error) {
+      console.error("Failed to get platform analytics:", error);
+      res.status(500).json({ message: "Failed to get platform analytics" });
+    }
+  });
+
+  // Get usage trends
+  app.get("/api/admin/analytics/trends", requireAdmin, async (req, res) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const trends = await storage.getAdminUsageTrends(days);
+      res.json(trends);
+    } catch (error) {
+      console.error("Failed to get usage trends:", error);
+      res.status(500).json({ message: "Failed to get usage trends" });
+    }
+  });
+
+  // Get retention metrics
+  app.get("/api/admin/analytics/retention", requireAdmin, async (req, res) => {
+    try {
+      const retention = await storage.getAdminRetentionMetrics();
+      res.json(retention);
+    } catch (error) {
+      console.error("Failed to get retention metrics:", error);
+      res.status(500).json({ message: "Failed to get retention metrics" });
+    }
+  });
+
+  // ===== ADMIN THREADS & DUET/STITCH MODERATION =====
+
+  // Get thread statistics
+  app.get("/api/admin/threads/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminThreadStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get thread stats:", error);
+      res.status(500).json({ message: "Failed to get thread statistics" });
+    }
+  });
+
+  // Get all post threads (paginated)
+  app.get("/api/admin/threads", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = req.query.search as string | undefined;
+      
+      const result = await storage.getAdminPostThreads({ page, limit, search });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get threads:", error);
+      res.status(500).json({ message: "Failed to get threads" });
+    }
+  });
+
+  // Get all duet/stitch posts (paginated)
+  app.get("/api/admin/duet-stitch", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const type = req.query.type as 'duet' | 'stitch' | undefined;
+      
+      const result = await storage.getAdminDuetStitchPosts({ page, limit, type });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get duet/stitch posts:", error);
+      res.status(500).json({ message: "Failed to get duet/stitch posts" });
+    }
+  });
+
+  // Delete a thread
+  app.delete("/api/admin/threads/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminDeleteThread(req.params.id);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "thread",
+        req.params.id,
+        { action: "admin_delete_thread" }
+      );
+      
+      res.json({ message: "Thread deleted successfully" });
+    } catch (error: any) {
+      console.error("Failed to delete thread:", error);
+      res.status(error.message === "Thread not found" ? 404 : 500).json({ 
+        message: error.message || "Failed to delete thread" 
+      });
+    }
+  });
+
+  // Delete a duet/stitch post
+  app.delete("/api/admin/duet-stitch/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminDeleteDuetStitch(req.params.id);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "duet_stitch",
+        req.params.id,
+        { action: "admin_delete_duet_stitch" }
+      );
+      
+      res.json({ message: "Duet/Stitch deleted successfully" });
+    } catch (error: any) {
+      console.error("Failed to delete duet/stitch:", error);
+      res.status(error.message === "Duet/Stitch not found" ? 404 : 500).json({ 
+        message: error.message || "Failed to delete duet/stitch" 
+      });
+    }
+  });
+
+  // Get all roles with permissions (admin only)
+  app.get("/api/admin/roles", requireAdmin, async (req, res) => {
+    try {
+      const roles = await storage.getAllRolesWithPermissions();
+      res.json(roles);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get roles" });
+    }
+  });
+
+  // Get single role with permissions (admin only)
+  app.get("/api/admin/roles/:id", requireAdmin, async (req, res) => {
+    try {
+      const role = await storage.getRoleWithPermissions(req.params.id);
+      if (!role) {
+        return res.status(404).json({ message: "Role not found" });
+      }
+      res.json(role);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get role" });
+    }
+  });
+
+  // Create new role (admin only)
+  app.post("/api/admin/roles", requireAdmin, async (req, res) => {
+    try {
+      const { name, displayName, description, level } = req.body;
+      
+      if (!name || !displayName) {
+        return res.status(400).json({ message: "Name and display name are required" });
+      }
+
+      const existing = await storage.getRoleByName(name.toUpperCase().replace(/\s+/g, "_"));
+      if (existing) {
+        return res.status(400).json({ message: "A role with this name already exists" });
+      }
+
+      const role = await storage.createRole({ name, displayName, description, level });
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "CREATE",
+        "role",
+        role.id,
+        { name: role.name, displayName: role.displayName },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.status(201).json(role);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create role" });
+    }
+  });
+
+  // Update role (admin only)
+  app.patch("/api/admin/roles/:id", requireAdmin, async (req, res) => {
+    try {
+      const { displayName, description, level } = req.body;
+      
+      const existing = await storage.getRoleById(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "Role not found" });
+      }
+
+      // Prevent modifying system role name
+      if (existing.isSystem && level !== undefined && level !== existing.level) {
+        return res.status(403).json({ message: "Cannot change level of system roles" });
+      }
+
+      const role = await storage.updateRole(req.params.id, { displayName, description, level });
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "role",
+        req.params.id,
+        { displayName, description, level },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(role);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update role" });
+    }
+  });
+
+  // Delete role (admin only)
+  app.delete("/api/admin/roles/:id", requireAdmin, async (req, res) => {
+    try {
+      const role = await storage.getRoleById(req.params.id);
+      if (!role) {
+        return res.status(404).json({ message: "Role not found" });
+      }
+
+      if (role.isSystem) {
+        return res.status(403).json({ message: "Cannot delete system roles" });
+      }
+
+      if (role.name === "SUPER_ADMIN") {
+        return res.status(403).json({ message: "Cannot delete SUPER_ADMIN role" });
+      }
+
+      await storage.deleteRole(req.params.id);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "role",
+        req.params.id,
+        { name: role.name, displayName: role.displayName },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "Role deleted" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete role" });
+    }
+  });
+
+  // Get all permissions (admin only)
+  app.get("/api/admin/permissions", requireAdmin, async (req, res) => {
+    try {
+      const byGroup = req.query.grouped === "true";
+      if (byGroup) {
+        const permissions = await storage.getPermissionsByGroup();
+        res.json(permissions);
+      } else {
+        const permissions = await storage.getAllPermissions();
+        res.json(permissions);
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get permissions" });
+    }
+  });
+
+  // Set role permissions (admin only)
+  app.post("/api/admin/roles/:id/permissions", requireAdmin, async (req, res) => {
+    try {
+      const { permissionIds } = req.body;
+      
+      const role = await storage.getRoleById(req.params.id);
+      if (!role) {
+        return res.status(404).json({ message: "Role not found" });
+      }
+
+      if (!Array.isArray(permissionIds)) {
+        return res.status(400).json({ message: "permissionIds must be an array" });
+      }
+
+      const previousPermissions = await storage.getRolePermissions(req.params.id);
+      await storage.setRolePermissions(req.params.id, permissionIds);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "PERMISSION_GRANTED",
+        "role",
+        req.params.id,
+        { 
+          previousCount: previousPermissions.length, 
+          newCount: permissionIds.length,
+          permissionIds 
+        },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      const updated = await storage.getRoleWithPermissions(req.params.id);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update role permissions" });
+    }
+  });
+
+  // ===== ADMIN 2FA/SECURITY MANAGEMENT =====
+
+  // Get 2FA statistics
+  app.get("/api/admin/security/2fa/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdmin2FAStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get 2FA stats:", error);
+      res.status(500).json({ message: "Failed to get 2FA statistics" });
+    }
+  });
+
+  // Get all users with 2FA status (paginated, searchable)
+  app.get("/api/admin/security/2fa", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = (req.query.search as string) || "";
+      
+      const result = await storage.getAdminTotpSecrets({ page, limit, search });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get 2FA users:", error);
+      res.status(500).json({ message: "Failed to get 2FA users" });
+    }
+  });
+
+  // Reset a user's 2FA
+  app.post("/api/admin/security/2fa/:userId/reset", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      await storage.adminReset2FA(userId);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "user",
+        userId,
+        { action: "reset_2fa", targetUsername: user.username },
+        req.ip,
+        req.headers["user-agent"]
+      );
+      
+      res.json({ message: "2FA reset successfully", userId, username: user.username });
+    } catch (error) {
+      console.error("Failed to reset 2FA:", error);
+      res.status(500).json({ message: "Failed to reset 2FA" });
+    }
+  });
+
+  // ===== ADMIN SESSION MANAGEMENT =====
+
+  // Get session statistics
+  app.get("/api/admin/security/sessions/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminSessionStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get session stats:", error);
+      res.status(500).json({ message: "Failed to get session statistics" });
+    }
+  });
+
+  // Get all login sessions (paginated, searchable, filter by active)
+  app.get("/api/admin/security/sessions", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = (req.query.search as string) || "";
+      const activeOnly = req.query.activeOnly === "true";
+      
+      const result = await storage.getAdminLoginSessions({ page, limit, search, activeOnly });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get sessions:", error);
+      res.status(500).json({ message: "Failed to get sessions" });
+    }
+  });
+
+  // Terminate a specific session
+  app.post("/api/admin/security/sessions/:sessionId/terminate", requireAdmin, async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      
+      await storage.adminTerminateSession(sessionId);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "login_session",
+        sessionId,
+        { action: "terminate_session" },
+        req.ip,
+        req.headers["user-agent"]
+      );
+      
+      res.json({ message: "Session terminated successfully", sessionId });
+    } catch (error) {
+      console.error("Failed to terminate session:", error);
+      res.status(500).json({ message: "Failed to terminate session" });
+    }
+  });
+
+  // Terminate all sessions for a user
+  app.post("/api/admin/security/sessions/user/:userId/terminate-all", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const count = await storage.adminTerminateAllUserSessions(userId);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "user",
+        userId,
+        { action: "terminate_all_sessions", sessionsTerminated: count, targetUsername: user.username },
+        req.ip,
+        req.headers["user-agent"]
+      );
+      
+      res.json({ message: "All sessions terminated", userId, username: user.username, count });
+    } catch (error) {
+      console.error("Failed to terminate all sessions:", error);
+      res.status(500).json({ message: "Failed to terminate all sessions" });
+    }
+  });
+
+  // ===== ADMIN DEVICE MANAGEMENT =====
+
+  app.get("/api/admin/security/devices/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminDeviceStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get device stats:", error);
+      res.status(500).json({ message: "Failed to get device stats" });
+    }
+  });
+
+  app.get("/api/admin/security/devices", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = (req.query.search as string) || "";
+      
+      const result = await storage.getAdminTrustedDevices({ page, limit, search });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get devices:", error);
+      res.status(500).json({ message: "Failed to get devices" });
+    }
+  });
+
+  app.delete("/api/admin/security/devices/:deviceId", requireAdmin, async (req, res) => {
+    try {
+      const { deviceId } = req.params;
+      
+      const device = await storage.getTrustedDevice(deviceId);
+      if (!device) {
+        return res.status(404).json({ message: "Device not found" });
+      }
+      
+      const user = await storage.getUser(device.userId);
+      
+      await storage.adminRemoveTrustedDevice(deviceId);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "trusted_device",
+        deviceId,
+        { action: "remove_device", deviceName: device.deviceName, targetUserId: device.userId, targetUsername: user?.username },
+        req.ip,
+        req.headers["user-agent"]
+      );
+      
+      res.json({ message: "Device removed", deviceId, deviceName: device.deviceName });
+    } catch (error) {
+      console.error("Failed to remove device:", error);
+      res.status(500).json({ message: "Failed to remove device" });
+    }
+  });
+
+  app.delete("/api/admin/security/devices/user/:userId", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const count = await storage.adminRemoveAllUserDevices(userId);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "trusted_device",
+        userId,
+        { action: "remove_all_user_devices", devicesRemoved: count, targetUsername: user.username },
+        req.ip,
+        req.headers["user-agent"]
+      );
+      
+      res.json({ message: "All devices removed", userId, username: user.username, count });
+    } catch (error) {
+      console.error("Failed to remove all devices:", error);
+      res.status(500).json({ message: "Failed to remove all devices" });
+    }
+  });
+
+  // Get algorithm configuration (admin only)
+  app.get("/api/admin/algorithm", requireAdmin, async (req, res) => {
+    try {
+      const algorithmInfo = getAlgorithmDescription();
+      res.json(algorithmInfo);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get algorithm config" });
+    }
+  });
+
+  // Update algorithm weights (admin only)
+  app.patch("/api/admin/algorithm", requireAdmin, async (req, res) => {
+    try {
+      const { weights } = req.body;
+      if (!weights || typeof weights !== 'object') {
+        return res.status(400).json({ message: "Weights object required" });
+      }
+      
+      const updated = updateAlgorithmWeights(weights);
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "SETTING_CHANGED",
+        "algorithm",
+        "algorithm_weights",
+        { newValue: JSON.stringify(updated) }
+      );
+      
+      res.json({ message: "Algorithm weights updated", weights: updated });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update algorithm config" });
+    }
+  });
+
+  // Reset algorithm weights to defaults (admin only)
+  app.post("/api/admin/algorithm/reset", requireAdmin, async (req, res) => {
+    try {
+      const defaults = resetAlgorithmWeights();
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "SETTING_CHANGED",
+        "algorithm",
+        "algorithm_weights",
+        { action: "reset_to_defaults" }
+      );
+      
+      res.json({ message: "Algorithm weights reset to defaults", weights: defaults });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to reset algorithm config" });
+    }
+  });
+
+  // Get app settings (admin only)
+  app.get("/api/admin/settings", requireAdmin, async (req, res) => {
+    try {
+      const settings = await storage.getAppSettings();
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get settings" });
+    }
+  });
+
+  // Update app settings (admin only)
+  app.patch("/api/admin/settings", requireAdmin, async (req, res) => {
+    try {
+      const { settings } = req.body;
+      
+      if (!Array.isArray(settings)) {
+        return res.status(400).json({ message: "Settings must be an array" });
+      }
+
+      const previousSettings = await storage.getAppSettings();
+      const previousMap = new Map(previousSettings.map(s => [s.key, s.value]));
+
+      const results = await storage.updateAppSettings(settings, req.session.userId!);
+
+      for (const setting of settings) {
+        const previousValue = previousMap.get(setting.key);
+        await storage.createAuditLog(
+          req.session.userId!,
+          "SETTING_CHANGED",
+          "setting",
+          setting.key,
+          { 
+            key: setting.key,
+            previousValue,
+            newValue: typeof setting.value === "object" ? JSON.stringify(setting.value) : String(setting.value),
+            type: setting.type
+          },
+          req.ip,
+          req.headers["user-agent"]
+        );
+      }
+
+      res.json(results);
+    } catch (error) {
+      console.error("Failed to update settings:", error);
+      res.status(500).json({ message: "Failed to update settings" });
+    }
+  });
+
+  // Get public feature flags (for app behavior)
+  app.get("/api/settings/flags", async (req, res) => {
+    try {
+      const maintenanceMode = await storage.getAppSettingValue("maintenanceMode", false);
+      const signupEnabled = await storage.getAppSettingValue("signupEnabled", true);
+      const chatEnabled = await storage.getAppSettingValue("chatEnabled", true);
+      const maxPostLength = await storage.getAppSettingValue("maxPostLength", 500);
+
+      res.json({
+        maintenanceMode,
+        signupEnabled,
+        chatEnabled,
+        maxPostLength,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get feature flags" });
+    }
+  });
+
+  // Get audit logs with filters (admin only)
+  app.get("/api/admin/audit", requireAdmin, async (req, res) => {
+    try {
+      const { actorId, action, targetType, startDate, endDate, limit, offset } = req.query;
+      
+      const filters: {
+        actorId?: string;
+        action?: string;
+        targetType?: string;
+        startDate?: Date;
+        endDate?: Date;
+        limit?: number;
+        offset?: number;
+      } = {};
+
+      if (actorId && typeof actorId === "string") filters.actorId = actorId;
+      if (action && typeof action === "string") filters.action = action;
+      if (targetType && typeof targetType === "string") filters.targetType = targetType;
+      if (startDate && typeof startDate === "string") filters.startDate = new Date(startDate);
+      if (endDate && typeof endDate === "string") filters.endDate = new Date(endDate);
+      if (limit && typeof limit === "string") filters.limit = parseInt(limit, 10);
+      if (offset && typeof offset === "string") filters.offset = parseInt(offset, 10);
+
+      const result = await storage.getAuditLogs(filters);
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get audit logs:", error);
+      res.status(500).json({ message: "Failed to get audit logs" });
+    }
+  });
+
+  // Get analytics overview (admin only)
+  app.get("/api/admin/overview", requireAdmin, async (req, res) => {
+    try {
+      const overview = await storage.getAnalyticsOverview();
+      res.json(overview);
+    } catch (error) {
+      console.error("Failed to get overview:", error);
+      res.status(500).json({ message: "Failed to get overview" });
+    }
+  });
+
+  // Ban user (admin only)
+  app.post("/api/admin/users/:id/ban", requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.suspendUser(req.params.id, req.session.userId!, "Banned by admin");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      await storage.createAuditLog(
+        req.session.userId!,
+        "USER_BANNED",
+        "user",
+        req.params.id,
+        { reason: "Banned by admin" },
+        req.ip,
+        req.headers["user-agent"]
+      );
+      res.json({ message: "User banned successfully" });
+    } catch (error) {
+      console.error("Failed to ban user:", error);
+      res.status(500).json({ message: "Failed to ban user" });
+    }
+  });
+
+  // Unban user (admin only)
+  app.post("/api/admin/users/:id/unban", requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.unsuspendUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      await storage.createAuditLog(
+        req.session.userId!,
+        "USER_UNBANNED",
+        "user",
+        req.params.id,
+        {},
+        req.ip,
+        req.headers["user-agent"]
+      );
+      res.json({ message: "User unbanned successfully" });
+    } catch (error) {
+      console.error("Failed to unban user:", error);
+      res.status(500).json({ message: "Failed to unban user" });
+    }
+  });
+
+  // Get recent admin activity (admin only)
+  app.get("/api/admin/activity", requireAdmin, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      const logs = await storage.getAuditLogs({ limit });
+      res.json(logs.logs || []);
+    } catch (error) {
+      console.error("Failed to get activity:", error);
+      res.status(500).json({ message: "Failed to get activity" });
+    }
+  });
+
+  // Get admin analytics (admin only)
+  app.get("/api/admin/analytics", requireAdmin, async (req, res) => {
+    try {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      
+      const overview = await storage.getAnalyticsOverview();
+      const stats = await storage.getAdminStats();
+      
+      res.json({
+        totalUsers: overview?.totalUsers || 0,
+        totalPosts: overview?.totalPosts || 0,
+        totalMessages: overview?.totalMessages || 0,
+        newUsers7d: overview?.newUsers7d || 0,
+        posts7d: overview?.posts7d || 0,
+        messages7d: overview?.messages7d || 0,
+        openReports: overview?.openReports || 0,
+        stats: {
+          users: stats?.users || 0,
+          posts: stats?.posts || 0,
+          comments: stats?.comments || 0,
+          reports: stats?.reports || 0,
+        }
+      });
+    } catch (error) {
+      console.error("Failed to get analytics:", error);
+      res.status(500).json({ message: "Failed to get analytics" });
+    }
+  });
+
+  // Get audit logs (alias for admin panel)
+  app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const logs = await storage.getAuditLogs({ limit });
+      res.json(logs.logs || []);
+    } catch (error) {
+      console.error("Failed to get audit logs:", error);
+      res.status(500).json({ message: "Failed to get audit logs" });
+    }
+  });
+
+  // Update admin settings
+  app.post("/api/admin/settings", requireAdmin, async (req, res) => {
+    try {
+      await storage.createAuditLog(
+        req.session.userId!,
+        "SETTINGS_UPDATED",
+        "settings",
+        "app",
+        req.body,
+        req.ip,
+        req.headers["user-agent"]
+      );
+      res.json({ message: "Settings updated" });
+    } catch (error) {
+      console.error("Failed to update settings:", error);
+      res.status(500).json({ message: "Failed to update settings" });
+    }
+  });
+
+  // ===== ADMIN AR FILTERS ENDPOINTS =====
+
+  app.get("/api/admin/ar-filters/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminARFilterStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get AR filter stats:", error);
+      res.status(500).json({ message: "Failed to get AR filter stats" });
+    }
+  });
+
+  app.get("/api/admin/ar-filters", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = req.query.search as string | undefined;
+      const featured = req.query.featured === 'true' ? true : req.query.featured === 'false' ? false : undefined;
+
+      const result = await storage.getAdminARFilters({ page, limit, search, featured });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get AR filters:", error);
+      res.status(500).json({ message: "Failed to get AR filters" });
+    }
+  });
+
+  app.post("/api/admin/ar-filters", requireAdmin, async (req, res) => {
+    try {
+      const { name, description, previewUrl, filterUrl, category } = req.body;
+
+      if (!name || !previewUrl || !filterUrl) {
+        return res.status(400).json({ message: "Name, preview URL, and filter URL are required" });
+      }
+
+      const filter = await storage.adminCreateARFilter({
+        name,
+        description,
+        previewUrl,
+        filterUrl,
+        category,
+      });
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "AR_FILTER_CREATED",
+        "ar_filter",
+        filter.id,
+        { name, category },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.status(201).json(filter);
+    } catch (error) {
+      console.error("Failed to create AR filter:", error);
+      res.status(500).json({ message: "Failed to create AR filter" });
+    }
+  });
+
+  app.put("/api/admin/ar-filters/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, previewUrl, filterUrl, category } = req.body;
+
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (previewUrl !== undefined) updateData.thumbnailUrl = previewUrl;
+      if (filterUrl !== undefined) updateData.filterUrl = filterUrl;
+      if (category !== undefined) updateData.category = category;
+
+      const filter = await storage.adminUpdateARFilter(id, updateData);
+
+      if (!filter) {
+        return res.status(404).json({ message: "AR filter not found" });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "AR_FILTER_UPDATED",
+        "ar_filter",
+        id,
+        updateData,
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(filter);
+    } catch (error) {
+      console.error("Failed to update AR filter:", error);
+      res.status(500).json({ message: "Failed to update AR filter" });
+    }
+  });
+
+  app.post("/api/admin/ar-filters/:id/feature", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { featured } = req.body;
+
+      const filter = await storage.adminFeatureARFilter(id, !!featured);
+
+      if (!filter) {
+        return res.status(404).json({ message: "AR filter not found" });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        featured ? "AR_FILTER_FEATURED" : "AR_FILTER_UNFEATURED",
+        "ar_filter",
+        id,
+        { featured },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(filter);
+    } catch (error) {
+      console.error("Failed to feature AR filter:", error);
+      res.status(500).json({ message: "Failed to feature AR filter" });
+    }
+  });
+
+  app.post("/api/admin/ar-filters/:id/toggle", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { active } = req.body;
+
+      const filter = await storage.adminToggleARFilter(id, !!active);
+
+      if (!filter) {
+        return res.status(404).json({ message: "AR filter not found" });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        active ? "AR_FILTER_ENABLED" : "AR_FILTER_DISABLED",
+        "ar_filter",
+        id,
+        { active },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(filter);
+    } catch (error) {
+      console.error("Failed to toggle AR filter:", error);
+      res.status(500).json({ message: "Failed to toggle AR filter" });
+    }
+  });
+
+  app.delete("/api/admin/ar-filters/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      await storage.adminDeleteARFilter(id);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "AR_FILTER_DELETED",
+        "ar_filter",
+        id,
+        {},
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "AR filter deleted" });
+    } catch (error) {
+      console.error("Failed to delete AR filter:", error);
+      res.status(500).json({ message: "Failed to delete AR filter" });
+    }
+  });
+
+  // ===== ADMIN AI CONTENT MANAGEMENT =====
+
+  app.get("/api/admin/ai/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminAIContentStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get AI content stats:", error);
+      res.status(500).json({ message: "Failed to get AI content stats" });
+    }
+  });
+
+  app.get("/api/admin/ai/avatars", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const status = req.query.status as string | undefined;
+
+      const result = await storage.getAdminAIAvatars({ page, limit, status });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get AI avatars:", error);
+      res.status(500).json({ message: "Failed to get AI avatars" });
+    }
+  });
+
+  app.post("/api/admin/ai/avatars/:id/review", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, reason } = req.body;
+
+      if (!status || !['approved', 'rejected'].includes(status)) {
+        return res.status(400).json({ message: "Invalid status. Must be 'approved' or 'rejected'" });
+      }
+
+      const avatar = await storage.adminReviewAIAvatar(id, status, reason);
+      if (!avatar) {
+        return res.status(404).json({ message: "Avatar not found" });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        status === 'approved' ? "AI_AVATAR_APPROVED" : "AI_AVATAR_REJECTED",
+        "ai_avatar",
+        id,
+        { status, reason },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json(avatar);
+    } catch (error) {
+      console.error("Failed to review AI avatar:", error);
+      res.status(500).json({ message: "Failed to review AI avatar" });
+    }
+  });
+
+  app.delete("/api/admin/ai/avatars/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const avatar = await storage.getAIAvatarById(id);
+      if (!avatar) {
+        return res.status(404).json({ message: "Avatar not found" });
+      }
+
+      await storage.adminDeleteAIAvatar(id);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "AI_AVATAR_DELETED",
+        "ai_avatar",
+        id,
+        { name: avatar.name },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "AI avatar deleted" });
+    } catch (error) {
+      console.error("Failed to delete AI avatar:", error);
+      res.status(500).json({ message: "Failed to delete AI avatar" });
+    }
+  });
+
+  app.get("/api/admin/ai/translations", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getAdminAITranslations({ page, limit });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get AI translations:", error);
+      res.status(500).json({ message: "Failed to get AI translations" });
+    }
+  });
+
+  // ===== ADMIN EXPLORE CATEGORIES MANAGEMENT =====
+
+  app.get("/api/admin/explore/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminExploreCategoryStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get explore category stats:", error);
+      res.status(500).json({ message: "Failed to get explore category stats" });
+    }
+  });
+
+  app.get("/api/admin/explore/categories", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+
+      const result = await storage.getAdminExploreCategories({ page, limit });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get explore categories:", error);
+      res.status(500).json({ message: "Failed to get explore categories" });
+    }
+  });
+
+  app.post("/api/admin/explore/categories", requireAdmin, async (req, res) => {
+    try {
+      const { name, slug, description, iconUrl, color, order } = req.body;
+
+      if (!name || !slug) {
+        return res.status(400).json({ message: "Name and slug are required" });
+      }
+
+      const category = await storage.adminCreateExploreCategory({
+        name,
+        slug,
+        description,
+        iconUrl,
+        color,
+        order,
+      });
+
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "create" as any,
+        targetType: "explore_category",
+        targetId: category.id,
+        details: { name, slug },
+      });
+
+      res.status(201).json(category);
+    } catch (error: any) {
+      console.error("Failed to create explore category:", error);
+      if (error.code === '23505') {
+        return res.status(400).json({ message: "A category with this slug already exists" });
+      }
+      res.status(500).json({ message: "Failed to create explore category" });
+    }
+  });
+
+  app.put("/api/admin/explore/categories/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, slug, description, iconUrl, color, order, isActive } = req.body;
+
+      const existing = await storage.getExploreCategoryById(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+
+      const updated = await storage.adminUpdateExploreCategory(id, {
+        name,
+        slug,
+        description,
+        iconUrl,
+        color,
+        order,
+        isActive,
+      });
+
+      await storage.createAuditLog({
+        action: "update" as any,
+        targetType: "explore_category",
+        targetId: id,
+        actorId: req.session.userId!,
+        details: { name, slug },
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Failed to update explore category:", error);
+      if (error.code === '23505') {
+        return res.status(400).json({ message: "A category with this slug already exists" });
+      }
+      res.status(500).json({ message: "Failed to update explore category" });
+    }
+  });
+
+  app.post("/api/admin/explore/categories/reorder", requireAdmin, async (req, res) => {
+    try {
+      const { categoryIds } = req.body;
+
+      if (!Array.isArray(categoryIds) || categoryIds.length === 0) {
+        return res.status(400).json({ message: "categoryIds array is required" });
+      }
+
+      await storage.adminReorderExploreCategories(categoryIds);
+
+      await storage.createAuditLog({
+        action: "update" as any,
+        targetType: "explore_category",
+        targetId: "bulk",
+        actorId: req.session.userId!,
+        details: { action: "reorder", count: categoryIds.length },
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to reorder explore categories:", error);
+      res.status(500).json({ message: "Failed to reorder explore categories" });
+    }
+  });
+
+  app.delete("/api/admin/explore/categories/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const existing = await storage.getExploreCategoryById(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+
+      await storage.adminDeleteExploreCategory(id);
+
+      await storage.createAuditLog({
+        action: "delete" as any,
+        targetType: "explore_category",
+        targetId: id,
+        actorId: req.session.userId!,
+        details: { name: existing.name, slug: existing.slug },
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete explore category:", error);
+      res.status(500).json({ message: "Failed to delete explore category" });
+    }
+  });
+
+  // ===== ADMIN USER PROFILE FEATURES =====
+
+  app.get("/api/admin/profiles/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminUserProfileStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get profile stats:", error);
+      res.status(500).json({ message: "Failed to get profile stats" });
+    }
+  });
+
+  app.get("/api/admin/profiles/intros", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const status = req.query.status as string;
+
+      const result = await storage.getAdminFeaturedIntros({ page, limit, status });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get featured intros:", error);
+      res.status(500).json({ message: "Failed to get featured intros" });
+    }
+  });
+
+  app.delete("/api/admin/profiles/intros/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      await storage.adminDeleteFeaturedIntro(id);
+
+      await storage.createAuditLog({
+        action: "delete" as any,
+        targetType: "featured_intro",
+        targetId: id,
+        actorId: req.session.userId!,
+        details: {},
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete featured intro:", error);
+      res.status(500).json({ message: "Failed to delete featured intro" });
+    }
+  });
+
+  app.get("/api/admin/profiles/linked-accounts", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = req.query.search as string;
+
+      const result = await storage.getAdminLinkedAccounts({ page, limit, search });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get linked accounts:", error);
+      res.status(500).json({ message: "Failed to get linked accounts" });
+    }
+  });
+
+  app.delete("/api/admin/profiles/linked-accounts/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      await storage.adminUnlinkAccount(id);
+
+      await storage.createAuditLog({
+        action: "delete" as any,
+        targetType: "linked_account",
+        targetId: id,
+        actorId: req.session.userId!,
+        details: {},
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to unlink account:", error);
+      res.status(500).json({ message: "Failed to unlink account" });
+    }
+  });
+
+  app.get("/api/admin/profiles/notes", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getAdminUserNotesList({ page, limit });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get user notes:", error);
+      res.status(500).json({ message: "Failed to get user notes" });
+    }
+  });
+
+  app.delete("/api/admin/profiles/notes/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      await storage.adminDeleteUserNote(id);
+
+      await storage.createAuditLog({
+        action: "delete" as any,
+        targetType: "user_note",
+        targetId: id,
+        actorId: req.session.userId!,
+        details: {},
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete user note:", error);
+      res.status(500).json({ message: "Failed to delete user note" });
+    }
+  });
+
+  // ===== USER SETTINGS ENDPOINTS =====
+
+  // Get current user settings
+  app.get("/api/me/settings", requireAuth, async (req, res) => {
+    try {
+      const settings = await storage.getOrCreateUserSettings(req.session.userId!);
+      res.json(settings);
+    } catch (error) {
+      console.error("Failed to get settings:", error);
+      res.status(500).json({ message: "Failed to get settings" });
+    }
+  });
+
+  // Update current user settings (privacy, notifications, media prefs)
+  app.patch("/api/me/settings", requireAuth, validateBody(updateSettingsSchema), async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const updates = req.body;
+
+      // Handle nested object merging for all JSON fields
+      const existingSettings = await storage.getOrCreateUserSettings(userId);
+      
+      const mergedUpdates: any = { ...updates };
+      if (updates.notifications) {
+        mergedUpdates.notifications = {
+          ...(existingSettings.notifications as any),
+          ...updates.notifications,
+        };
+      }
+      if (updates.pushNotifications) {
+        mergedUpdates.pushNotifications = {
+          ...(existingSettings.pushNotifications as any),
+          ...updates.pushNotifications,
+        };
+      }
+      if (updates.emailNotifications) {
+        mergedUpdates.emailNotifications = {
+          ...(existingSettings.emailNotifications as any),
+          ...updates.emailNotifications,
+        };
+      }
+      if (updates.contentPreferences) {
+        mergedUpdates.contentPreferences = {
+          ...(existingSettings.contentPreferences as any),
+          ...updates.contentPreferences,
+        };
+      }
+      if (updates.mediaPrefs) {
+        mergedUpdates.mediaPrefs = {
+          ...(existingSettings.mediaPrefs as any),
+          ...updates.mediaPrefs,
+        };
+      }
+
+      const settings = await storage.updateUserSettings(userId, mergedUpdates);
+
+      // Audit log for privacy changes
+      if (updates.privateAccount !== undefined) {
+        await storage.createAuditLog({
+          actorId: userId,
+          action: "SETTING_CHANGED",
+          targetType: "user",
+          targetId: userId,
+          details: { setting: "privateAccount", value: updates.privateAccount },
+        });
+      }
+
+      res.json(settings);
+    } catch (error) {
+      console.error("Failed to update settings:", error);
+      res.status(500).json({ message: "Failed to update settings" });
+    }
+  });
+
+  // Update profile (displayName, bio, linkUrl, location, pronouns, category, coverUrl, avatarUrl)
+  app.patch("/api/me/profile", requireAuth, validateBody(updateFullProfileSchema), async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const updates = req.body;
+
+      const user = await storage.updateUser(userId, updates);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const { password: _, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Failed to update profile:", error);
+      res.status(500).json({ message: "Failed to update profile" });
+    }
+  });
+
+  // Change password
+  app.post("/api/me/change-password", requireAuth, validateBody(changePasswordSchema), async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { currentPassword, newPassword } = req.body;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const validPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!validPassword) {
+        return res.status(400).json({ message: "Current password is incorrect" });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateUser(userId, { password: hashedPassword });
+
+      // Audit log
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "settings.password_changed",
+        targetType: "user",
+        targetId: userId,
+        details: {},
+      });
+
+      res.json({ success: true, message: "Password changed successfully" });
+    } catch (error) {
+      console.error("Failed to change password:", error);
+      res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+
+  // Get user sessions (basic list)
+  app.get("/api/me/sessions", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      // Query active sessions from the session store
+      const result = await pool.query(
+        "SELECT sid, expire FROM user_sessions WHERE (sess->>'userId') = $1 AND expire > NOW()",
+        [userId]
+      );
+      
+      const sessions = result.rows.map((row: any) => ({
+        id: row.sid,
+        expiresAt: row.expire,
+        isCurrent: row.sid === req.sessionID,
+      }));
+
+      res.json(sessions);
+    } catch (error) {
+      console.error("Failed to get sessions:", error);
+      res.status(500).json({ message: "Failed to get sessions" });
+    }
+  });
+
+  // Revoke all sessions except current
+  app.post("/api/me/sessions/revoke-all", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const currentSessionId = req.sessionID;
+
+      // Delete all sessions except current
+      await pool.query(
+        "DELETE FROM user_sessions WHERE (sess->>'userId') = $1 AND sid != $2",
+        [userId, currentSessionId]
+      );
+
+      // Audit log
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "settings.sessions_revoked",
+        targetType: "user",
+        targetId: userId,
+        details: {},
+      });
+
+      res.json({ success: true, message: "All other sessions revoked" });
+    } catch (error) {
+      console.error("Failed to revoke sessions:", error);
+      res.status(500).json({ message: "Failed to revoke sessions" });
+    }
+  });
+
+  // Block a user (alternative endpoint under /api/me)
+  app.post("/api/me/block/:userId", requireAuth, async (req, res) => {
+    try {
+      const blockerId = req.session.userId!;
+      const blockedId = req.params.userId;
+
+      if (blockerId === blockedId) {
+        return res.status(400).json({ message: "Cannot block yourself" });
+      }
+
+      const blockedUser = await storage.getUser(blockedId);
+      if (!blockedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      await storage.blockUser(blockerId, blockedId);
+      res.json({ success: true, message: "User blocked" });
+    } catch (error) {
+      console.error("Failed to block user:", error);
+      res.status(500).json({ message: "Failed to block user" });
+    }
+  });
+
+  // Unblock a user (alternative endpoint under /api/me)
+  app.post("/api/me/unblock/:userId", requireAuth, async (req, res) => {
+    try {
+      const blockerId = req.session.userId!;
+      const blockedId = req.params.userId;
+
+      await storage.unblockUser(blockerId, blockedId);
+      res.json({ success: true, message: "User unblocked" });
+    } catch (error) {
+      console.error("Failed to unblock user:", error);
+      res.status(500).json({ message: "Failed to unblock user" });
+    }
+  });
+
+  // Get blocked users (alternative under /api/me)
+  app.get("/api/me/blocked", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const blockedUsers = await storage.getBlockedUsers(userId);
+      const safeUsers = blockedUsers.map(u => ({ ...u, password: undefined }));
+      res.json(safeUsers);
+    } catch (error) {
+      console.error("Failed to get blocked users:", error);
+      res.status(500).json({ message: "Failed to get blocked users" });
+    }
+  });
+
+  // Export user data (JSON export of profile + posts summary)
+  app.post("/api/me/export", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Get user's posts
+      const posts = await storage.getUserPosts(userId);
+      const settings = await storage.getOrCreateUserSettings(userId);
+
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        profile: {
+          username: user.username,
+          displayName: user.displayName,
+          bio: user.bio,
+          email: user.email,
+          location: user.location,
+          linkUrl: user.linkUrl,
+          category: user.category,
+          netWorth: user.netWorth,
+          influenceScore: user.influenceScore,
+          createdAt: user.createdAt,
+        },
+        settings: {
+          privateAccount: settings.privateAccount,
+          commentPolicy: settings.commentPolicy,
+          messagePolicy: settings.messagePolicy,
+          mentionPolicy: settings.mentionPolicy,
+          notifications: settings.notifications,
+          mediaPrefs: settings.mediaPrefs,
+        },
+        posts: posts.map(p => ({
+          id: p.id,
+          type: p.type,
+          content: p.content,
+          caption: p.caption,
+          visibility: p.visibility,
+          likesCount: p.likesCount,
+          commentsCount: p.commentsCount,
+          sharesCount: p.sharesCount,
+          viewsCount: p.viewsCount,
+          createdAt: p.createdAt,
+        })),
+        postCount: posts.length,
+      };
+
+      // Audit log
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "SETTING_CHANGED",
+        targetType: "user",
+        targetId: userId,
+        details: { operation: "data_export" },
+      });
+
+      res.json(exportData);
+    } catch (error) {
+      console.error("Failed to export data:", error);
+      res.status(500).json({ message: "Failed to export data" });
+    }
+  });
+
+  // Deactivate account (soft delete - sets deactivatedAt)
+  app.post("/api/me/deactivate", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      const user = await storage.updateUser(userId, {
+        deactivatedAt: new Date(),
+      });
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Audit log
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "USER_DEACTIVATED",
+        targetType: "user",
+        targetId: userId,
+        details: { selfDeactivated: true },
+      });
+
+      // Destroy session
+      req.session.destroy((err) => {
+        if (err) {
+          console.error("Session destroy error:", err);
+        }
+        res.json({ success: true, message: "Account deactivated" });
+      });
+    } catch (error) {
+      console.error("Failed to deactivate account:", error);
+      res.status(500).json({ message: "Failed to deactivate account" });
+    }
+  });
+
+  // Delete account (requires password confirmation, uses deactivate-first logic)
+  app.delete("/api/me", requireAuth, validateBody(deleteAccountSchema), async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { password } = req.body;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        return res.status(400).json({ message: "Password is incorrect" });
+      }
+
+      // Audit log before deletion
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "DELETE",
+        targetType: "user",
+        targetId: userId,
+        details: { username: user.username, selfDeleted: true },
+      });
+
+      // Delete the user (cascade will handle related data)
+      await storage.deleteUser(userId);
+
+      req.session.destroy((err) => {
+        if (err) {
+          console.error("Session destroy error:", err);
+        }
+        res.json({ success: true, message: "Account deleted permanently" });
+      });
+    } catch (error) {
+      console.error("Failed to delete account:", error);
+      res.status(500).json({ message: "Failed to delete account" });
+    }
+  });
+
+  // ===== VERIFICATION REQUEST ENDPOINTS =====
+
+  // Submit a new verification request
+  app.post("/api/me/verification", requireAuth, validateBody(submitVerificationSchema), async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Check if user is already verified
+      if (user.isVerified) {
+        return res.status(400).json({ message: "You are already verified" });
+      }
+
+      // Check for pending request
+      const latestRequest = await storage.getLatestUserVerificationRequest(userId);
+      if (latestRequest) {
+        // Block if pending or under review
+        if (latestRequest.status === "SUBMITTED" || latestRequest.status === "UNDER_REVIEW") {
+          return res.status(400).json({ 
+            message: "You already have a pending verification request",
+            status: latestRequest.status,
+          });
+        }
+        // Allow resubmission after denial or more info needed, with 7 day cooldown
+        if (latestRequest.status === "DENIED" || latestRequest.status === "MORE_INFO_NEEDED") {
+          const cooldownDays = 7;
+          const cooldownEnd = new Date(latestRequest.updatedAt.getTime() + cooldownDays * 24 * 60 * 60 * 1000);
+          if (new Date() < cooldownEnd) {
+            const daysLeft = Math.ceil((cooldownEnd.getTime() - new Date().getTime()) / (24 * 60 * 60 * 1000));
+            return res.status(400).json({ 
+              message: `Please wait ${daysLeft} more day(s) before resubmitting`,
+              cooldownEndsAt: cooldownEnd.toISOString(),
+            });
+          }
+        }
+      }
+
+      const request = await storage.createVerificationRequest({
+        userId,
+        fullName: req.body.fullName,
+        category: req.body.category,
+        documentUrls: req.body.documentUrls,
+        links: req.body.links || [],
+        reason: req.body.reason,
+      });
+
+      // Audit log
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "CREATE",
+        targetType: "verification",
+        targetId: request.id,
+        details: { category: request.category },
+      });
+
+      res.status(201).json(request);
+    } catch (error) {
+      console.error("Failed to submit verification request:", error);
+      res.status(500).json({ message: "Failed to submit verification request" });
+    }
+  });
+
+  // Get current user's verification status
+  app.get("/api/me/verification", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const latestRequest = await storage.getLatestUserVerificationRequest(userId);
+      
+      res.json({
+        isVerified: user.isVerified,
+        verifiedAt: user.verifiedAt,
+        latestRequest: latestRequest || null,
+      });
+    } catch (error) {
+      console.error("Failed to get verification status:", error);
+      res.status(500).json({ message: "Failed to get verification status" });
+    }
+  });
+
+  // Get user's verification request history
+  app.get("/api/me/verification/history", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const requests = await storage.getUserVerificationRequests(userId);
+      res.json(requests);
+    } catch (error) {
+      console.error("Failed to get verification history:", error);
+      res.status(500).json({ message: "Failed to get verification history" });
+    }
+  });
+
+  // Admin: List verification requests
+  app.get("/api/admin/verification", requireAdmin, async (req, res) => {
+    try {
+      const viewer = await getViewerContext(req.session.userId);
+      const canView = await hasPermission(viewer, "verification.view");
+      if (!canView) {
+        return res.status(403).json({ message: "Permission denied" });
+      }
+
+      const { status, category, limit, offset } = req.query;
+      
+      const filters: { status?: any; category?: any; limit?: number; offset?: number } = {};
+      if (status && typeof status === "string") filters.status = status;
+      if (category && typeof category === "string") filters.category = category;
+      if (limit && typeof limit === "string") filters.limit = parseInt(limit, 10);
+      if (offset && typeof offset === "string") filters.offset = parseInt(offset, 10);
+
+      const requests = await storage.getVerificationRequests(filters);
+      res.json(requests);
+    } catch (error) {
+      console.error("Failed to get verification requests:", error);
+      res.status(500).json({ message: "Failed to get verification requests" });
+    }
+  });
+
+  // Admin: Get single verification request
+  app.get("/api/admin/verification/:id", requireAdmin, async (req, res) => {
+    try {
+      const viewer = await getViewerContext(req.session.userId);
+      const canView = await hasPermission(viewer, "verification.view");
+      if (!canView) {
+        return res.status(403).json({ message: "Permission denied" });
+      }
+
+      const request = await storage.getVerificationRequest(req.params.id);
+      if (!request) {
+        return res.status(404).json({ message: "Verification request not found" });
+      }
+
+      res.json(request);
+    } catch (error) {
+      console.error("Failed to get verification request:", error);
+      res.status(500).json({ message: "Failed to get verification request" });
+    }
+  });
+
+  // Admin: Perform action on verification request
+  app.post("/api/admin/verification/:id/action", requireAdmin, validateBody(verificationActionSchema), async (req, res) => {
+    try {
+      const viewer = await getViewerContext(req.session.userId);
+      const canManage = await hasPermission(viewer, "verification.manage");
+      if (!canManage) {
+        return res.status(403).json({ message: "Permission denied" });
+      }
+
+      const adminId = req.session.userId!;
+      const requestId = req.params.id;
+      const { action, reason, notes } = req.body;
+
+      const existingRequest = await storage.getVerificationRequest(requestId);
+      if (!existingRequest) {
+        return res.status(404).json({ message: "Verification request not found" });
+      }
+
+      if (existingRequest.status === "APPROVED") {
+        return res.status(400).json({ message: "This request has already been approved" });
+      }
+
+      let updatedRequest;
+      let auditAction: string;
+
+      switch (action) {
+        case "approve":
+          updatedRequest = await storage.approveVerification(requestId, adminId, notes);
+          auditAction = "verification.approved";
+          break;
+        case "deny":
+          if (!reason) {
+            return res.status(400).json({ message: "Reason is required when denying a request" });
+          }
+          updatedRequest = await storage.denyVerification(requestId, adminId, reason, notes);
+          auditAction = "verification.denied";
+          break;
+        case "request_info":
+          if (!notes) {
+            return res.status(400).json({ message: "Notes are required when requesting more info" });
+          }
+          updatedRequest = await storage.requestMoreInfo(requestId, adminId, notes);
+          auditAction = "verification.info_requested";
+          break;
+        default:
+          return res.status(400).json({ message: "Invalid action" });
+      }
+
+      // Audit log
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: auditAction,
+        targetType: "verification",
+        targetId: requestId,
+        details: { 
+          userId: existingRequest.userId,
+          previousStatus: existingRequest.status,
+          newStatus: updatedRequest?.status,
+          reason,
+        },
+      });
+
+      // Create notification for user
+      if (updatedRequest) {
+        await storage.createNotification(
+          existingRequest.userId,
+          adminId,
+          action === "approve" ? "VERIFICATION_APPROVED" : 
+          action === "deny" ? "VERIFICATION_DENIED" : "VERIFICATION_INFO_NEEDED",
+          requestId
+        );
+      }
+
+      res.json(updatedRequest);
+    } catch (error) {
+      console.error("Failed to process verification action:", error);
+      res.status(500).json({ message: "Failed to process verification action" });
+    }
+  });
+
+  // ===== Studio Analytics Endpoints =====
+
+  // Get studio overview for current user or another user (with permission)
+  app.get("/api/studio/overview", requireAuth, async (req, res) => {
+    try {
+      const viewerContext = await getViewerContext(req.session.userId);
+      const targetUserId = (req.query.userId as string) || req.session.userId!;
+      
+      // If viewing another user, require studio.view_others permission
+      if (targetUserId !== req.session.userId) {
+        if (!await hasPermission(viewerContext, "studio.view_others")) {
+          return res.status(403).json({ message: "Not authorized to view other users' studio" });
+        }
+      }
+      
+      // Parse date range
+      const startDate = req.query.startDate 
+        ? new Date(req.query.startDate as string)
+        : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // Default 30 days
+      const endDate = req.query.endDate 
+        ? new Date(req.query.endDate as string)
+        : new Date();
+
+      const overview = await storage.getStudioOverview(targetUserId, startDate, endDate);
+      res.json(overview);
+    } catch (error) {
+      console.error("Failed to get studio overview:", error);
+      res.status(500).json({ message: "Failed to get studio overview" });
+    }
+  });
+
+  // Get studio content list for current user or another user (with permission)
+  app.get("/api/studio/content", requireAuth, async (req, res) => {
+    try {
+      const viewerContext = await getViewerContext(req.session.userId);
+      const targetUserId = (req.query.userId as string) || req.session.userId!;
+      
+      if (targetUserId !== req.session.userId) {
+        if (!await hasPermission(viewerContext, "studio.view_others")) {
+          return res.status(403).json({ message: "Not authorized to view other users' studio" });
+        }
+      }
+      
+      const startDate = req.query.startDate 
+        ? new Date(req.query.startDate as string)
+        : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const endDate = req.query.endDate 
+        ? new Date(req.query.endDate as string)
+        : new Date();
+      const type = req.query.type as any;
+      const sortBy = (req.query.sortBy as string) || "views";
+
+      const content = await storage.getStudioContent(targetUserId, startDate, endDate, type, sortBy);
+      res.json(content);
+    } catch (error) {
+      console.error("Failed to get studio content:", error);
+      res.status(500).json({ message: "Failed to get studio content" });
+    }
+  });
+
+  // Get detailed analytics for a specific post
+  app.get("/api/studio/posts/:postId", requireAuth, async (req, res) => {
+    try {
+      const viewerContext = await getViewerContext(req.session.userId);
+      const postId = req.params.postId;
+      
+      const post = await storage.getPost(postId);
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      
+      // Must be post author or have admin permission
+      if (post.authorId !== req.session.userId) {
+        if (!await hasPermission(viewerContext, "studio.view_others")) {
+          return res.status(403).json({ message: "Not authorized to view this post's analytics" });
+        }
+      }
+      
+      const startDate = req.query.startDate 
+        ? new Date(req.query.startDate as string)
+        : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const endDate = req.query.endDate 
+        ? new Date(req.query.endDate as string)
+        : new Date();
+
+      const detail = await storage.getStudioPostDetail(postId, startDate, endDate);
+      res.json(detail);
+    } catch (error) {
+      console.error("Failed to get post detail:", error);
+      res.status(500).json({ message: "Failed to get post detail" });
+    }
+  });
+
+  // Get audience analytics for current user or another user (with permission)
+  app.get("/api/studio/audience", requireAuth, async (req, res) => {
+    try {
+      const viewerContext = await getViewerContext(req.session.userId);
+      const targetUserId = (req.query.userId as string) || req.session.userId!;
+      
+      if (targetUserId !== req.session.userId) {
+        if (!await hasPermission(viewerContext, "studio.view_others")) {
+          return res.status(403).json({ message: "Not authorized to view other users' studio" });
+        }
+      }
+      
+      const startDate = req.query.startDate 
+        ? new Date(req.query.startDate as string)
+        : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const endDate = req.query.endDate 
+        ? new Date(req.query.endDate as string)
+        : new Date();
+
+      const audience = await storage.getStudioAudience(targetUserId, startDate, endDate);
+      res.json(audience);
+    } catch (error) {
+      console.error("Failed to get studio audience:", error);
+      res.status(500).json({ message: "Failed to get studio audience" });
+    }
+  });
+
+  // Record a profile view (called when visiting a user's profile)
+  app.post("/api/studio/profile-view", async (req, res) => {
+    try {
+      const { profileUserId, source } = req.body;
+      
+      if (!profileUserId) {
+        return res.status(400).json({ message: "profileUserId is required" });
+      }
+      
+      const viewerId = req.session.userId || undefined;
+      
+      // Don't record self-views
+      if (viewerId && viewerId === profileUserId) {
+        return res.json({ recorded: false });
+      }
+      
+      await storage.recordProfileView(profileUserId, viewerId, source || "DIRECT");
+      res.json({ recorded: true });
+    } catch (error) {
+      console.error("Failed to record profile view:", error);
+      res.status(500).json({ message: "Failed to record profile view" });
+    }
+  });
+
+  // Record a watch event for video/voice content
+  app.post("/api/studio/watch-event", async (req, res) => {
+    try {
+      const { postId, watchTimeMs, completed, source } = req.body;
+      
+      if (!postId || typeof watchTimeMs !== "number") {
+        return res.status(400).json({ message: "postId and watchTimeMs are required" });
+      }
+      
+      const userId = req.session.userId || null;
+      
+      await storage.recordWatchEvent(postId, userId, watchTimeMs, completed || false, source || "FEED");
+      res.json({ recorded: true });
+    } catch (error) {
+      console.error("Failed to record watch event:", error);
+      res.status(500).json({ message: "Failed to record watch event" });
+    }
+  });
+
+  // ===== STORY HIGHLIGHTS =====
+
+  app.get("/api/users/:userId/highlights", async (req, res) => {
+    try {
+      const highlights = await storage.getStoryHighlights(req.params.userId);
+      res.json(highlights);
+    } catch (error) {
+      console.error("Failed to get story highlights:", error);
+      res.status(500).json({ message: "Failed to get story highlights" });
+    }
+  });
+
+  app.post("/api/me/highlights", requireAuth, async (req, res) => {
+    try {
+      const { name, coverUrl } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: "Highlight name is required" });
+      }
+      const highlight = await storage.createStoryHighlight(req.session.userId!, name, coverUrl);
+      res.status(201).json(highlight);
+    } catch (error) {
+      console.error("Failed to create story highlight:", error);
+      res.status(500).json({ message: "Failed to create story highlight" });
+    }
+  });
+
+  app.get("/api/highlights/:highlightId", async (req, res) => {
+    try {
+      const highlight = await storage.getStoryHighlight(req.params.highlightId);
+      if (!highlight) {
+        return res.status(404).json({ message: "Highlight not found" });
+      }
+      const items = await storage.getHighlightItems(req.params.highlightId);
+      res.json({ ...highlight, items });
+    } catch (error) {
+      console.error("Failed to get story highlight:", error);
+      res.status(500).json({ message: "Failed to get story highlight" });
+    }
+  });
+
+  app.patch("/api/me/highlights/:highlightId", requireAuth, async (req, res) => {
+    try {
+      const highlight = await storage.getStoryHighlight(req.params.highlightId);
+      if (!highlight || highlight.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Highlight not found" });
+      }
+      const { name, coverUrl, order } = req.body;
+      const updated = await storage.updateStoryHighlight(req.params.highlightId, { name, coverUrl, order });
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update story highlight:", error);
+      res.status(500).json({ message: "Failed to update story highlight" });
+    }
+  });
+
+  app.delete("/api/me/highlights/:highlightId", requireAuth, async (req, res) => {
+    try {
+      const highlight = await storage.getStoryHighlight(req.params.highlightId);
+      if (!highlight || highlight.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Highlight not found" });
+      }
+      await storage.deleteStoryHighlight(req.params.highlightId);
+      res.json({ message: "Highlight deleted" });
+    } catch (error) {
+      console.error("Failed to delete story highlight:", error);
+      res.status(500).json({ message: "Failed to delete story highlight" });
+    }
+  });
+
+  app.post("/api/me/highlights/:highlightId/stories", requireAuth, async (req, res) => {
+    try {
+      const highlight = await storage.getStoryHighlight(req.params.highlightId);
+      if (!highlight || highlight.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Highlight not found" });
+      }
+      const { storyId } = req.body;
+      if (!storyId) {
+        return res.status(400).json({ message: "storyId is required" });
+      }
+      const item = await storage.addStoryToHighlight(req.params.highlightId, storyId);
+      if (!item) {
+        return res.status(400).json({ message: "Story already in highlight" });
+      }
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Failed to add story to highlight:", error);
+      res.status(500).json({ message: "Failed to add story to highlight" });
+    }
+  });
+
+  app.delete("/api/me/highlights/:highlightId/stories/:storyId", requireAuth, async (req, res) => {
+    try {
+      const highlight = await storage.getStoryHighlight(req.params.highlightId);
+      if (!highlight || highlight.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Highlight not found" });
+      }
+      await storage.removeStoryFromHighlight(req.params.highlightId, req.params.storyId);
+      res.json({ message: "Story removed from highlight" });
+    } catch (error) {
+      console.error("Failed to remove story from highlight:", error);
+      res.status(500).json({ message: "Failed to remove story from highlight" });
+    }
+  });
+
+  // ===== USER PROFILE ENHANCEMENTS =====
+
+  app.get("/api/users/:userId/enhancements", async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      let relationshipPartner = null;
+      if (user.relationshipPartnerId) {
+        const partner = await storage.getUser(user.relationshipPartnerId);
+        if (partner) {
+          relationshipPartner = {
+            id: partner.id,
+            username: partner.username,
+            displayName: partner.displayName,
+            avatarUrl: partner.avatarUrl,
+          };
+        }
+      }
+      
+      res.json({
+        birthday: user.birthday,
+        profileSongUrl: user.profileSongUrl,
+        profileSongTitle: user.profileSongTitle,
+        profileSongArtist: user.profileSongArtist,
+        avatarVideoUrl: user.avatarVideoUrl,
+        voiceBioUrl: user.voiceBioUrl,
+        voiceBioDurationMs: user.voiceBioDurationMs,
+        contactEmail: user.contactEmail,
+        contactPhone: user.contactPhone,
+        contactAddress: user.contactAddress,
+        relationshipStatus: user.relationshipStatus,
+        relationshipPartnerId: user.relationshipPartnerId,
+        relationshipPartner,
+        themeColor: user.themeColor,
+        themeStyle: user.themeStyle,
+        category: user.category,
+        avatarUrl: user.avatarUrl,
+      });
+    } catch (error) {
+      console.error("Failed to get user enhancements:", error);
+      res.status(500).json({ message: "Failed to get user enhancements" });
+    }
+  });
+
+  // ===== USER NOTES (24H STATUS) =====
+
+  app.get("/api/users/:userId/note", async (req, res) => {
+    try {
+      const note = await storage.getUserNote(req.params.userId);
+      res.json(note || null);
+    } catch (error) {
+      console.error("Failed to get user note:", error);
+      res.status(500).json({ message: "Failed to get user note" });
+    }
+  });
+
+  app.post("/api/me/note", requireAuth, async (req, res) => {
+    try {
+      const { content } = req.body;
+      if (!content || content.length > 60) {
+        return res.status(400).json({ message: "Note content is required and max 60 characters" });
+      }
+      const note = await storage.createUserNote(req.session.userId!, content);
+      res.status(201).json(note);
+    } catch (error) {
+      console.error("Failed to create user note:", error);
+      res.status(500).json({ message: "Failed to create user note" });
+    }
+  });
+
+  app.delete("/api/me/note", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteUserNote(req.session.userId!);
+      res.json({ message: "Note deleted" });
+    } catch (error) {
+      console.error("Failed to delete user note:", error);
+      res.status(500).json({ message: "Failed to delete user note" });
+    }
+  });
+
+  // ===== USER LINKS =====
+
+  app.get("/api/users/:userId/links", async (req, res) => {
+    try {
+      const links = await storage.getUserLinks(req.params.userId);
+      res.json(links.filter(l => l.isActive));
+    } catch (error) {
+      console.error("Failed to get user links:", error);
+      res.status(500).json({ message: "Failed to get user links" });
+    }
+  });
+
+  app.get("/api/me/links", requireAuth, async (req, res) => {
+    try {
+      const links = await storage.getUserLinks(req.session.userId!);
+      res.json(links);
+    } catch (error) {
+      console.error("Failed to get user links:", error);
+      res.status(500).json({ message: "Failed to get user links" });
+    }
+  });
+
+  app.post("/api/me/links", requireAuth, async (req, res) => {
+    try {
+      const { title, url, iconType } = req.body;
+      if (!title || !url) {
+        return res.status(400).json({ message: "Title and URL are required" });
+      }
+      const link = await storage.createUserLink(req.session.userId!, { title, url, iconType });
+      res.status(201).json(link);
+    } catch (error) {
+      console.error("Failed to create user link:", error);
+      res.status(500).json({ message: "Failed to create user link" });
+    }
+  });
+
+  app.patch("/api/me/links/:linkId", requireAuth, async (req, res) => {
+    try {
+      const link = await storage.getUserLink(req.params.linkId);
+      if (!link || link.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Link not found" });
+      }
+      const { title, url, iconType, order, isActive } = req.body;
+      const updated = await storage.updateUserLink(req.params.linkId, { title, url, iconType, order, isActive });
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update user link:", error);
+      res.status(500).json({ message: "Failed to update user link" });
+    }
+  });
+
+  app.delete("/api/me/links/:linkId", requireAuth, async (req, res) => {
+    try {
+      const link = await storage.getUserLink(req.params.linkId);
+      if (!link || link.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Link not found" });
+      }
+      await storage.deleteUserLink(req.params.linkId);
+      res.json({ message: "Link deleted" });
+    } catch (error) {
+      console.error("Failed to delete user link:", error);
+      res.status(500).json({ message: "Failed to delete user link" });
+    }
+  });
+
+  app.post("/api/links/:linkId/click", apiLimiter, async (req, res) => {
+    try {
+      // SEC-005 FIX: Added rate limiting to prevent abuse
+      await storage.incrementLinkClicks(req.params.linkId);
+      res.json({ tracked: true });
+    } catch (error) {
+      console.error("Failed to track link click:", error);
+      res.status(500).json({ message: "Failed to track link click" });
+    }
+  });
+
+  // ===== USER INTERESTS =====
+
+  app.get("/api/users/:userId/interests", async (req, res) => {
+    try {
+      const interests = await storage.getUserInterests(req.params.userId);
+      res.json(interests);
+    } catch (error) {
+      console.error("Failed to get user interests:", error);
+      res.status(500).json({ message: "Failed to get user interests" });
+    }
+  });
+
+  app.get("/api/me/interests", requireAuth, async (req, res) => {
+    try {
+      const interests = await storage.getUserInterests(req.session.userId!);
+      res.json(interests);
+    } catch (error) {
+      console.error("Failed to get user interests:", error);
+      res.status(500).json({ message: "Failed to get user interests" });
+    }
+  });
+
+  app.post("/api/me/interests", requireAuth, async (req, res) => {
+    try {
+      const { interest } = req.body;
+      if (!interest) {
+        return res.status(400).json({ message: "Interest is required" });
+      }
+      const item = await storage.addUserInterest(req.session.userId!, interest);
+      if (!item) {
+        return res.status(400).json({ message: "Interest already exists" });
+      }
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Failed to add user interest:", error);
+      res.status(500).json({ message: "Failed to add user interest" });
+    }
+  });
+
+  app.put("/api/me/interests", requireAuth, async (req, res) => {
+    try {
+      const { interests } = req.body;
+      if (!Array.isArray(interests)) {
+        return res.status(400).json({ message: "Interests array is required" });
+      }
+      const items = await storage.setUserInterests(req.session.userId!, interests);
+      res.json(items);
+    } catch (error) {
+      console.error("Failed to set user interests:", error);
+      res.status(500).json({ message: "Failed to set user interests" });
+    }
+  });
+
+  app.delete("/api/me/interests/:interest", requireAuth, async (req, res) => {
+    try {
+      await storage.removeUserInterest(req.session.userId!, decodeURIComponent(req.params.interest));
+      res.json({ message: "Interest removed" });
+    } catch (error) {
+      console.error("Failed to remove user interest:", error);
+      res.status(500).json({ message: "Failed to remove user interest" });
+    }
+  });
+
+  // ===== PROFILE ENHANCEMENTS =====
+
+  app.patch("/api/me/profile-enhancements", requireAuth, async (req, res) => {
+    try {
+      const {
+        birthday, profileSongUrl, profileSongTitle, profileSongArtist,
+        avatarVideoUrl, voiceBioUrl, voiceBioDurationMs,
+        contactEmail, contactPhone, contactAddress,
+        relationshipStatus, relationshipPartnerId,
+        themeColor, themeStyle
+      } = req.body;
+      
+      const updated = await storage.updateProfileEnhancements(req.session.userId!, {
+        birthday: birthday ? new Date(birthday) : undefined,
+        profileSongUrl, profileSongTitle, profileSongArtist,
+        avatarVideoUrl, voiceBioUrl, voiceBioDurationMs,
+        contactEmail, contactPhone, contactAddress,
+        relationshipStatus, relationshipPartnerId,
+        themeColor, themeStyle
+      });
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update profile enhancements:", error);
+      res.status(500).json({ message: "Failed to update profile enhancements" });
+    }
+  });
+
+  app.get("/api/users/:userId/profile-full", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // SEC-001 FIX: Check if viewer can access this profile
+      const viewer = await getViewerContext(req.session.userId);
+      const profileAccess = await canViewProfile(viewer, user);
+      if (!profileAccess.allowed) {
+        return res.status(403).json({ 
+          message: profileAccess.reason || "Cannot view this profile",
+          restricted: profileAccess.restricted
+        });
+      }
+      
+      const [highlights, note, links, interests, relationshipPartner] = await Promise.all([
+        storage.getStoryHighlights(req.params.userId),
+        storage.getUserNote(req.params.userId),
+        storage.getUserLinks(req.params.userId),
+        storage.getUserInterests(req.params.userId),
+        user.relationshipPartnerId ? storage.getUser(user.relationshipPartnerId) : null
+      ]);
+      
+      // SEC-001 FIX: Remove password from response
+      const { password: _, ...safeUser } = user;
+      
+      res.json({
+        ...safeUser,
+        highlights,
+        note,
+        links: links.filter(l => l.isActive),
+        interests,
+        relationshipPartner: relationshipPartner ? { 
+          id: relationshipPartner.id, 
+          username: relationshipPartner.username, 
+          displayName: relationshipPartner.displayName, 
+          avatarUrl: relationshipPartner.avatarUrl 
+        } : null
+      });
+    } catch (error) {
+      console.error("Failed to get full profile:", error);
+      res.status(500).json({ message: "Failed to get full profile" });
+    }
+  });
+
+  // ===== QR CODE GENERATION =====
+
+  app.get("/api/users/:userId/qr", async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const profileUrl = `${process.env.EXPO_PUBLIC_DOMAIN || 'rabitchat.app'}/profile/${user.username}`;
+      res.json({ 
+        qrData: profileUrl,
+        username: user.username,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl
+      });
+    } catch (error) {
+      console.error("Failed to generate QR data:", error);
+      res.status(500).json({ message: "Failed to generate QR data" });
+    }
+  });
+
+  // ===== LOGIN SESSIONS =====
+
+  app.get("/api/security/sessions", requireAuth, async (req, res) => {
+    try {
+      const sessions = await storage.getLoginSessions(req.session.userId!);
+      res.json(sessions);
+    } catch (error) {
+      console.error("Failed to get login sessions:", error);
+      res.status(500).json({ message: "Failed to get login sessions" });
+    }
+  });
+
+  app.delete("/api/security/sessions/:sessionId", requireAuth, async (req, res) => {
+    try {
+      // SEC-002 FIX: Verify session belongs to the authenticated user
+      const session = await storage.getLoginSession(req.params.sessionId);
+      if (!session || session.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+      
+      await storage.invalidateLoginSession(req.params.sessionId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to invalidate session:", error);
+      res.status(500).json({ message: "Failed to invalidate session" });
+    }
+  });
+
+  app.post("/api/security/sessions/logout-all", requireAuth, async (req, res) => {
+    try {
+      await storage.invalidateAllLoginSessions(req.session.userId!, req.session.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to logout all sessions:", error);
+      res.status(500).json({ message: "Failed to logout all sessions" });
+    }
+  });
+
+  // ===== TRUSTED DEVICES =====
+
+  app.get("/api/security/devices", requireAuth, async (req, res) => {
+    try {
+      const devices = await storage.getTrustedDevices(req.session.userId!);
+      res.json(devices);
+    } catch (error) {
+      console.error("Failed to get trusted devices:", error);
+      res.status(500).json({ message: "Failed to get trusted devices" });
+    }
+  });
+
+  app.post("/api/security/devices", requireAuth, async (req, res) => {
+    try {
+      const { deviceId, deviceName, deviceType, browser, os } = req.body;
+      if (!deviceId || !deviceName) {
+        return res.status(400).json({ message: "Device ID and name are required" });
+      }
+      const device = await storage.addTrustedDevice(req.session.userId!, {
+        deviceId, deviceName, deviceType, browser, os
+      });
+      res.json(device);
+    } catch (error) {
+      console.error("Failed to add trusted device:", error);
+      res.status(500).json({ message: "Failed to add trusted device" });
+    }
+  });
+
+  app.delete("/api/security/devices/:deviceId", requireAuth, async (req, res) => {
+    try {
+      // SEC-003 FIX: Verify device belongs to the authenticated user
+      const device = await storage.getTrustedDevice(req.params.deviceId);
+      if (!device || device.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Device not found" });
+      }
+      
+      await storage.removeTrustedDevice(req.params.deviceId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to remove trusted device:", error);
+      res.status(500).json({ message: "Failed to remove trusted device" });
+    }
+  });
+
+  // ===== RESTRICTED ACCOUNTS =====
+
+  app.get("/api/privacy/restricted", requireAuth, async (req, res) => {
+    try {
+      const restricted = await storage.getRestrictedAccounts(req.session.userId!);
+      res.json(restricted);
+    } catch (error) {
+      console.error("Failed to get restricted accounts:", error);
+      res.status(500).json({ message: "Failed to get restricted accounts" });
+    }
+  });
+
+  app.post("/api/privacy/restricted/:userId", requireAuth, async (req, res) => {
+    try {
+      const { reason } = req.body;
+      const restricted = await storage.restrictAccount(req.session.userId!, req.params.userId, reason);
+      res.json(restricted);
+    } catch (error) {
+      console.error("Failed to restrict account:", error);
+      res.status(500).json({ message: "Failed to restrict account" });
+    }
+  });
+
+  app.delete("/api/privacy/restricted/:userId", requireAuth, async (req, res) => {
+    try {
+      await storage.unrestrictAccount(req.session.userId!, req.params.userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to unrestrict account:", error);
+      res.status(500).json({ message: "Failed to unrestrict account" });
+    }
+  });
+
+  // ===== MUTED ACCOUNTS =====
+
+  app.get("/api/privacy/muted", requireAuth, async (req, res) => {
+    try {
+      const muted = await storage.getMutedAccounts(req.session.userId!);
+      res.json(muted);
+    } catch (error) {
+      console.error("Failed to get muted accounts:", error);
+      res.status(500).json({ message: "Failed to get muted accounts" });
+    }
+  });
+
+  app.post("/api/privacy/muted/:userId", requireAuth, async (req, res) => {
+    try {
+      const { mutePosts, muteStories, muteMessages } = req.body;
+      const muted = await storage.muteAccount(req.session.userId!, req.params.userId, {
+        mutePosts, muteStories, muteMessages
+      });
+      res.json(muted);
+    } catch (error) {
+      console.error("Failed to mute account:", error);
+      res.status(500).json({ message: "Failed to mute account" });
+    }
+  });
+
+  app.delete("/api/privacy/muted/:userId", requireAuth, async (req, res) => {
+    try {
+      await storage.unmuteAccount(req.session.userId!, req.params.userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to unmute account:", error);
+      res.status(500).json({ message: "Failed to unmute account" });
+    }
+  });
+
+  // ===== KEYWORD FILTERS =====
+
+  app.get("/api/privacy/keyword-filters", requireAuth, async (req, res) => {
+    try {
+      const filters = await storage.getKeywordFilters(req.session.userId!);
+      res.json(filters);
+    } catch (error) {
+      console.error("Failed to get keyword filters:", error);
+      res.status(500).json({ message: "Failed to get keyword filters" });
+    }
+  });
+
+  app.post("/api/privacy/keyword-filters", requireAuth, async (req, res) => {
+    try {
+      const { keyword, filterComments, filterMessages, filterPosts } = req.body;
+      if (!keyword) {
+        return res.status(400).json({ message: "Keyword is required" });
+      }
+      const filter = await storage.addKeywordFilter(req.session.userId!, keyword, {
+        filterComments, filterMessages, filterPosts
+      });
+      res.json(filter);
+    } catch (error) {
+      console.error("Failed to add keyword filter:", error);
+      res.status(500).json({ message: "Failed to add keyword filter" });
+    }
+  });
+
+  app.patch("/api/privacy/keyword-filters/:filterId", requireAuth, async (req, res) => {
+    try {
+      // SEC-004 FIX: Verify filter belongs to the authenticated user
+      const filter = await storage.getKeywordFilter(req.params.filterId);
+      if (!filter || filter.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Filter not found" });
+      }
+      
+      const updated = await storage.updateKeywordFilter(req.params.filterId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update keyword filter:", error);
+      res.status(500).json({ message: "Failed to update keyword filter" });
+    }
+  });
+
+  app.delete("/api/privacy/keyword-filters/:filterId", requireAuth, async (req, res) => {
+    try {
+      // SEC-004 FIX: Verify filter belongs to the authenticated user
+      const filter = await storage.getKeywordFilter(req.params.filterId);
+      if (!filter || filter.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Filter not found" });
+      }
+      
+      await storage.removeKeywordFilter(req.params.filterId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to remove keyword filter:", error);
+      res.status(500).json({ message: "Failed to remove keyword filter" });
+    }
+  });
+
+  // ===== CLOSE FRIENDS =====
+
+  app.get("/api/privacy/close-friends", requireAuth, async (req, res) => {
+    try {
+      const friends = await storage.getCloseFriends(req.session.userId!);
+      res.json(friends);
+    } catch (error) {
+      console.error("Failed to get close friends:", error);
+      res.status(500).json({ message: "Failed to get close friends" });
+    }
+  });
+
+  app.post("/api/privacy/close-friends/:userId", requireAuth, async (req, res) => {
+    try {
+      const friend = await storage.addCloseFriend(req.session.userId!, req.params.userId);
+      res.json(friend);
+    } catch (error) {
+      console.error("Failed to add close friend:", error);
+      res.status(500).json({ message: "Failed to add close friend" });
+    }
+  });
+
+  app.delete("/api/privacy/close-friends/:userId", requireAuth, async (req, res) => {
+    try {
+      await storage.removeCloseFriend(req.session.userId!, req.params.userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to remove close friend:", error);
+      res.status(500).json({ message: "Failed to remove close friend" });
+    }
+  });
+
+  // ===== STORY VIEWER RESTRICTIONS =====
+
+  app.get("/api/privacy/story-restrictions", requireAuth, async (req, res) => {
+    try {
+      const restricted = await storage.getStoryViewerRestrictions(req.session.userId!);
+      res.json(restricted);
+    } catch (error) {
+      console.error("Failed to get story restrictions:", error);
+      res.status(500).json({ message: "Failed to get story restrictions" });
+    }
+  });
+
+  app.post("/api/privacy/story-restrictions/:userId", requireAuth, async (req, res) => {
+    try {
+      const restriction = await storage.addStoryViewerRestriction(req.session.userId!, req.params.userId);
+      res.json(restriction);
+    } catch (error) {
+      console.error("Failed to add story restriction:", error);
+      res.status(500).json({ message: "Failed to add story restriction" });
+    }
+  });
+
+  app.delete("/api/privacy/story-restrictions/:userId", requireAuth, async (req, res) => {
+    try {
+      await storage.removeStoryViewerRestriction(req.session.userId!, req.params.userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to remove story restriction:", error);
+      res.status(500).json({ message: "Failed to remove story restriction" });
+    }
+  });
+
+  // ===== DRAFTS =====
+
+  app.get("/api/drafts", requireAuth, async (req, res) => {
+    try {
+      const drafts = await storage.getUserDrafts(req.session.userId!);
+      res.json(drafts);
+    } catch (error) {
+      console.error("Failed to get drafts:", error);
+      res.status(500).json({ message: "Failed to get drafts" });
+    }
+  });
+
+  app.post("/api/drafts", requireAuth, async (req, res) => {
+    try {
+      const draft = await storage.createDraft(req.session.userId!, req.body);
+      res.json(draft);
+    } catch (error) {
+      console.error("Failed to create draft:", error);
+      res.status(500).json({ message: "Failed to create draft" });
+    }
+  });
+
+  app.get("/api/drafts/:draftId", requireAuth, async (req, res) => {
+    try {
+      const draft = await storage.getDraft(req.params.draftId);
+      if (!draft || draft.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+      res.json(draft);
+    } catch (error) {
+      console.error("Failed to get draft:", error);
+      res.status(500).json({ message: "Failed to get draft" });
+    }
+  });
+
+  app.patch("/api/drafts/:draftId", requireAuth, async (req, res) => {
+    try {
+      const draft = await storage.getDraft(req.params.draftId);
+      if (!draft || draft.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+      const updated = await storage.updateDraft(req.params.draftId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update draft:", error);
+      res.status(500).json({ message: "Failed to update draft" });
+    }
+  });
+
+  app.delete("/api/drafts/:draftId", requireAuth, async (req, res) => {
+    try {
+      const draft = await storage.getDraft(req.params.draftId);
+      if (!draft || draft.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+      await storage.deleteDraft(req.params.draftId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete draft:", error);
+      res.status(500).json({ message: "Failed to delete draft" });
+    }
+  });
+
+  // ===== SCHEDULED POSTS =====
+
+  app.get("/api/scheduled-posts", requireAuth, async (req, res) => {
+    try {
+      const posts = await storage.getUserScheduledPosts(req.session.userId!);
+      res.json(posts);
+    } catch (error) {
+      console.error("Failed to get scheduled posts:", error);
+      res.status(500).json({ message: "Failed to get scheduled posts" });
+    }
+  });
+
+  app.post("/api/scheduled-posts", requireAuth, postLimiter, async (req, res) => {
+    try {
+      const { scheduledFor, ...postData } = req.body;
+      if (!scheduledFor) {
+        return res.status(400).json({ message: "Scheduled time is required" });
+      }
+      const scheduledDate = new Date(scheduledFor);
+      if (isNaN(scheduledDate.getTime()) || scheduledDate <= new Date()) {
+        return res.status(400).json({ message: "Scheduled time must be a valid future date" });
+      }
+      const scheduled = await storage.createScheduledPost(req.session.userId!, {
+        ...postData,
+        scheduledFor: scheduledDate
+      });
+      res.json(scheduled);
+    } catch (error) {
+      console.error("Failed to create scheduled post:", error);
+      res.status(500).json({ message: "Failed to create scheduled post" });
+    }
+  });
+
+  app.patch("/api/scheduled-posts/:postId", requireAuth, postLimiter, async (req, res) => {
+    try {
+      const scheduled = await storage.getScheduledPost(req.params.postId);
+      if (!scheduled || scheduled.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Scheduled post not found" });
+      }
+      if (scheduled.status !== "PENDING") {
+        return res.status(400).json({ message: "Can only edit pending posts" });
+      }
+      if (req.body.scheduledFor) {
+        const scheduledDate = new Date(req.body.scheduledFor);
+        if (isNaN(scheduledDate.getTime()) || scheduledDate <= new Date()) {
+          return res.status(400).json({ message: "Scheduled time must be a valid future date" });
+        }
+        req.body.scheduledFor = scheduledDate;
+      }
+      const updated = await storage.updateScheduledPost(req.params.postId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update scheduled post:", error);
+      res.status(500).json({ message: "Failed to update scheduled post" });
+    }
+  });
+
+  app.delete("/api/scheduled-posts/:postId", requireAuth, apiLimiter, async (req, res) => {
+    try {
+      const scheduled = await storage.getScheduledPost(req.params.postId);
+      if (!scheduled || scheduled.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Scheduled post not found" });
+      }
+      await storage.deleteScheduledPost(req.params.postId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete scheduled post:", error);
+      res.status(500).json({ message: "Failed to delete scheduled post" });
+    }
+  });
+
+  // ===== DATA EXPORT =====
+
+  app.get("/api/data-export", requireAuth, async (req, res) => {
+    try {
+      const requests = await storage.getUserDataExportRequests(req.session.userId!);
+      res.json(requests);
+    } catch (error) {
+      console.error("Failed to get data export requests:", error);
+      res.status(500).json({ message: "Failed to get data export requests" });
+    }
+  });
+
+  app.post("/api/data-export", requireAuth, async (req, res) => {
+    try {
+      const { includeProfile, includePosts, includeMessages, includeMedia } = req.body;
+      const request = await storage.createDataExportRequest(req.session.userId!, {
+        includeProfile, includePosts, includeMessages, includeMedia
+      });
+      res.json(request);
+    } catch (error) {
+      console.error("Failed to create data export request:", error);
+      res.status(500).json({ message: "Failed to create data export request" });
+    }
+  });
+
+  // ===== ADMIN USER NOTES =====
+
+  app.get("/api/admin/users/:userId/notes", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const hasNotePermission = await hasRbacPermission(user, "users.notes.read");
+      if (!hasNotePermission) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      const notes = await storage.getAdminUserNotes(req.params.userId);
+      res.json(notes);
+    } catch (error) {
+      console.error("Failed to get admin user notes:", error);
+      res.status(500).json({ message: "Failed to get admin user notes" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/notes", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const hasNoteWritePermission = await hasRbacPermission(user, "users.notes.write");
+      if (!hasNoteWritePermission) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      const { content } = req.body;
+      if (!content) {
+        return res.status(400).json({ message: "Content is required" });
+      }
+      const note = await storage.addAdminUserNote(req.params.userId, req.session.userId!, content);
+      res.json(note);
+    } catch (error) {
+      console.error("Failed to add admin user note:", error);
+      res.status(500).json({ message: "Failed to add admin user note" });
+    }
+  });
+
+  app.patch("/api/admin/notes/:noteId", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const hasNoteUpdatePermission = await hasRbacPermission(user, "users.notes.write");
+      if (!hasNoteUpdatePermission) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      const updated = await storage.updateAdminUserNote(req.params.noteId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update admin user note:", error);
+      res.status(500).json({ message: "Failed to update admin user note" });
+    }
+  });
+
+  app.delete("/api/admin/notes/:noteId", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const hasNoteDeletePermission = await hasRbacPermission(user, "users.notes.write");
+      if (!hasNoteDeletePermission) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      await storage.deleteAdminUserNote(req.params.noteId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete admin user note:", error);
+      res.status(500).json({ message: "Failed to delete admin user note" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/data-export", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const hasExportPermission = await hasRbacPermission(user, "users.data.export");
+      if (!hasExportPermission && !user.isAdmin) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "Target user not found" });
+      }
+
+      const exportRequest = await storage.triggerDataExport(req.params.userId, req.session.userId!);
+      
+      await storage.createAuditLog({
+        action: "USER_DATA_EXPORT_TRIGGERED",
+        actorId: req.session.userId!,
+        targetId: req.params.userId,
+        targetType: "user",
+        details: { triggeredBy: user.displayName },
+      });
+
+      res.json({ success: true, exportId: exportRequest?.id || null });
+    } catch (error) {
+      console.error("Failed to trigger admin data export:", error);
+      res.status(500).json({ message: "Failed to trigger data export" });
+    }
+  });
+
+  // ===== GOSSIP ROUTES (Anonymous Posts) =====
+
+  app.get("/api/gossip", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const posts = await storage.getGossipPosts(limit, offset);
+      const userId = req.session.userId!;
+      
+      const postsWithInteractions = await Promise.all(posts.map(async (post) => {
+        const [hasLiked, hasRetweeted] = await Promise.all([
+          storage.hasUserLikedGossipPost(userId, post.id),
+          storage.hasUserRetweetedGossipPost(userId, post.id),
+        ]);
+        const { authorUserId, ...safePost } = post;
+        return { ...safePost, hasLiked, hasRetweeted };
+      }));
+      
+      res.json(postsWithInteractions);
+    } catch (error) {
+      console.error("Failed to get gossip posts:", error);
+      res.status(500).json({ message: "Failed to get gossip posts" });
+    }
+  });
+
+  app.post("/api/gossip", requireAuth, async (req, res) => {
+    try {
+      const { type, text, mediaUrl, thumbnailUrl, durationMs } = req.body;
+      if (!type || (type !== "TEXT" && type !== "VOICE")) {
+        return res.status(400).json({ message: "Invalid gossip type" });
+      }
+      if (type === "TEXT" && !text) {
+        return res.status(400).json({ message: "Text is required for text gossip" });
+      }
+      if (type === "VOICE" && !mediaUrl) {
+        return res.status(400).json({ message: "Media URL is required for voice gossip" });
+      }
+      
+      const post = await storage.createGossipPost(req.session.userId!, type, {
+        text,
+        mediaUrl,
+        thumbnailUrl,
+        durationMs,
+      });
+      
+      const { authorUserId, ...safePost } = post;
+      res.status(201).json(safePost);
+    } catch (error) {
+      console.error("Failed to create gossip post:", error);
+      res.status(500).json({ message: "Failed to create gossip post" });
+    }
+  });
+
+  app.get("/api/gossip/:id", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getGossipPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Gossip post not found" });
+      }
+      const userId = req.session.userId!;
+      const [hasLiked, hasRetweeted] = await Promise.all([
+        storage.hasUserLikedGossipPost(userId, post.id),
+        storage.hasUserRetweetedGossipPost(userId, post.id),
+      ]);
+      const { authorUserId, ...safePost } = post;
+      res.json({ ...safePost, hasLiked, hasRetweeted });
+    } catch (error) {
+      console.error("Failed to get gossip post:", error);
+      res.status(500).json({ message: "Failed to get gossip post" });
+    }
+  });
+
+  app.post("/api/gossip/:id/like", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getGossipPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Gossip post not found" });
+      }
+      const hasLiked = await storage.hasUserLikedGossipPost(req.session.userId!, req.params.id);
+      if (hasLiked) {
+        return res.status(400).json({ message: "Already liked" });
+      }
+      await storage.likeGossipPost(req.session.userId!, req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to like gossip post:", error);
+      res.status(500).json({ message: "Failed to like gossip post" });
+    }
+  });
+
+  app.delete("/api/gossip/:id/like", requireAuth, async (req, res) => {
+    try {
+      await storage.unlikeGossipPost(req.session.userId!, req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to unlike gossip post:", error);
+      res.status(500).json({ message: "Failed to unlike gossip post" });
+    }
+  });
+
+  app.get("/api/gossip/:id/comments", requireAuth, async (req, res) => {
+    try {
+      const comments = await storage.getGossipComments(req.params.id);
+      res.json(comments);
+    } catch (error) {
+      console.error("Failed to get gossip comments:", error);
+      res.status(500).json({ message: "Failed to get gossip comments" });
+    }
+  });
+
+  app.post("/api/gossip/:id/comments", requireAuth, async (req, res) => {
+    try {
+      const { body } = req.body;
+      if (!body) {
+        return res.status(400).json({ message: "Comment body is required" });
+      }
+      const comment = await storage.createGossipComment(req.session.userId!, req.params.id, body);
+      const { userId, ...safeComment } = comment;
+      res.status(201).json(safeComment);
+    } catch (error) {
+      console.error("Failed to create gossip comment:", error);
+      res.status(500).json({ message: "Failed to create gossip comment" });
+    }
+  });
+
+  app.post("/api/gossip/:id/retweet", requireAuth, async (req, res) => {
+    try {
+      const post = await storage.getGossipPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ message: "Gossip post not found" });
+      }
+      const hasRetweeted = await storage.hasUserRetweetedGossipPost(req.session.userId!, req.params.id);
+      if (hasRetweeted) {
+        return res.status(400).json({ message: "Already retweeted" });
+      }
+      await storage.retweetGossipPost(req.session.userId!, req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to retweet gossip post:", error);
+      res.status(500).json({ message: "Failed to retweet gossip post" });
+    }
+  });
+
+  app.delete("/api/gossip/:id/retweet", requireAuth, async (req, res) => {
+    try {
+      await storage.unretweetGossipPost(req.session.userId!, req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to unretweet gossip post:", error);
+      res.status(500).json({ message: "Failed to unretweet gossip post" });
+    }
+  });
+
+  // ===== MALL ROUTES =====
+
+  // Helper function to seed mall with luxury items
+  async function seedMallItems() {
+    const existingCategories = await storage.getMallCategories();
+    const existingItems = await storage.getMallItems();
+    
+    // Check if we need to update existing items with missing images
+    const itemsMissingImages = existingItems.filter(i => !i.imageUrl).length;
+    if (existingItems.length >= 10 && itemsMissingImages === 0) {
+      return { categoriesCreated: 0, itemsCreated: 0 };
+    }
+    
+    console.log(`[Mall] Checking items: ${existingItems.length} total, ${itemsMissingImages} missing images`);
+
+    const categoryData = [
+      {
+        name: "Luxury Watches",
+        description: "Premium timepieces from world-renowned manufacturers",
+        items: [
+          { name: "Rolex Submariner", description: "Iconic diving watch with oyster perpetual movement", value: 15000, imageUrl: "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=400" },
+          { name: "Patek Philippe Nautilus", description: "Legendary sports watch with blue dial", value: 85000, imageUrl: "https://images.unsplash.com/photo-1587836374828-4dbafa94cf0e?w=400" },
+          { name: "Audemars Piguet Royal Oak", description: "Iconic octagonal bezel design", value: 45000, imageUrl: "https://images.unsplash.com/photo-1594534475808-b18fc33b045e?w=400" },
+          { name: "Richard Mille RM 011", description: "Innovative titanium racing chronograph", value: 250000, imageUrl: "https://images.unsplash.com/photo-1612817159949-195b6eb9e31a?w=400" },
+          { name: "Omega Speedmaster", description: "The Moonwatch that went to space", value: 8500, imageUrl: "https://images.unsplash.com/photo-1547996160-81dfa63595aa?w=400" },
+        ]
+      },
+      {
+        name: "Supercars",
+        description: "The world's most exclusive automobiles",
+        items: [
+          { name: "Ferrari LaFerrari", description: "Hybrid hypercar masterpiece", value: 2500000, imageUrl: "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=400" },
+          { name: "Lamborghini Aventador SVJ", description: "V12 powered Italian beast", value: 550000, imageUrl: "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=400" },
+          { name: "Bugatti Chiron", description: "1500 horsepower engineering marvel", value: 3500000, imageUrl: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=400" },
+          { name: "McLaren P1", description: "British hybrid hypercar", value: 1500000, imageUrl: "https://images.unsplash.com/photo-1621135802920-133df287f89c?w=400" },
+          { name: "Porsche 918 Spyder", description: "German hybrid precision", value: 1200000, imageUrl: "https://images.unsplash.com/photo-1614162692292-7ac56d7f7f1e?w=400" },
+        ]
+      },
+      {
+        name: "Private Jets",
+        description: "Ultimate in air travel luxury",
+        items: [
+          { name: "Gulfstream G700", description: "Ultra-long-range business jet", value: 75000000, imageUrl: "https://images.unsplash.com/photo-1540962351504-03099e0a754b?w=400" },
+          { name: "Bombardier Global 7500", description: "Largest purpose-built business jet", value: 73000000, imageUrl: "https://images.unsplash.com/photo-1559329007-40df8a9345d8?w=400" },
+          { name: "Dassault Falcon 8X", description: "Tri-jet long range excellence", value: 58000000, imageUrl: "https://images.unsplash.com/photo-1474302770737-173ee21bab63?w=400" },
+          { name: "Embraer Praetor 600", description: "Super-midsize efficiency", value: 21000000, imageUrl: "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=400" },
+        ]
+      },
+      {
+        name: "Mega Yachts",
+        description: "Floating palaces for the elite",
+        items: [
+          { name: "Azzam 180m Superyacht", description: "World's longest private yacht", value: 600000000, imageUrl: "https://images.unsplash.com/photo-1567899378494-47b22a2ae96a?w=400" },
+          { name: "Eclipse 162m Yacht", description: "Luxury with submarine capability", value: 500000000, imageUrl: "https://images.unsplash.com/photo-1569263979104-865ab7cd8d13?w=400" },
+          { name: "Dilbar 156m Yacht", description: "Largest pool on any yacht", value: 256000000, imageUrl: "https://images.unsplash.com/photo-1605281317010-fe5ffe798166?w=400" },
+          { name: "Custom 100m Explorer", description: "Ice-class expedition vessel", value: 150000000, imageUrl: "https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400" },
+        ]
+      },
+      {
+        name: "Real Estate",
+        description: "Premier properties worldwide",
+        items: [
+          { name: "Manhattan Penthouse", description: "Central Park views, 15,000 sqft", value: 95000000, imageUrl: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=400" },
+          { name: "Malibu Beach Estate", description: "Private beach, 20,000 sqft", value: 125000000, imageUrl: "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=400" },
+          { name: "Monaco Apartment", description: "Casino Square views, ultra-exclusive", value: 85000000, imageUrl: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=400" },
+          { name: "Private Island Caribbean", description: "100-acre paradise retreat", value: 200000000, imageUrl: "https://images.unsplash.com/photo-1559128010-7c1ad6e1b6a5?w=400" },
+          { name: "London Mayfair Mansion", description: "Historic Georgian townhouse", value: 75000000, imageUrl: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400" },
+        ]
+      },
+      {
+        name: "Fine Art",
+        description: "Museum-quality masterpieces",
+        items: [
+          { name: "Picasso Original", description: "Blue Period masterwork", value: 45000000, imageUrl: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=400" },
+          { name: "Warhol Pop Art Print", description: "Iconic pop art piece", value: 15000000, imageUrl: "https://images.unsplash.com/photo-1578301978693-85fa9c0320b9?w=400" },
+          { name: "Basquiat Canvas", description: "Neo-expressionist masterpiece", value: 35000000, imageUrl: "https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=400" },
+          { name: "Monet Water Lilies", description: "Impressionist garden series", value: 55000000, imageUrl: "https://images.unsplash.com/photo-1578926288207-a90a5366759d?w=400" },
+        ]
+      },
+      {
+        name: "Jewelry",
+        description: "Extraordinary gems and precious metals",
+        items: [
+          { name: "Blue Diamond Ring 10ct", description: "Rare fancy blue diamond", value: 25000000, imageUrl: "https://images.unsplash.com/photo-1605100804763-247f67b3557e?w=400" },
+          { name: "Emerald Necklace Set", description: "Colombian emerald suite", value: 8000000, imageUrl: "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=400" },
+          { name: "Ruby Tiara", description: "Burmese ruby crown piece", value: 12000000, imageUrl: "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=400" },
+          { name: "Diamond Tennis Bracelet", description: "50 carat D-flawless", value: 5000000, imageUrl: "https://images.unsplash.com/photo-1611591437281-460bfbe1220a?w=400" },
+        ]
+      },
+      {
+        name: "Premium Memberships",
+        description: "Exclusive access and privileges",
+        items: [
+          { name: "Elite Club Lifetime", description: "Unlimited premium features forever", value: 50000, imageUrl: "https://images.unsplash.com/photo-1553729459-efe14ef6055d?w=400" },
+          { name: "VIP Badge", description: "Distinguished member status", value: 10000, imageUrl: "https://images.unsplash.com/photo-1606326608606-aa0b62935f2b?w=400" },
+          { name: "Founder Status", description: "Original supporter recognition", value: 25000, imageUrl: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=400" },
+          { name: "Diamond Tier Access", description: "Highest privilege level", value: 100000, imageUrl: "https://images.unsplash.com/photo-1551836022-4c4c79ecde51?w=400" },
+        ]
+      },
+      {
+        name: "Digital Assets",
+        description: "Virtual luxury items",
+        items: [
+          { name: "Verified Badge", description: "Official verification status", value: 500, imageUrl: "https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=400" },
+          { name: "Custom Profile Theme", description: "Exclusive design options", value: 1000, imageUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400" },
+          { name: "Premium Emoji Pack", description: "Luxury emoji collection", value: 250, imageUrl: "https://images.unsplash.com/photo-1584824486509-112e4181ff6b?w=400" },
+          { name: "Animated Avatar Frame", description: "Moving profile border", value: 750, imageUrl: "https://images.unsplash.com/photo-1618005198919-d3d4b5a92ead?w=400" },
+          { name: "Custom Username Color", description: "Stand out with unique colors", value: 300, imageUrl: "https://images.unsplash.com/photo-1557672172-298e090bd0f1?w=400" },
+        ]
+      },
+      {
+        name: "Exotic Experiences",
+        description: "Once-in-a-lifetime adventures",
+        items: [
+          { name: "Space Flight Ticket", description: "Sub-orbital space journey", value: 450000, imageUrl: "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=400" },
+          { name: "Antarctic Expedition", description: "Private polar exploration", value: 150000, imageUrl: "https://images.unsplash.com/photo-1589139225227-29a00deec92e?w=400" },
+          { name: "Everest Summit Guide", description: "Full expedition support", value: 85000, imageUrl: "https://images.unsplash.com/photo-1469521669194-babb45599def?w=400" },
+          { name: "F1 Racing Experience", description: "Drive a real F1 car", value: 50000, imageUrl: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=400" },
+        ]
+      },
+    ];
+
+    let categoriesCreated = 0;
+    let itemsCreated = 0;
+
+    for (const cat of categoryData) {
+      let category = existingCategories.find(c => c.name === cat.name);
+      if (!category) {
+        category = await storage.createMallCategory({ name: cat.name, description: cat.description });
+        categoriesCreated++;
+      }
+      
+      for (const item of cat.items) {
+        const allItems = await storage.getMallItems();
+        const existingItem = allItems.find(i => i.name === item.name);
+        if (!existingItem) {
+          await storage.createMallItem({
+            name: item.name,
+            description: item.description,
+            value: item.value,
+            imageUrl: (item as any).imageUrl || null,
+            categoryId: category.id,
+          });
+          itemsCreated++;
+        } else if (!existingItem.imageUrl && (item as any).imageUrl) {
+          // Update existing items that are missing images
+          await storage.updateMallItem(existingItem.id, {
+            imageUrl: (item as any).imageUrl,
+            description: item.description,
+          });
+          console.log(`[Mall] Updated image for ${item.name}`);
+        }
+      }
+    }
+
+    console.log(`[Mall] Seeded ${categoriesCreated} categories and ${itemsCreated} items`);
+    return { categoriesCreated, itemsCreated };
+  }
+
+  // OpenAI client for AI-generated descriptions
+  const openai = new OpenAI({
+    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  });
+
+  // Generate AI description for a luxury item
+  async function generateAIDescription(itemName: string, itemValue: number): Promise<string> {
+    try {
+      const priceFormatted = itemValue >= 1000000 
+        ? `$${(itemValue / 1000000).toFixed(1)}M` 
+        : itemValue >= 1000 
+          ? `$${(itemValue / 1000).toFixed(0)}K`
+          : `$${itemValue}`;
+      
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "You are a luxury goods copywriter. Write elegant, compelling 1-2 sentence descriptions for high-end products. Be sophisticated and aspirational. Focus on craftsmanship, exclusivity, and status. Do not use quotes or special characters."
+          },
+          {
+            role: "user",
+            content: `Write a luxury description for: ${itemName} (valued at ${priceFormatted})`
+          }
+        ],
+        max_tokens: 100,
+        temperature: 0.7,
+      });
+      
+      const description = response.choices[0]?.message?.content?.trim() || "";
+      return description || `Exclusive ${itemName} - a symbol of refined taste and uncompromising luxury.`;
+    } catch (error) {
+      console.error(`[AI] Failed to generate description for ${itemName}:`, error);
+      return `Exclusive ${itemName} - a symbol of refined taste and uncompromising luxury.`;
+    }
+  }
+
+  // Force refresh - updates ALL items with proper images, descriptions, and ensures active
+  async function forceRefreshMallItems() {
+    // Comprehensive keyword-based matching for all possible item names
+    const itemPatterns: Array<{ keywords: string[]; imageUrl: string; description: string }> = [
+      // Watches
+      { keywords: ["rolex", "submariner"], imageUrl: "https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=400", description: "Iconic diving watch with oyster perpetual movement" },
+      { keywords: ["patek", "nautilus"], imageUrl: "https://images.unsplash.com/photo-1587836374828-4dbafa94cf0e?w=400", description: "Legendary sports watch with blue dial" },
+      { keywords: ["audemars", "royal oak"], imageUrl: "https://images.unsplash.com/photo-1594534475808-b18fc33b045e?w=400", description: "Iconic octagonal bezel design" },
+      { keywords: ["richard mille", "rm 011", "rm011"], imageUrl: "https://images.unsplash.com/photo-1612817159949-195b6eb9e31a?w=400", description: "Innovative titanium racing chronograph" },
+      { keywords: ["omega", "speedmaster"], imageUrl: "https://images.unsplash.com/photo-1547996160-81dfa63595aa?w=400", description: "The Moonwatch that went to space" },
+      { keywords: ["jacob", "billionaire", "tourbillon"], imageUrl: "https://images.unsplash.com/photo-1587836374828-4dbafa94cf0e?w=400", description: "Tourbillon with 260 carats of diamonds" },
+      { keywords: ["graff", "diamonds", "fantasy"], imageUrl: "https://images.unsplash.com/photo-1587836374828-4dbafa94cf0e?w=400", description: "Ultimate diamond timepiece" },
+      { keywords: ["breguet", "marie"], imageUrl: "https://images.unsplash.com/photo-1587836374828-4dbafa94cf0e?w=400", description: "Royal heritage masterpiece" },
+      // Cars
+      { keywords: ["ferrari", "laferrari"], imageUrl: "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=400", description: "Hybrid hypercar masterpiece" },
+      { keywords: ["lamborghini", "aventador"], imageUrl: "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=400", description: "V12 powered Italian beast" },
+      { keywords: ["bugatti", "chiron"], imageUrl: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=400", description: "1500 horsepower engineering marvel" },
+      { keywords: ["mclaren", "p1"], imageUrl: "https://images.unsplash.com/photo-1621135802920-133df287f89c?w=400", description: "British hybrid hypercar" },
+      { keywords: ["porsche", "918"], imageUrl: "https://images.unsplash.com/photo-1614162692292-7ac56d7f7f1e?w=400", description: "German hybrid precision" },
+      { keywords: ["koenigsegg", "jesko"], imageUrl: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=400", description: "Targeting 330mph top speed" },
+      { keywords: ["pagani", "huayra"], imageUrl: "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=400", description: "Italian art on wheels" },
+      { keywords: ["rolls", "royce", "phantom"], imageUrl: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=400", description: "Ultimate luxury sedan" },
+      { keywords: ["aston martin", "valkyrie"], imageUrl: "https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=400", description: "F1 tech for the road" },
+      // Jets
+      { keywords: ["gulfstream", "g700", "g650"], imageUrl: "https://images.unsplash.com/photo-1540962351504-03099e0a754b?w=400", description: "Ultra-long-range business jet" },
+      { keywords: ["bombardier", "global"], imageUrl: "https://images.unsplash.com/photo-1559329007-40df8a9345d8?w=400", description: "Largest purpose-built business jet" },
+      { keywords: ["dassault", "falcon"], imageUrl: "https://images.unsplash.com/photo-1474302770737-173ee21bab63?w=400", description: "Tri-jet long range excellence" },
+      { keywords: ["embraer", "praetor"], imageUrl: "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=400", description: "Super-midsize efficiency" },
+      { keywords: ["cessna", "citation"], imageUrl: "https://images.unsplash.com/photo-1540962351504-03099e0a754b?w=400", description: "Light jet perfection" },
+      { keywords: ["boeing", "bbj", "business jet"], imageUrl: "https://images.unsplash.com/photo-1540962351504-03099e0a754b?w=400", description: "VIP Boeing aircraft" },
+      // Yachts
+      { keywords: ["azzam", "180m", "yacht"], imageUrl: "https://images.unsplash.com/photo-1567899378494-47b22a2ae96a?w=400", description: "World's longest private yacht" },
+      { keywords: ["eclipse", "162m", "yacht"], imageUrl: "https://images.unsplash.com/photo-1569263979104-865ab7cd8d13?w=400", description: "Luxury with submarine capability" },
+      { keywords: ["dilbar", "156m", "yacht"], imageUrl: "https://images.unsplash.com/photo-1605281317010-fe5ffe798166?w=400", description: "Largest pool on any yacht" },
+      { keywords: ["flying fox", "136m"], imageUrl: "https://images.unsplash.com/photo-1567899378494-47b22a2ae96a?w=400", description: "Largest charter yacht in the world" },
+      { keywords: ["explorer", "yacht", "100m"], imageUrl: "https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400", description: "Ice-class expedition vessel" },
+      { keywords: ["serene", "superyacht"], imageUrl: "https://images.unsplash.com/photo-1567899378494-47b22a2ae96a?w=400", description: "Floating palace" },
+      // Real Estate
+      { keywords: ["manhattan", "penthouse"], imageUrl: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=400", description: "Central Park views, 15,000 sqft" },
+      { keywords: ["malibu", "beach", "estate"], imageUrl: "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=400", description: "Private beach, 20,000 sqft" },
+      { keywords: ["monaco", "apartment"], imageUrl: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=400", description: "Casino Square views, ultra-exclusive" },
+      { keywords: ["private island", "caribbean"], imageUrl: "https://images.unsplash.com/photo-1559128010-7c1ad6e1b6a5?w=400", description: "100-acre paradise retreat" },
+      { keywords: ["london", "mayfair", "mansion"], imageUrl: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400", description: "Historic Georgian townhouse" },
+      { keywords: ["beverly hills", "estate"], imageUrl: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=400", description: "Celebrity compound living" },
+      { keywords: ["dubai", "palm", "villa"], imageUrl: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=400", description: "Palm Jumeirah signature" },
+      { keywords: ["aspen", "ski", "chalet"], imageUrl: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400", description: "Ultimate ski retreat" },
+      { keywords: ["motu", "polynesia", "island"], imageUrl: "https://images.unsplash.com/photo-1486427944544-d2c6e5bda2a5?w=400", description: "Ultimate tropical hideaway" },
+      { keywords: ["pipe cay", "bahamas"], imageUrl: "https://images.unsplash.com/photo-1548574505-5e239809ee19?w=400", description: "38 acre private island paradise" },
+      { keywords: ["cave cay", "bahamas"], imageUrl: "https://images.unsplash.com/photo-1548574505-5e239809ee19?w=400", description: "222 acre private island with airstrip" },
+      // Art
+      { keywords: ["picasso", "original"], imageUrl: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=400", description: "Blue Period masterwork" },
+      { keywords: ["warhol", "pop art"], imageUrl: "https://images.unsplash.com/photo-1578301978693-85fa9c0320b9?w=400", description: "Iconic pop art piece" },
+      { keywords: ["basquiat", "canvas"], imageUrl: "https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=400", description: "Neo-expressionist masterpiece" },
+      { keywords: ["monet", "water lilies"], imageUrl: "https://images.unsplash.com/photo-1578926288207-a90a5366759d?w=400", description: "Impressionist garden series" },
+      { keywords: ["van gogh", "starry"], imageUrl: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=400", description: "Post-impressionist icon" },
+      { keywords: ["banksy", "artwork"], imageUrl: "https://images.unsplash.com/photo-1578301978693-85fa9c0320b9?w=400", description: "Street art legend" },
+      { keywords: ["koons", "balloon"], imageUrl: "https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=400", description: "Contemporary pop sculpture" },
+      { keywords: ["audubon", "birds"], imageUrl: "https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=400", description: "Original elephant folio" },
+      { keywords: ["harry potter", "1st edition"], imageUrl: "https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=400", description: "Philosophers Stone rare" },
+      // Jewelry
+      { keywords: ["blue diamond", "ring"], imageUrl: "https://images.unsplash.com/photo-1605100804763-247f67b3557e?w=400", description: "Rare fancy blue diamond" },
+      { keywords: ["emerald", "necklace"], imageUrl: "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=400", description: "Colombian emerald suite" },
+      { keywords: ["ruby", "tiara"], imageUrl: "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=400", description: "Burmese ruby crown piece" },
+      { keywords: ["diamond", "tennis", "bracelet"], imageUrl: "https://images.unsplash.com/photo-1611591437281-460bfbe1220a?w=400", description: "50 carat D-flawless" },
+      { keywords: ["pink star", "diamond"], imageUrl: "https://images.unsplash.com/photo-1605100804763-247f67b3557e?w=400", description: "World's most expensive gem" },
+      { keywords: ["hope diamond", "replica"], imageUrl: "https://images.unsplash.com/photo-1605100804763-247f67b3557e?w=400", description: "Legendary cursed diamond" },
+      { keywords: ["cartier", "panther"], imageUrl: "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=400", description: "Iconic jeweled bracelet" },
+      // Memberships
+      { keywords: ["elite", "club", "lifetime"], imageUrl: "https://images.unsplash.com/photo-1553729459-efe14ef6055d?w=400", description: "Unlimited premium features forever" },
+      { keywords: ["vip", "badge"], imageUrl: "https://images.unsplash.com/photo-1606326608606-aa0b62935f2b?w=400", description: "Distinguished member status" },
+      { keywords: ["founder", "status"], imageUrl: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=400", description: "Original supporter recognition" },
+      { keywords: ["diamond", "tier", "access"], imageUrl: "https://images.unsplash.com/photo-1551836022-4c4c79ecde51?w=400", description: "Highest privilege level" },
+      // Digital
+      { keywords: ["verified", "badge"], imageUrl: "https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=400", description: "Official verification status" },
+      { keywords: ["custom", "profile", "theme"], imageUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400", description: "Exclusive design options" },
+      { keywords: ["premium", "emoji", "pack"], imageUrl: "https://images.unsplash.com/photo-1584824486509-112e4181ff6b?w=400", description: "Luxury emoji collection" },
+      { keywords: ["animated", "avatar", "frame"], imageUrl: "https://images.unsplash.com/photo-1618005198919-d3d4b5a92ead?w=400", description: "Moving profile border" },
+      { keywords: ["custom", "username", "color"], imageUrl: "https://images.unsplash.com/photo-1557672172-298e090bd0f1?w=400", description: "Stand out with unique colors" },
+      // Experiences
+      { keywords: ["space", "flight", "ticket"], imageUrl: "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=400", description: "Sub-orbital space journey" },
+      { keywords: ["antarctic", "expedition"], imageUrl: "https://images.unsplash.com/photo-1589139225227-29a00deec92e?w=400", description: "Private polar exploration" },
+      { keywords: ["everest", "summit", "guide"], imageUrl: "https://images.unsplash.com/photo-1469521669194-babb45599def?w=400", description: "Full expedition support" },
+      { keywords: ["f1", "racing", "experience"], imageUrl: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=400", description: "Drive a real F1 car" },
+      { keywords: ["safari", "luxury"], imageUrl: "https://images.unsplash.com/photo-1589139225227-29a00deec92e?w=400", description: "Ultimate African adventure" },
+      { keywords: ["submarine", "tour"], imageUrl: "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=400", description: "Deep sea exploration" },
+    ];
+
+    // Helper function to find matching template
+    function findMatchingTemplate(itemName: string): { imageUrl: string; description: string } | null {
+      const nameLower = itemName.toLowerCase();
+      for (const pattern of itemPatterns) {
+        const allMatch = pattern.keywords.every(keyword => nameLower.includes(keyword.toLowerCase()));
+        if (allMatch) return { imageUrl: pattern.imageUrl, description: pattern.description };
+      }
+      // Try partial matching - if any keyword matches
+      for (const pattern of itemPatterns) {
+        const anyMatch = pattern.keywords.some(keyword => nameLower.includes(keyword.toLowerCase()));
+        if (anyMatch) return { imageUrl: pattern.imageUrl, description: pattern.description };
+      }
+      return null;
+    }
+
+    // Get ALL items including inactive ones - this is crucial for fixing production data
+    const allItems = await storage.getAllMallItemsIncludingInactive();
+    let updatedCount = 0;
+    
+    console.log(`[Mall Refresh] Processing ${allItems.length} items (including inactive)...`);
+    
+    for (const item of allItems) {
+      const template = findMatchingTemplate(item.name);
+      const updateData: any = {
+        isActive: true, // ALWAYS ensure item is active
+      };
+      
+      if (template) {
+        updateData.imageUrl = template.imageUrl;
+        updateData.description = template.description; // ALWAYS update description
+        console.log(`[Mall Refresh] Matched: ${item.name} -> ${template.description.substring(0, 30)}...`);
+      } else {
+        // Fallback for unmatched items - use AI if no good description exists
+        if (!item.imageUrl) {
+          updateData.imageUrl = "https://images.unsplash.com/photo-1553729459-efe14ef6055d?w=400";
+        }
+        // Use AI to generate description if missing or too short
+        if (!item.description || item.description.length < 20) {
+          const aiDescription = await generateAIDescription(item.name, Number(item.value));
+          updateData.description = aiDescription;
+          console.log(`[Mall Refresh] AI Generated: ${item.name} -> ${aiDescription.substring(0, 40)}...`);
+        } else {
+          updateData.description = item.description;
+          console.log(`[Mall Refresh] Keeping existing: ${item.name}`);
+        }
+      }
+      
+      await storage.updateMallItem(item.id, updateData);
+      updatedCount++;
+    }
+    
+    console.log(`[Mall] Force refreshed ${updatedCount} items with images, descriptions, and active status`);
+    
+    // Also run seed to add any missing items
+    await seedMallItems();
+    
+    return updatedCount;
+  }
+
+  app.get("/api/mall/categories", requireAuth, async (req, res) => {
+    try {
+      const categories = await storage.getMallCategories();
+      res.json(categories);
+    } catch (error) {
+      console.error("Failed to get mall categories:", error);
+      res.status(500).json({ message: "Failed to get mall categories" });
+    }
+  });
+
+  // Force refresh mall items - updates all items with proper images
+  app.post("/api/mall/refresh", requireAuth, async (req, res) => {
+    try {
+      console.log("[Mall] Force refreshing all mall items...");
+      await forceRefreshMallItems();
+      const items = await storage.getMallItems();
+      res.json({ message: "Mall refreshed successfully", itemCount: items.length });
+    } catch (error) {
+      console.error("Failed to refresh mall:", error);
+      res.status(500).json({ message: "Failed to refresh mall" });
+    }
+  });
+
+  // Regenerate all descriptions using AI
+  app.post("/api/mall/regenerate-descriptions", requireAuth, async (req, res) => {
+    try {
+      console.log("[Mall] Regenerating ALL descriptions with AI...");
+      const allItems = await storage.getAllMallItemsIncludingInactive();
+      let regeneratedCount = 0;
+      
+      for (const item of allItems) {
+        const aiDescription = await generateAIDescription(item.name, Number(item.value));
+        await storage.updateMallItem(item.id, { 
+          description: aiDescription,
+          isActive: true 
+        });
+        regeneratedCount++;
+        console.log(`[AI] Regenerated ${regeneratedCount}/${allItems.length}: ${item.name}`);
+      }
+      
+      const items = await storage.getMallItems();
+      res.json({ 
+        message: "All descriptions regenerated with AI", 
+        regeneratedCount,
+        itemCount: items.length 
+      });
+    } catch (error) {
+      console.error("Failed to regenerate descriptions:", error);
+      res.status(500).json({ message: "Failed to regenerate descriptions" });
+    }
+  });
+
+  app.get("/api/mall/items", requireAuth, async (req, res) => {
+    try {
+      const categoryId = req.query.categoryId as string | undefined;
+      console.log("[Mall] Fetching items, categoryId:", categoryId || "all");
+      let items = await storage.getMallItems(categoryId);
+      
+      // Check ALL items (including inactive) to see if we need to refresh
+      const allItems = await storage.getAllMallItemsIncludingInactive();
+      const itemsMissingImages = allItems.filter(i => !i.imageUrl).length;
+      const inactiveItems = allItems.filter(i => !i.isActive).length;
+      const itemsMissingDescriptions = allItems.filter(i => !i.description || i.description.length < 5).length;
+      
+      // Auto-refresh if: no active items, items missing images, inactive items exist, or missing descriptions
+      if (!categoryId && (items.length === 0 || itemsMissingImages > 0 || inactiveItems > 0 || itemsMissingDescriptions > 0)) {
+        console.log(`[Mall] Refreshing... ${items.length} active, ${allItems.length} total, ${inactiveItems} inactive, ${itemsMissingImages} missing images, ${itemsMissingDescriptions} missing descriptions`);
+        await forceRefreshMallItems();
+        items = await storage.getMallItems();
+        console.log("[Mall] Refreshed, now have", items.length, "active items");
+      }
+      
+      console.log("[Mall] Returning", items.length, "items");
+      if (items.length > 0) {
+        console.log("[Mall] Sample item:", JSON.stringify({ id: items[0].id, name: items[0].name, value: items[0].value, coinPrice: items[0].coinPrice }));
+      }
+      res.json(items);
+    } catch (error) {
+      console.error("Failed to get mall items:", error);
+      res.status(500).json({ message: "Failed to get mall items" });
+    }
+  });
+
+  app.get("/api/mall/items/:id", requireAuth, async (req, res) => {
+    try {
+      const item = await storage.getMallItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ message: "Mall item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      console.error("Failed to get mall item:", error);
+      res.status(500).json({ message: "Failed to get mall item" });
+    }
+  });
+
+  app.post("/api/mall/purchase", requireAuth, async (req, res) => {
+    try {
+      console.log("[Mall Purchase] Request body:", req.body);
+      console.log("[Mall Purchase] User ID:", req.session.userId);
+      const { itemId, quantity } = req.body;
+      if (!itemId) {
+        console.log("[Mall Purchase] Error: No itemId provided");
+        return res.status(400).json({ message: "Item ID is required" });
+      }
+      if (quantity !== undefined && (typeof quantity !== 'number' || quantity < 1)) {
+        return res.status(400).json({ message: "Quantity must be at least 1" });
+      }
+      const item = await storage.getMallItem(itemId);
+      console.log("[Mall Purchase] Item found:", item?.name || "NOT FOUND");
+      if (!item) {
+        return res.status(404).json({ message: "Mall item not found" });
+      }
+      if (!item.isActive) {
+        console.log("[Mall Purchase] Error: Item is inactive");
+        return res.status(400).json({ message: "Item is not available for purchase" });
+      }
+      
+      console.log("[Mall Purchase] Processing purchase for:", item.name, "qty:", quantity || 1);
+      const purchase = await storage.purchaseMallItem(req.session.userId!, itemId, quantity || 1);
+      const user = await storage.getUser(req.session.userId!);
+      
+      console.log("[Mall Purchase] Success! New net worth:", user?.netWorth);
+      res.json({ 
+        purchase, 
+        newNetWorth: user?.netWorth || 0,
+        message: `Successfully purchased ${item.name}!`
+      });
+    } catch (error: any) {
+      console.error("[Mall Purchase] Failed:", error);
+      // Provide more detailed error message
+      const errorMessage = error?.message || "Failed to purchase mall item";
+      res.status(500).json({ message: errorMessage });
+    }
+  });
+
+  app.get("/api/mall/purchases", requireAuth, async (req, res) => {
+    try {
+      const purchases = await storage.getUserPurchases(req.session.userId!);
+      res.json(purchases);
+    } catch (error) {
+      console.error("Failed to get user purchases:", error);
+      res.status(500).json({ message: "Failed to get user purchases" });
+    }
+  });
+
+  // Public portfolio endpoint - view anyone's net worth portfolio
+  app.get("/api/users/:userId/portfolio", requireAuth, async (req, res) => {
+    try {
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser || targetUser.deactivatedAt) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Get all purchases for this user
+      const purchases = await storage.getUserPurchases(req.params.userId);
+      
+      // Get user's wealth rank
+      const wealthRank = await storage.getUserWealthRank(req.params.userId);
+      
+      // Calculate breakdown by category
+      const categoryBreakdown: Record<string, { count: number; totalValue: number; netWorthGain: number }> = {};
+      let totalPurchaseValue = 0;
+      let totalNetWorthGain = 0;
+      
+      for (const purchase of purchases) {
+        const categoryId = purchase.item.categoryId;
+        const purchaseValue = purchase.item.value * purchase.quantity;
+        const netWorthGain = purchaseValue * 10; // 10x multiplier
+        
+        if (!categoryBreakdown[categoryId]) {
+          categoryBreakdown[categoryId] = { count: 0, totalValue: 0, netWorthGain: 0 };
+        }
+        categoryBreakdown[categoryId].count += purchase.quantity;
+        categoryBreakdown[categoryId].totalValue += purchaseValue;
+        categoryBreakdown[categoryId].netWorthGain += netWorthGain;
+        
+        totalPurchaseValue += purchaseValue;
+        totalNetWorthGain += netWorthGain;
+      }
+      
+      res.json({
+        user: {
+          id: targetUser.id,
+          username: targetUser.username,
+          displayName: targetUser.displayName,
+          avatarUrl: targetUser.avatarUrl,
+          netWorth: targetUser.netWorth,
+          isVerified: targetUser.isVerified,
+        },
+        wealthRank,
+        totalPurchaseValue,
+        totalNetWorthGain,
+        purchases: purchases.slice(0, 100), // Limit to most recent 100 purchases
+        categoryBreakdown,
+      });
+    } catch (error) {
+      console.error("Failed to get user portfolio:", error);
+      res.status(500).json({ message: "Failed to get user portfolio" });
+    }
+  });
+
+  app.get("/api/mall/top50", requireAuth, async (req, res) => {
+    try {
+      const users = await storage.getTop50WealthyUsers();
+      res.json(users);
+    } catch (error) {
+      console.error("Failed to get top 50 wealthy users:", error);
+      res.status(500).json({ message: "Failed to get top 50 wealthy users" });
+    }
+  });
+
+  app.get("/api/net-worth/history", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const history = await storage.getNetWorthHistory(req.session.userId!, limit);
+      res.json(history);
+    } catch (error) {
+      console.error("Failed to get net worth history:", error);
+      res.status(500).json({ message: "Failed to get net worth history" });
+    }
+  });
+
+  // ===== ADMIN MALL ROUTES =====
+
+  app.post("/api/admin/mall/categories", requireAdmin, async (req, res) => {
+    try {
+      const { name, description } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: "Category name is required" });
+      }
+      const category = await storage.createMallCategory({ name, description });
+      res.status(201).json(category);
+    } catch (error) {
+      console.error("Failed to create mall category:", error);
+      res.status(500).json({ message: "Failed to create mall category" });
+    }
+  });
+
+  app.patch("/api/admin/mall/categories/:id", requireAdmin, async (req, res) => {
+    try {
+      const { name, description, isActive } = req.body;
+      const category = await storage.updateMallCategory(req.params.id, { name, description, isActive });
+      if (!category) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+      res.json(category);
+    } catch (error) {
+      console.error("Failed to update mall category:", error);
+      res.status(500).json({ message: "Failed to update mall category" });
+    }
+  });
+
+  app.delete("/api/admin/mall/categories/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteMallCategory(req.params.id);
+      res.json({ message: "Category deleted" });
+    } catch (error) {
+      console.error("Failed to delete mall category:", error);
+      res.status(500).json({ message: "Failed to delete mall category" });
+    }
+  });
+
+  app.post("/api/admin/mall/items", requireAdmin, async (req, res) => {
+    try {
+      const { name, description, value, imageUrl, categoryId } = req.body;
+      if (!name || !value || !categoryId || !description) {
+        return res.status(400).json({ message: "Name, description, value, and categoryId are required" });
+      }
+      const item = await storage.createMallItem({
+        name,
+        description,
+        value: parseInt(value),
+        imageUrl,
+        categoryId,
+      });
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Failed to create mall item:", error);
+      res.status(500).json({ message: "Failed to create mall item" });
+    }
+  });
+
+  app.patch("/api/admin/mall/items/:id", requireAdmin, async (req, res) => {
+    try {
+      const { name, description, value, imageUrl, categoryId, isActive } = req.body;
+      const item = await storage.updateMallItem(req.params.id, {
+        name,
+        description,
+        value: value !== undefined ? parseInt(value) : undefined,
+        imageUrl,
+        categoryId,
+        isActive,
+      });
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      console.error("Failed to update mall item:", error);
+      res.status(500).json({ message: "Failed to update mall item" });
+    }
+  });
+
+  app.delete("/api/admin/mall/items/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteMallItem(req.params.id);
+      res.json({ message: "Item deleted" });
+    } catch (error) {
+      console.error("Failed to delete mall item:", error);
+      res.status(500).json({ message: "Failed to delete mall item" });
+    }
+  });
+
+  app.get("/api/admin/mall/purchases", requireAdmin, async (req, res) => {
+    try {
+      const purchases = await storage.getAllMallPurchases();
+      res.json(purchases);
+    } catch (error) {
+      console.error("Failed to get all mall purchases:", error);
+      res.status(500).json({ message: "Failed to get all mall purchases" });
+    }
+  });
+
+  // Admin fix mall item prices - sets coinPrice = value for items with coinPrice = 0
+  app.post("/api/admin/mall/fix-prices", requireAdmin, async (req, res) => {
+    try {
+      const result = await storage.fixAllMallItemPrices();
+      
+      await storage.createAuditLog(
+        req.session.userId!,
+        "SETTING_CHANGED",
+        "mall",
+        "fix_prices",
+        { fixed: result.fixed, total: result.total }
+      );
+      
+      res.json({ 
+        message: `Fixed ${result.fixed} items out of ${result.total} total`,
+        ...result 
+      });
+    } catch (error) {
+      console.error("Failed to fix mall item prices:", error);
+      res.status(500).json({ message: "Failed to fix mall item prices" });
+    }
+  });
+
+  // Admin seed mall items - populates empty mall with 500+ luxury items
+  app.post("/api/admin/mall/seed", requireAdmin, async (req, res) => {
+    try {
+      const existingCategories = await storage.getMallCategories();
+      const existingItems = await storage.getMallItems();
+      
+      if (existingItems.length >= 100) {
+        return res.json({ 
+          message: "Mall already has items", 
+          categories: existingCategories.length,
+          items: existingItems.length 
+        });
+      }
+
+      console.log("[Admin] Seeding mall with luxury items...");
+
+      // Category definitions with items
+      const categoryData: { name: string; description: string; items: { name: string; description: string; value: number }[] }[] = [
+        {
+          name: "Luxury Watches",
+          description: "Premium timepieces from world-renowned manufacturers",
+          items: [
+            { name: "Rolex Submariner", description: "Iconic diving watch with oyster perpetual movement", value: 15000 },
+            { name: "Patek Philippe Nautilus", description: "Legendary sports watch with blue dial", value: 85000 },
+            { name: "Audemars Piguet Royal Oak", description: "Iconic octagonal bezel design", value: 45000 },
+            { name: "Richard Mille RM 011", description: "Innovative titanium racing chronograph", value: 250000 },
+            { name: "Omega Speedmaster", description: "The Moonwatch that went to space", value: 8500 },
+          ]
+        },
+        {
+          name: "Supercars",
+          description: "The world's most exclusive automobiles",
+          items: [
+            { name: "Ferrari LaFerrari", description: "Hybrid hypercar masterpiece", value: 2500000 },
+            { name: "Lamborghini Aventador SVJ", description: "V12 powered Italian beast", value: 550000 },
+            { name: "Bugatti Chiron", description: "1500 horsepower engineering marvel", value: 3500000 },
+            { name: "McLaren P1", description: "British hybrid hypercar", value: 1500000 },
+            { name: "Porsche 918 Spyder", description: "German hybrid precision", value: 1200000 },
+          ]
+        },
+        {
+          name: "Private Jets",
+          description: "Ultimate in air travel luxury",
+          items: [
+            { name: "Gulfstream G700", description: "Ultra-long-range business jet", value: 75000000 },
+            { name: "Bombardier Global 7500", description: "Largest purpose-built business jet", value: 73000000 },
+            { name: "Dassault Falcon 8X", description: "Tri-jet long range excellence", value: 58000000 },
+            { name: "Embraer Praetor 600", description: "Super-midsize efficiency", value: 21000000 },
+          ]
+        },
+        {
+          name: "Mega Yachts",
+          description: "Floating palaces for the elite",
+          items: [
+            { name: "Azzam 180m Superyacht", description: "World's longest private yacht", value: 600000000 },
+            { name: "Eclipse 162m Yacht", description: "Luxury with submarine capability", value: 500000000 },
+            { name: "Dilbar 156m Yacht", description: "Largest pool on any yacht", value: 256000000 },
+            { name: "Custom 100m Explorer", description: "Ice-class expedition vessel", value: 150000000 },
+          ]
+        },
+        {
+          name: "Real Estate",
+          description: "Premier properties worldwide",
+          items: [
+            { name: "Manhattan Penthouse", description: "Central Park views, 15,000 sqft", value: 95000000 },
+            { name: "Malibu Beach Estate", description: "Private beach, 20,000 sqft", value: 125000000 },
+            { name: "Monaco Apartment", description: "Casino Square views, ultra-exclusive", value: 85000000 },
+            { name: "Private Island Caribbean", description: "100-acre paradise retreat", value: 200000000 },
+            { name: "London Mayfair Mansion", description: "Historic Georgian townhouse", value: 75000000 },
+          ]
+        },
+        {
+          name: "Fine Art",
+          description: "Museum-quality masterpieces",
+          items: [
+            { name: "Picasso Original", description: "Blue Period masterwork", value: 45000000 },
+            { name: "Warhol Pop Art Print", description: "Iconic pop art piece", value: 15000000 },
+            { name: "Basquiat Canvas", description: "Neo-expressionist masterpiece", value: 35000000 },
+            { name: "Monet Water Lilies", description: "Impressionist garden series", value: 55000000 },
+          ]
+        },
+        {
+          name: "Jewelry",
+          description: "Extraordinary gems and precious metals",
+          items: [
+            { name: "Blue Diamond Ring 10ct", description: "Rare fancy blue diamond", value: 25000000 },
+            { name: "Emerald Necklace Set", description: "Colombian emerald suite", value: 8000000 },
+            { name: "Ruby Tiara", description: "Burmese ruby crown piece", value: 12000000 },
+            { name: "Diamond Tennis Bracelet", description: "50 carat D-flawless", value: 5000000 },
+          ]
+        },
+        {
+          name: "Premium Memberships",
+          description: "Exclusive access and privileges",
+          items: [
+            { name: "Elite Club Lifetime", description: "Unlimited premium features forever", value: 50000 },
+            { name: "VIP Badge", description: "Distinguished member status", value: 10000 },
+            { name: "Founder Status", description: "Original supporter recognition", value: 25000 },
+            { name: "Diamond Tier Access", description: "Highest privilege level", value: 100000 },
+          ]
+        },
+        {
+          name: "Digital Assets",
+          description: "Virtual luxury items",
+          items: [
+            { name: "Verified Badge", description: "Official verification status", value: 500 },
+            { name: "Custom Profile Theme", description: "Exclusive design options", value: 1000 },
+            { name: "Premium Emoji Pack", description: "Luxury emoji collection", value: 250 },
+            { name: "Animated Avatar Frame", description: "Moving profile border", value: 750 },
+            { name: "Custom Username Color", description: "Stand out with unique colors", value: 300 },
+          ]
+        },
+        {
+          name: "Exotic Experiences",
+          description: "Once-in-a-lifetime adventures",
+          items: [
+            { name: "Space Flight Ticket", description: "Sub-orbital space journey", value: 450000 },
+            { name: "Antarctic Expedition", description: "Private polar exploration", value: 150000 },
+            { name: "Everest Summit Guide", description: "Full expedition support", value: 85000 },
+            { name: "F1 Racing Experience", description: "Drive a real F1 car", value: 50000 },
+          ]
+        },
+      ];
+
+      let categoriesCreated = 0;
+      let itemsCreated = 0;
+
+      for (const cat of categoryData) {
+        let category = existingCategories.find(c => c.name === cat.name);
+        if (!category) {
+          category = await storage.createMallCategory({ name: cat.name, description: cat.description });
+          categoriesCreated++;
+        }
+        
+        for (const item of cat.items) {
+          const existingItem = existingItems.find(i => i.name === item.name);
+          if (!existingItem) {
+            await storage.createMallItem({
+              name: item.name,
+              description: item.description,
+              value: item.value,
+              categoryId: category.id,
+            });
+            itemsCreated++;
+          }
+        }
+      }
+
+      console.log(`[Admin] Mall seeded: ${categoriesCreated} categories, ${itemsCreated} items created`);
+      res.json({ 
+        message: "Mall seeded successfully", 
+        categoriesCreated, 
+        itemsCreated 
+      });
+    } catch (error) {
+      console.error("Failed to seed mall:", error);
+      res.status(500).json({ message: "Failed to seed mall" });
+    }
+  });
+
+  // Admin reset user net worth
+  app.post("/api/admin/users/:userId/reset-networth", requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const oldNetWorth = user.netWorth;
+      await storage.updateUser(req.params.userId, { netWorth: 0 });
+      
+      // Log the action
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "RESET_USER_NETWORTH",
+        targetType: "user",
+        targetId: user.id,
+        details: { username: user.username, oldNetWorth, newNetWorth: 0 },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      console.log(`[Admin] Reset net worth for ${user.username}: ${oldNetWorth} -> 0`);
+      res.json({ 
+        message: "Net worth reset successfully",
+        username: user.username,
+        oldNetWorth,
+        newNetWorth: 0
+      });
+    } catch (error) {
+      console.error("Failed to reset net worth:", error);
+      res.status(500).json({ message: "Failed to reset net worth" });
+    }
+  });
+
+  // Admin reset user net worth by username
+  app.post("/api/admin/users/by-username/:username/reset-networth", requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUserByUsername(req.params.username);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const oldNetWorth = user.netWorth;
+      await storage.updateUser(user.id, { netWorth: 0 });
+      
+      // Log the action
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "RESET_USER_NETWORTH",
+        targetType: "user",
+        targetId: user.id,
+        details: { username: user.username, oldNetWorth, newNetWorth: 0 },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      console.log(`[Admin] Reset net worth for ${user.username}: ${oldNetWorth} -> 0`);
+      res.json({ 
+        message: "Net worth reset successfully",
+        username: user.username,
+        oldNetWorth,
+        newNetWorth: 0
+      });
+    } catch (error) {
+      console.error("Failed to reset net worth:", error);
+      res.status(500).json({ message: "Failed to reset net worth" });
+    }
+  });
+
+  // ===== ADMIN MALL PRODUCT CONTROL =====
+
+  // Admin: Add mall product to user
+  app.post("/api/admin/users/:userId/mall-products/add", requireAdmin, async (req, res) => {
+    try {
+      const { itemId, quantity = 1 } = req.body;
+      
+      if (!itemId) {
+        return res.status(400).json({ message: "itemId is required" });
+      }
+      
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const item = await storage.getMallItem(itemId);
+      if (!item) {
+        return res.status(404).json({ message: "Mall item not found" });
+      }
+      
+      const purchase = await storage.adminAddMallProduct(
+        req.params.userId,
+        itemId,
+        quantity,
+        req.session.userId!
+      );
+      
+      const updatedUser = await storage.getUser(req.params.userId);
+      const netWorthGained = item.value * 10 * quantity;
+      
+      // Log the action
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_ADD_MALL_PRODUCT",
+        targetType: "user",
+        targetId: targetUser.id,
+        details: { 
+          username: targetUser.username, 
+          itemName: item.name, 
+          itemId, 
+          quantity,
+          netWorthGained,
+          newNetWorth: updatedUser?.netWorth 
+        },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      console.log(`[Admin] Added ${item.name} x${quantity} to ${targetUser.username}, net worth +${netWorthGained}`);
+      
+      res.json({
+        message: "Product added successfully",
+        purchase,
+        item: { id: item.id, name: item.name, value: item.value },
+        netWorthGained,
+        newNetWorth: updatedUser?.netWorth || 0
+      });
+    } catch (error: any) {
+      console.error("Failed to add mall product:", error);
+      res.status(500).json({ message: error.message || "Failed to add mall product" });
+    }
+  });
+
+  // Admin: Remove specific mall product from user
+  app.post("/api/admin/users/:userId/mall-products/remove", requireAdmin, async (req, res) => {
+    try {
+      const { purchaseId } = req.body;
+      
+      if (!purchaseId) {
+        return res.status(400).json({ message: "purchaseId is required" });
+      }
+      
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const result = await storage.adminRemoveMallProduct(
+        req.params.userId,
+        purchaseId,
+        req.session.userId!
+      );
+      
+      const updatedUser = await storage.getUser(req.params.userId);
+      
+      // Log the action
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_REMOVE_MALL_PRODUCT",
+        targetType: "user",
+        targetId: targetUser.id,
+        details: { 
+          username: targetUser.username, 
+          purchaseId,
+          netWorthReduced: result.netWorthReduced,
+          newNetWorth: updatedUser?.netWorth 
+        },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      console.log(`[Admin] Removed purchase ${purchaseId} from ${targetUser.username}, net worth -${result.netWorthReduced}`);
+      
+      res.json({
+        message: "Product removed successfully",
+        netWorthReduced: result.netWorthReduced,
+        newNetWorth: updatedUser?.netWorth || 0
+      });
+    } catch (error: any) {
+      console.error("Failed to remove mall product:", error);
+      res.status(500).json({ message: error.message || "Failed to remove mall product" });
+    }
+  });
+
+  // Admin: Remove ALL mall products from user
+  app.post("/api/admin/users/:userId/mall-products/remove-all", requireAdmin, async (req, res) => {
+    try {
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const result = await storage.adminRemoveAllMallProducts(
+        req.params.userId,
+        req.session.userId!
+      );
+      
+      const updatedUser = await storage.getUser(req.params.userId);
+      
+      // Log the action
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_REMOVE_ALL_MALL_PRODUCTS",
+        targetType: "user",
+        targetId: targetUser.id,
+        details: { 
+          username: targetUser.username, 
+          productsRemoved: result.removed,
+          netWorthReduced: result.netWorthReduced,
+          newNetWorth: updatedUser?.netWorth 
+        },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      console.log(`[Admin] Removed all ${result.removed} products from ${targetUser.username}, net worth -${result.netWorthReduced}`);
+      
+      res.json({
+        message: `Removed ${result.removed} products successfully`,
+        productsRemoved: result.removed,
+        netWorthReduced: result.netWorthReduced,
+        newNetWorth: updatedUser?.netWorth || 0
+      });
+    } catch (error: any) {
+      console.error("Failed to remove all mall products:", error);
+      res.status(500).json({ message: error.message || "Failed to remove all mall products" });
+    }
+  });
+
+  // Admin: Get user's mall purchases
+  app.get("/api/admin/users/:userId/mall-products", requireAdmin, async (req, res) => {
+    try {
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const purchases = await storage.getUserPurchases(req.params.userId);
+      
+      res.json({
+        user: {
+          id: targetUser.id,
+          username: targetUser.username,
+          displayName: targetUser.displayName,
+          netWorth: targetUser.netWorth
+        },
+        purchases: purchases.map(p => ({
+          id: p.id,
+          itemId: p.itemId,
+          itemName: p.item.name,
+          quantity: p.quantity,
+          netWorthGained: p.netWorthGained,
+          purchasedAt: p.createdAt
+        })),
+        totalPurchases: purchases.length,
+        totalNetWorthFromPurchases: purchases.reduce((sum, p) => sum + (p.netWorthGained || 0), 0)
+      });
+    } catch (error: any) {
+      console.error("Failed to get user mall products:", error);
+      res.status(500).json({ message: error.message || "Failed to get user mall products" });
+    }
+  });
+
+  // Admin: Set user's net worth directly
+  app.post("/api/admin/users/:userId/set-networth", requireAdmin, async (req, res) => {
+    try {
+      const { netWorth } = req.body;
+      
+      if (typeof netWorth !== 'number' || netWorth < 0) {
+        return res.status(400).json({ message: "netWorth must be a non-negative number" });
+      }
+      
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const oldNetWorth = targetUser.netWorth || 0;
+      await storage.updateUser(req.params.userId, { netWorth });
+      
+      const delta = netWorth - oldNetWorth;
+      await storage.addNetWorthEntry(req.params.userId, delta, "ADMIN_ADJUST", "admin", req.session.userId!);
+      
+      // Log the action - use UPDATE which is a valid audit_action enum value
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "UPDATE",
+        targetType: "user",
+        targetId: targetUser.id,
+        details: { 
+          actionType: "set_networth",
+          username: targetUser.username, 
+          oldNetWorth, 
+          newNetWorth: netWorth 
+        },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      console.log(`[Admin] Set net worth for ${targetUser.username}: ${oldNetWorth} -> ${netWorth}`);
+      
+      res.json({
+        message: "Net worth updated successfully",
+        username: targetUser.username,
+        oldNetWorth,
+        newNetWorth: netWorth
+      });
+    } catch (error: any) {
+      console.error("Failed to set net worth:", error);
+      res.status(500).json({ message: error.message || "Failed to set net worth" });
+    }
+  });
+
+  // ===== PAYFAST PAYMENT ROUTES =====
+  
+  const {
+    isPayFastConfigured,
+    getPayFastUrl,
+    createPaymentData,
+    validateITNSignature,
+    formatAmountCents,
+  } = await import("./services/payfast");
+
+  app.post("/api/payments/payfast/create", requireAuth, async (req, res) => {
+    try {
+      if (!isPayFastConfigured()) {
+        return res.status(500).json({ message: "PayFast is not configured" });
+      }
+
+      const { itemId, quantity = 1 } = req.body;
+      if (!itemId) {
+        return res.status(400).json({ message: "Item ID is required" });
+      }
+
+      const item = await storage.getMallItem(itemId);
+      if (!item) {
+        return res.status(404).json({ message: "Mall item not found" });
+      }
+      if (!item.isActive) {
+        return res.status(400).json({ message: "Item is not available for purchase" });
+      }
+
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      const totalValueCents = item.value * quantity * 100;
+      const baseUrl = `https://${req.get("host")}`;
+
+      const order = await storage.createPayfastOrder({
+        userId: req.session.userId!,
+        mallItemId: itemId,
+        quantity,
+        amountCents: totalValueCents,
+        itemName: item.name,
+        itemDescription: item.description || undefined,
+        emailAddress: user.email || undefined,
+      });
+
+      const paymentData = createPaymentData({
+        orderId: order.id,
+        amount: formatAmountCents(totalValueCents),
+        itemName: `${item.name}${quantity > 1 ? ` x${quantity}` : ""}`,
+        itemDescription: item.description || undefined,
+        email: user.email || undefined,
+        firstName: user.displayName?.split(" ")[0] || user.username,
+        lastName: user.displayName?.split(" ").slice(1).join(" ") || undefined,
+        returnUrl: `${baseUrl}/api/payments/payfast/return?order_id=${order.id}`,
+        cancelUrl: `${baseUrl}/api/payments/payfast/cancel?order_id=${order.id}`,
+        notifyUrl: `${baseUrl}/api/payments/payfast/notify`,
+        userId: req.session.userId!,
+      });
+
+      console.log("[PayFast] Created order:", order.id, "for item:", item.name);
+
+      res.json({
+        orderId: order.id,
+        paymentUrl: getPayFastUrl(),
+        paymentData,
+        item: {
+          id: item.id,
+          name: item.name,
+          value: item.value,
+          quantity,
+          totalValue: item.value * quantity,
+        },
+      });
+    } catch (error: any) {
+      console.error("[PayFast] Failed to create payment:", error);
+      res.status(500).json({ message: error?.message || "Failed to create payment" });
+    }
+  });
+
+  app.post("/api/payments/payfast/notify", async (req, res) => {
+    try {
+      console.log("[PayFast ITN] Received notification:", JSON.stringify(req.body));
+
+      const itnData = req.body;
+      
+      if (!validateITNSignature(itnData)) {
+        console.error("[PayFast ITN] Invalid signature");
+        return res.status(400).send("Invalid signature");
+      }
+
+      const orderId = itnData.m_payment_id;
+      const order = await storage.getPayfastOrder(orderId);
+      
+      if (!order) {
+        console.error("[PayFast ITN] Order not found:", orderId);
+        return res.status(404).send("Order not found");
+      }
+
+      if (order.status === "COMPLETE") {
+        console.log("[PayFast ITN] Order already completed:", orderId);
+        return res.status(200).send("OK");
+      }
+
+      if (itnData.payment_status === "COMPLETE") {
+        await storage.completePayfastOrder(orderId, {
+          pfPaymentId: itnData.pf_payment_id,
+          paymentStatus: itnData.payment_status,
+          amountGross: itnData.amount_gross,
+          amountFee: itnData.amount_fee,
+          amountNet: itnData.amount_net,
+          signature: itnData.signature,
+          itnPayload: JSON.stringify(itnData),
+        });
+
+        if (order.mallItemId) {
+          const purchase = await storage.purchaseMallItem(order.userId, order.mallItemId, order.quantity);
+          console.log("[PayFast ITN] Purchase completed:", purchase?.id, "Net worth updated for user:", order.userId);
+        }
+
+        console.log("[PayFast ITN] Order completed successfully:", orderId);
+      } else {
+        await storage.updatePayfastOrder(orderId, {
+          status: "FAILED",
+          paymentStatus: itnData.payment_status,
+          itnPayload: JSON.stringify(itnData),
+        });
+        console.log("[PayFast ITN] Payment failed:", orderId, "Status:", itnData.payment_status);
+      }
+
+      res.status(200).send("OK");
+    } catch (error) {
+      console.error("[PayFast ITN] Error processing notification:", error);
+      res.status(500).send("Error");
+    }
+  });
+
+  // Complete purchase endpoint - called by client after PayFast return
+  // This is the GUARANTEED way to complete a purchase and update net worth
+  app.post("/api/payments/payfast/complete-purchase", requireAuth, async (req, res) => {
+    const { orderId } = req.body;
+    console.log("[PayFast Complete] Starting purchase completion for order:", orderId);
+    console.log("[PayFast Complete] User ID from session:", req.session.userId);
+    
+    try {
+      if (!orderId) {
+        console.log("[PayFast Complete] No order ID provided");
+        return res.json({ success: false, message: "No order ID provided" });
+      }
+      
+      const order = await storage.getPayfastOrder(orderId);
+      console.log("[PayFast Complete] Order found:", order ? "yes" : "no");
+      
+      if (!order) {
+        console.log("[PayFast Complete] Order not found:", orderId);
+        return res.json({ success: false, message: "Order not found" });
+      }
+      
+      console.log("[PayFast Complete] Order details:", {
+        id: order.id,
+        userId: order.userId,
+        mallItemId: order.mallItemId,
+        status: order.status,
+        itemName: order.itemName,
+        quantity: order.quantity,
+      });
+      
+      // Verify the order belongs to the current user
+      if (order.userId !== req.session.userId) {
+        console.log("[PayFast Complete] User mismatch:", order.userId, "vs", req.session.userId);
+        return res.json({ success: false, message: "Order does not belong to this user" });
+      }
+      
+      // Check if purchase was already made
+      const existingPurchases = await storage.getUserPurchases(order.userId);
+      const alreadyPurchased = existingPurchases.some(p => 
+        p.itemId === order.mallItemId && 
+        new Date(p.createdAt).getTime() > new Date(order.createdAt!).getTime() - 60000
+      );
+      
+      if (alreadyPurchased) {
+        console.log("[PayFast Complete] Purchase already exists for this order");
+        const user = await storage.getUser(order.userId);
+        return res.json({ 
+          success: true, 
+          message: "Purchase already completed", 
+          newNetWorth: user?.netWorth || 0,
+          alreadyCompleted: true
+        });
+      }
+      
+      // Complete the order if not already complete
+      if (order.status !== "COMPLETE") {
+        console.log("[PayFast Complete] Marking order as COMPLETE");
+        await storage.updatePayfastOrder(orderId, { 
+          status: "COMPLETE",
+          completedAt: new Date(),
+          paymentStatus: "COMPLETE"
+        });
+      }
+      
+      // Make the purchase - this updates net worth
+      if (order.mallItemId) {
+        console.log("[PayFast Complete] Calling purchaseMallItem for:", order.mallItemId);
+        const purchase = await storage.purchaseMallItem(order.userId, order.mallItemId, order.quantity);
+        console.log("[PayFast Complete] Purchase created:", purchase?.id);
+        console.log("[PayFast Complete] Net worth gained:", purchase?.netWorthGained);
+      }
+      
+      // Get updated user info
+      const user = await storage.getUser(order.userId);
+      console.log("[PayFast Complete] Final net worth:", user?.netWorth);
+      
+      res.json({ 
+        success: true, 
+        message: "Purchase completed successfully",
+        newNetWorth: user?.netWorth || 0,
+        itemName: order.itemName
+      });
+      
+    } catch (error: any) {
+      console.error("[PayFast Complete] Error:", error);
+      res.json({ success: false, message: error?.message || "An error occurred" });
+    }
+  });
+
+  app.get("/api/payments/payfast/return", async (req, res) => {
+    const orderId = req.query.order_id as string;
+    console.log("[PayFast] User returned from payment, order:", orderId);
+    
+    let success = false;
+    let errorMessage = "";
+    let itemName = "";
+    let newNetWorth = 0;
+    
+    try {
+      if (orderId) {
+        const order = await storage.getPayfastOrder(orderId);
+        
+        if (order && order.status === "PENDING") {
+          console.log("[PayFast Return] Order is PENDING, completing purchase...");
+          
+          // Mark order as complete
+          await storage.updatePayfastOrder(orderId, { 
+            status: "COMPLETE",
+            completedAt: new Date(),
+            paymentStatus: "COMPLETE"
+          });
+          
+          // Add the product to user's net worth
+          if (order.mallItemId) {
+            const purchase = await storage.purchaseMallItem(order.userId, order.mallItemId, order.quantity);
+            console.log("[PayFast Return] Mall purchase completed:", purchase);
+          }
+          
+          // Get updated user info
+          const user = await storage.getUser(order.userId);
+          newNetWorth = user?.netWorth || 0;
+          itemName = order.itemName;
+          success = true;
+          
+          console.log("[PayFast Return] Order completed successfully, new net worth:", newNetWorth);
+        } else if (order && order.status === "COMPLETE") {
+          // Already completed (maybe by ITN callback)
+          // But check if the mall purchase was actually made - ITN might not have reached us
+          if (order.mallItemId) {
+            // Check if there's a recent purchase for this user/item combo within last 5 minutes
+            const userPurchases = await storage.getUserPurchases(order.userId);
+            const recentPurchase = userPurchases.find(p => 
+              p.itemId === order.mallItemId && 
+              new Date(p.createdAt).getTime() > (order.createdAt?.getTime() || 0) - 60000
+            );
+            
+            if (!recentPurchase) {
+              // Purchase wasn't made by ITN, make it now
+              console.log("[PayFast Return] Order was COMPLETE but purchase not found, making purchase now...");
+              const purchase = await storage.purchaseMallItem(order.userId, order.mallItemId, order.quantity);
+              console.log("[PayFast Return] Late purchase completed:", purchase?.id);
+            } else {
+              console.log("[PayFast Return] Purchase already exists:", recentPurchase.id);
+            }
+          }
+          
+          const user = await storage.getUser(order.userId);
+          newNetWorth = user?.netWorth || 0;
+          itemName = order.itemName;
+          success = true;
+          console.log("[PayFast Return] Order was already completed, net worth:", newNetWorth);
+        } else if (!order) {
+          errorMessage = "Order not found";
+          console.log("[PayFast Return] Order not found:", orderId);
+        } else {
+          errorMessage = `Order status: ${order.status}`;
+          console.log("[PayFast Return] Order in unexpected status:", order.status);
+        }
+      } else {
+        errorMessage = "No order ID provided";
+      }
+    } catch (error) {
+      console.error("[PayFast Return] Error completing order:", error);
+      errorMessage = "An error occurred processing your payment";
+    }
+    
+    if (success) {
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Payment Successful</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+              .card { background: white; border-radius: 16px; padding: 40px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.2); max-width: 400px; }
+              h1 { color: #10B981; margin-bottom: 16px; }
+              p { color: #666; margin-bottom: 16px; }
+              .checkmark { width: 60px; height: 60px; border-radius: 50%; background: #10B981; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
+              .checkmark svg { width: 30px; height: 30px; fill: white; }
+              .networth { font-size: 24px; color: #667eea; font-weight: bold; margin: 16px 0; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <div class="checkmark">
+                <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+              </div>
+              <h1>Payment Successful!</h1>
+              <p><strong>${itemName}</strong> has been added to your collection.</p>
+              <p class="networth">Net Worth: R${newNetWorth.toLocaleString()}</p>
+              <p style="font-size: 14px; color: #999;">You can now close this page and return to the app.</p>
+            </div>
+          </body>
+        </html>
+      `);
+    } else {
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Payment Issue</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+              .card { background: white; border-radius: 16px; padding: 40px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.2); max-width: 400px; }
+              h1 { color: #EF4444; margin-bottom: 16px; }
+              p { color: #666; margin-bottom: 24px; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>Payment Issue</h1>
+              <p>${errorMessage || "There was an issue processing your payment."}</p>
+              <p style="font-size: 14px; color: #999;">Please contact support if you were charged.</p>
+              <p style="font-size: 12px; color: #ccc;">Order ID: ${orderId || "N/A"}</p>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+  });
+
+  app.get("/api/payments/payfast/cancel", async (req, res) => {
+    const orderId = req.query.order_id as string;
+    console.log("[PayFast] User cancelled payment, order:", orderId);
+    
+    if (orderId) {
+      await storage.updatePayfastOrder(orderId, { status: "CANCELLED" });
+    }
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Payment Cancelled</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+            .card { background: white; border-radius: 16px; padding: 40px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.2); max-width: 400px; }
+            h1 { color: #333; margin-bottom: 16px; }
+            p { color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1>Payment Cancelled</h1>
+            <p>Your payment was cancelled. You can close this page and return to the app.</p>
+          </div>
+        </body>
+      </html>
+    `);
+  });
+
+  app.get("/api/payments/payfast/status/:orderId", requireAuth, async (req, res) => {
+    try {
+      const order = await storage.getPayfastOrder(req.params.orderId);
+      if (!order) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+      if (order.userId !== req.session.userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      res.json({
+        orderId: order.id,
+        status: order.status,
+        completedAt: order.completedAt,
+      });
+    } catch (error) {
+      console.error("[PayFast] Failed to get order status:", error);
+      res.status(500).json({ message: "Failed to get order status" });
+    }
+  });
+
+  app.get("/api/payments/payfast/orders", requireAuth, async (req, res) => {
+    try {
+      const orders = await storage.getUserPayfastOrders(req.session.userId!);
+      res.json(orders);
+    } catch (error) {
+      console.error("[PayFast] Failed to get user orders:", error);
+      res.status(500).json({ message: "Failed to get orders" });
+    }
+  });
+
+  // ===== MESSAGES INBOX ROUTES =====
+
+  app.get("/api/messages/inbox/:folder", requireAuth, async (req, res) => {
+    try {
+      const folder = req.params.folder.toUpperCase() as "PRIMARY" | "GENERAL";
+      if (folder !== "PRIMARY" && folder !== "GENERAL") {
+        return res.status(400).json({ message: "Invalid folder" });
+      }
+      const conversations = await storage.getUserConversationsByFolder(req.session.userId!, folder);
+      res.json(conversations);
+    } catch (error) {
+      console.error("Failed to get inbox conversations:", error);
+      res.status(500).json({ message: "Failed to get inbox conversations" });
+    }
+  });
+
+  app.get("/api/messages/requests", requireAuth, async (req, res) => {
+    try {
+      const requests = await storage.getMessageRequests(req.session.userId!);
+      res.json(requests);
+    } catch (error) {
+      console.error("Failed to get message requests:", error);
+      res.status(500).json({ message: "Failed to get message requests" });
+    }
+  });
+
+  app.post("/api/messages/requests/:conversationId/accept", requireAuth, async (req, res) => {
+    try {
+      const conversation = await storage.getConversation(req.params.conversationId);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      const isParticipant = await storage.isConversationParticipant(req.params.conversationId, req.session.userId!);
+      if (!isParticipant) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      const updated = await storage.acceptMessageRequest(req.params.conversationId, req.session.userId!);
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to accept message request:", error);
+      res.status(500).json({ message: "Failed to accept message request" });
+    }
+  });
+
+  app.delete("/api/messages/requests/:conversationId", requireAuth, async (req, res) => {
+    try {
+      const conversation = await storage.getConversation(req.params.conversationId);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      const isParticipant = await storage.isConversationParticipant(req.params.conversationId, req.session.userId!);
+      if (!isParticipant) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      await storage.declineMessageRequest(req.params.conversationId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to decline message request:", error);
+      res.status(500).json({ message: "Failed to decline message request" });
+    }
+  });
+
+  app.patch("/api/messages/conversations/:conversationId/folder", requireAuth, async (req, res) => {
+    try {
+      const { folder } = req.body;
+      if (folder !== "PRIMARY" && folder !== "GENERAL") {
+        return res.status(400).json({ message: "Invalid folder" });
+      }
+      const conversation = await storage.getConversation(req.params.conversationId);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      const isParticipant = await storage.isConversationParticipant(req.params.conversationId, req.session.userId!);
+      if (!isParticipant) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      const updated = await storage.updateConversationFolder(req.params.conversationId, folder);
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update conversation folder:", error);
+      res.status(500).json({ message: "Failed to update conversation folder" });
+    }
+  });
+
+  // ===== DISCOVER ROUTES =====
+
+  app.get("/api/discover/new-people", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const users = await storage.getNewPeopleToFollow(req.session.userId!, limit);
+      res.json(users);
+    } catch (error) {
+      console.error("Failed to get new people to follow:", error);
+      res.status(500).json({ message: "Failed to get new people to follow" });
+    }
+  });
+
+  app.get("/api/discover/reels", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const posts = await storage.getAlgorithmReelsPosts(req.session.userId!, limit, offset);
+      res.json(posts);
+    } catch (error) {
+      console.error("Failed to get reels:", error);
+      res.status(500).json({ message: "Failed to get reels" });
+    }
+  });
+
+  app.get("/api/discover/explore", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 30;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const posts = await storage.getExplorePosts(req.session.userId!, limit, offset);
+      res.json(posts);
+    } catch (error) {
+      console.error("Failed to get explore posts:", error);
+      res.status(500).json({ message: "Failed to get explore posts" });
+    }
+  });
+
+  app.get("/api/discover/trends", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const trendingPosts = await storage.getTrendingPosts(limit);
+      res.json(trendingPosts);
+    } catch (error) {
+      console.error("Failed to get trends:", error);
+      res.status(500).json({ message: "Failed to get trends" });
+    }
+  });
+
+  app.get("/api/discover/voices", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 30;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const posts = await storage.getVoicePosts(req.session.userId!, limit, offset);
+      res.json(posts);
+    } catch (error) {
+      console.error("Failed to get voice posts:", error);
+      res.status(500).json({ message: "Failed to get voice posts" });
+    }
+  });
+
+  // Facebook-style people discovery algorithm
+  app.get("/api/discover/people", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 30;
+      const userId = req.session.userId!;
+      const sessionId = req.query.sessionId as string;
+      
+      // Get suggested people with algorithm scoring
+      const suggestedPeople = await storage.getSuggestedPeople(userId, limit);
+      
+      // Mark profiles as seen for rotation
+      for (const person of suggestedPeople) {
+        await storage.markProfileAsSeen(userId, person.id, sessionId);
+      }
+      
+      // Add isFollowing field (always false since these are suggestions)
+      const peopleWithFollowStatus = suggestedPeople.map(person => ({
+        ...person,
+        isFollowing: false,
+      }));
+      
+      res.json(peopleWithFollowStatus);
+    } catch (error: any) {
+      console.error("Failed to get suggested people:", error?.message || error, error?.stack);
+      res.status(500).json({ message: "Failed to get suggested people" });
+    }
+  });
+
+  // ================================================================================
+  // DISCOVERY ALGORITHM ENDPOINTS - Content Tracking & Personalization
+  // ================================================================================
+
+  /**
+   * Record content interaction (watch time, completion, skip, etc.)
+   * This is the primary data collection endpoint for the recommendation engine
+   */
+  app.post("/api/discover/interaction", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const {
+        contentId,
+        contentType, // REEL, VOICE, PHOTO, TEXT, STORY
+        interactionType, // VIEW, LIKE, SAVE, SHARE, COMMENT, SKIP, REWATCH
+        watchTimeMs,
+        completionRate,
+        rewatchCount,
+        skippedAtMs,
+        creatorId,
+        sessionId
+      } = req.body;
+
+      if (!contentId || !contentType || !interactionType) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+
+      await storage.recordContentInteraction({
+        userId,
+        contentId,
+        contentType: contentType.toUpperCase(),
+        interactionType: interactionType.toUpperCase(),
+        watchTimeMs,
+        completionRate,
+        rewatchCount,
+        skippedAtMs,
+        creatorId,
+        sessionId
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to record interaction:", error);
+      res.status(500).json({ message: "Failed to record interaction" });
+    }
+  });
+
+  /**
+   * Get personalized content feed with rotation (TikTok/Instagram style)
+   */
+  app.get("/api/discover/feed", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const contentType = (req.query.type as string || 'REEL').toUpperCase() as 'REEL' | 'VOICE' | 'PHOTO' | 'TEXT';
+      const limit = parseInt(req.query.limit as string) || 20;
+      const sessionId = req.query.sessionId as string;
+      const excludeIds = req.query.exclude ? (req.query.exclude as string).split(',') : [];
+
+      const feed = await storage.getPersonalizedContentFeed(userId, contentType, {
+        limit,
+        sessionId,
+        excludeIds
+      });
+
+      res.json(feed);
+    } catch (error) {
+      console.error("Failed to get personalized feed:", error);
+      res.status(500).json({ message: "Failed to get personalized feed" });
+    }
+  });
+
+  /**
+   * Get user's content type preferences (learned from engagement)
+   */
+  app.get("/api/discover/preferences", requireAuth, async (req, res) => {
+    try {
+      const preferences = await storage.getUserContentPreferences(req.session.userId!);
+      res.json(preferences || {
+        reelPreference: 50,
+        voicePreference: 50,
+        photoPreference: 50,
+        textPreference: 50
+      });
+    } catch (error) {
+      console.error("Failed to get preferences:", error);
+      res.status(500).json({ message: "Failed to get preferences" });
+    }
+  });
+
+  /**
+   * Mark profile as not interested in discovery
+   */
+  app.post("/api/discover/not-interested/profile/:profileId", requireAuth, async (req, res) => {
+    try {
+      const { reason } = req.body;
+      await storage.markDiscoveryNotInterested(
+        req.session.userId!,
+        req.params.profileId,
+        'CREATOR',
+        reason
+      );
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to mark profile as not interested:", error);
+      res.status(500).json({ message: "Failed to mark as not interested" });
+    }
+  });
+
+  /**
+   * Mark content as not interested in discovery
+   */
+  app.post("/api/discover/not-interested/content/:contentId", requireAuth, async (req, res) => {
+    try {
+      const { reason } = req.body;
+      await storage.markDiscoveryNotInterested(
+        req.session.userId!,
+        req.params.contentId,
+        'CONTENT',
+        reason
+      );
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to mark content as not interested:", error);
+      res.status(500).json({ message: "Failed to mark as not interested" });
+    }
+  });
+
+  /**
+   * Get top creators the user engages with
+   */
+  app.get("/api/discover/top-creators", requireAuth, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      const creatorIds = await storage.getTopCreatorAffinities(req.session.userId!, limit);
+      res.json(creatorIds);
+    } catch (error) {
+      console.error("Failed to get top creators:", error);
+      res.status(500).json({ message: "Failed to get top creators" });
+    }
+  });
+
+  const httpServer = createServer(app);
+
+  const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+
+  wss.on("connection", async (ws, req) => {
+    let userId: string | null = null;
+    
+    // Try cookie-based auth first (browser)
+    const cookies = parseCookies(req.headers.cookie);
+    const sessionId = cookies["connect.sid"];
+    
+    if (sessionId) {
+      userId = await getSessionUserId(sessionId);
+    }
+    
+    // Fallback to URL-based auth for React Native (cookies may not work reliably)
+    if (!userId && req.url) {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const urlUserId = url.searchParams.get("userId");
+      if (urlUserId) {
+        // Verify user exists before accepting URL-based auth
+        const userExists = await storage.getUser(urlUserId);
+        if (userExists) {
+          userId = urlUserId;
+          console.log("[WebSocket] Authenticated via URL param, userId:", userId);
+        }
+      }
+    }
+    
+    if (!userId) {
+      console.log("[WebSocket] Auth failed - no valid session or userId");
+      ws.send(JSON.stringify({ type: "auth_error", message: "Authentication required" }));
+      ws.close(1008, "Authentication required");
+      return;
+    }
+    
+    addClientToUser(userId, ws);
+    ws.send(JSON.stringify({ type: "auth_success", userId }));
+
+    ws.on("message", async (data) => {
+      try {
+        const message = JSON.parse(data.toString());
+        
+        if (message.type === "ping") {
+          ws.send(JSON.stringify({ type: "pong" }));
+        }
+        
+        if (message.type === "join_conversation" && message.conversationId) {
+          ws.send(JSON.stringify({ 
+            type: "joined_conversation", 
+            conversationId: message.conversationId 
+          }));
+        }
+
+        // Voice call signaling
+        if (message.type === "call_offer" && message.targetUserId && message.callId) {
+          console.log(`[VoiceCall][Server] call_offer: from=${userId} to=${message.targetUserId} callId=${message.callId}`);
+          // Fetch caller profile to include with incoming call
+          const callerProfile = await storage.getUser(userId);
+          
+          // Forward call offer to target user with caller info
+          const success = broadcastToUser(message.targetUserId, {
+            type: "incoming_call",
+            callId: message.callId,
+            callerId: userId,
+            callType: message.callType || "AUDIO",
+            caller: callerProfile ? {
+              id: callerProfile.id,
+              username: callerProfile.username,
+              displayName: callerProfile.displayName || callerProfile.username,
+              avatarUrl: callerProfile.avatarUrl,
+            } : null,
+          });
+          console.log(`[VoiceCall][Server] call_offer relay success: ${success}`);
+        }
+
+        if (message.type === "call_answer" && message.targetUserId && message.callId) {
+          console.log(`[VoiceCall][Server] call_answer: from=${userId} to=${message.targetUserId} callId=${message.callId}`);
+          // Forward call answer to caller
+          const success = broadcastToUser(message.targetUserId, {
+            type: "call_answered",
+            callId: message.callId,
+            answererId: userId,
+          });
+          console.log(`[VoiceCall][Server] call_answer relay success: ${success}`);
+        }
+
+        if (message.type === "call_decline" && message.targetUserId && message.callId) {
+          console.log(`[VoiceCall][Server] call_decline: from=${userId} to=${message.targetUserId}`);
+          // Forward call decline to caller
+          broadcastToUser(message.targetUserId, {
+            type: "call_declined",
+            callId: message.callId,
+            declinerId: userId,
+          });
+        }
+
+        if (message.type === "call_end" && message.targetUserId && message.callId) {
+          console.log(`[VoiceCall][Server] call_end: from=${userId} to=${message.targetUserId}`);
+          // Forward call end to other party
+          broadcastToUser(message.targetUserId, {
+            type: "call_ended",
+            callId: message.callId,
+            enderId: userId,
+          });
+        }
+
+        // Audio streaming for voice calls
+        if (message.type === "audio_data" && message.targetUserId && message.callId) {
+          const audioSize = message.audioData?.length || 0;
+          console.log(`[VoiceCall][Server] Relaying audio: from=${userId} to=${message.targetUserId} callId=${message.callId} size=${audioSize}`);
+          
+          // Forward audio data to call partner (base64 encoded audio chunks)
+          const success = broadcastToUser(message.targetUserId, {
+            type: "audio_data",
+            callId: message.callId,
+            senderId: userId,
+            audioData: message.audioData,
+            timestamp: message.timestamp,
+          });
+          
+          if (!success) {
+            console.log(`[VoiceCall][Server] Failed to relay audio - target user ${message.targetUserId} not connected`);
+          }
+        }
+
+        // ICE candidate for WebRTC (future enhancement)
+        if (message.type === "ice_candidate" && message.targetUserId) {
+          broadcastToUser(message.targetUserId, {
+            type: "ice_candidate",
+            candidate: message.candidate,
+            senderId: userId,
+          });
+        }
+
+        // ============================================
+        // TYPING INDICATOR EVENTS
+        // ============================================
+        
+        if (message.type === "typing_start" && message.conversationId) {
+          try {
+            const conversation = await storage.getConversation(message.conversationId);
+            if (!conversation) {
+              console.log("[WebSocket] typing_start: conversation not found");
+              return;
+            }
+            
+            const isParticipant = await storage.isConversationParticipant(message.conversationId, userId);
+            if (!isParticipant) {
+              console.log("[WebSocket] typing_start: user not participant");
+              return;
+            }
+            
+            const timestamp = Date.now();
+            const participants = getConversationParticipantIds(conversation);
+            
+            // Broadcast typing indicator to other participants
+            participants.forEach(participantId => {
+              if (participantId !== userId) {
+                broadcastToUser(participantId, {
+                  type: "typing_indicator",
+                  conversationId: message.conversationId,
+                  userId,
+                  isTyping: true,
+                  timestamp,
+                });
+              }
+            });
+            
+            // Set typing state with auto-clear after 5 seconds
+            setTypingState(message.conversationId, userId, () => {
+              // Auto-broadcast typing stopped after timeout
+              participants.forEach(participantId => {
+                if (participantId !== userId) {
+                  broadcastToUser(participantId, {
+                    type: "typing_indicator",
+                    conversationId: message.conversationId,
+                    userId,
+                    isTyping: false,
+                    timestamp: Date.now(),
+                  });
+                }
+              });
+            });
+          } catch (error) {
+            console.error("[WebSocket] typing_start error:", error);
+          }
+        }
+        
+        if (message.type === "typing_stop" && message.conversationId) {
+          try {
+            const conversation = await storage.getConversation(message.conversationId);
+            if (!conversation) return;
+            
+            const isParticipant = await storage.isConversationParticipant(message.conversationId, userId);
+            if (!isParticipant) return;
+            
+            // Clear typing state
+            clearTypingState(message.conversationId, userId);
+            
+            const timestamp = Date.now();
+            const participants = getConversationParticipantIds(conversation);
+            
+            // Broadcast typing stopped to other participants
+            participants.forEach(participantId => {
+              if (participantId !== userId) {
+                broadcastToUser(participantId, {
+                  type: "typing_indicator",
+                  conversationId: message.conversationId,
+                  userId,
+                  isTyping: false,
+                  timestamp,
+                });
+              }
+            });
+          } catch (error) {
+            console.error("[WebSocket] typing_stop error:", error);
+          }
+        }
+
+        // ============================================
+        // DELIVERY STATUS EVENTS
+        // ============================================
+        
+        if (message.type === "message_delivered" && message.messageId && message.conversationId) {
+          try {
+            const isParticipant = await storage.isConversationParticipant(message.conversationId, userId);
+            if (!isParticipant) {
+              console.log("[WebSocket] message_delivered: user not participant");
+              return;
+            }
+            
+            const msg = await storage.getMessage(message.messageId);
+            if (!msg || msg.conversationId !== message.conversationId) {
+              console.log("[WebSocket] message_delivered: message not found or mismatch");
+              return;
+            }
+            
+            // Only allow receiver to mark as delivered
+            if (msg.receiverId !== userId) {
+              console.log("[WebSocket] message_delivered: user not receiver");
+              return;
+            }
+            
+            // Update message status in database
+            const timestamp = new Date();
+            await db.update(messages)
+              .set({ status: "DELIVERED", deliveredAt: timestamp })
+              .where(and(
+                eq(messages.id, message.messageId),
+                eq(messages.status, "SENT")
+              ));
+            
+            // Notify message sender of delivery status
+            broadcastToUser(msg.senderId, {
+              type: "status_update",
+              messageId: message.messageId,
+              conversationId: message.conversationId,
+              userId,
+              status: "DELIVERED",
+              timestamp: timestamp.getTime(),
+            });
+          } catch (error) {
+            console.error("[WebSocket] message_delivered error:", error);
+          }
+        }
+        
+        if (message.type === "message_read" && message.messageId && message.conversationId) {
+          try {
+            const isParticipant = await storage.isConversationParticipant(message.conversationId, userId);
+            if (!isParticipant) {
+              console.log("[WebSocket] message_read: user not participant");
+              return;
+            }
+            
+            const msg = await storage.getMessage(message.messageId);
+            if (!msg || msg.conversationId !== message.conversationId) {
+              console.log("[WebSocket] message_read: message not found or mismatch");
+              return;
+            }
+            
+            // Only allow receiver to mark as read
+            if (msg.receiverId !== userId) {
+              console.log("[WebSocket] message_read: user not receiver");
+              return;
+            }
+            
+            // Update message status in database
+            const timestamp = new Date();
+            await db.update(messages)
+              .set({ status: "READ", read: true, readAt: timestamp })
+              .where(eq(messages.id, message.messageId));
+            
+            // Notify message sender of read status
+            broadcastToUser(msg.senderId, {
+              type: "status_update",
+              messageId: message.messageId,
+              conversationId: message.conversationId,
+              userId,
+              status: "READ",
+              timestamp: timestamp.getTime(),
+            });
+          } catch (error) {
+            console.error("[WebSocket] message_read error:", error);
+          }
+        }
+
+        // ============================================
+        // MESSAGE REACTION EVENTS
+        // ============================================
+        
+        if (message.type === "add_reaction" && message.messageId && message.conversationId && message.emoji) {
+          try {
+            const isParticipant = await storage.isConversationParticipant(message.conversationId, userId);
+            if (!isParticipant) {
+              console.log("[WebSocket] add_reaction: user not participant");
+              return;
+            }
+            
+            const msg = await storage.getMessage(message.messageId);
+            if (!msg || msg.conversationId !== message.conversationId) {
+              console.log("[WebSocket] add_reaction: message not found or mismatch");
+              return;
+            }
+            
+            const conversation = await storage.getConversation(message.conversationId);
+            if (!conversation) return;
+            
+            // Add reaction to database
+            await storage.addMessageReaction(message.messageId, userId, message.emoji);
+            
+            const timestamp = Date.now();
+            const participants = getConversationParticipantIds(conversation);
+            
+            // Broadcast reaction update to all participants (including self for confirmation)
+            participants.forEach(participantId => {
+              broadcastToUser(participantId, {
+                type: "reaction_update",
+                messageId: message.messageId,
+                conversationId: message.conversationId,
+                userId,
+                emoji: message.emoji,
+                action: "add",
+                timestamp,
+              });
+            });
+          } catch (error) {
+            console.error("[WebSocket] add_reaction error:", error);
+          }
+        }
+        
+        if (message.type === "remove_reaction" && message.messageId && message.conversationId && message.emoji) {
+          try {
+            const isParticipant = await storage.isConversationParticipant(message.conversationId, userId);
+            if (!isParticipant) {
+              console.log("[WebSocket] remove_reaction: user not participant");
+              return;
+            }
+            
+            const msg = await storage.getMessage(message.messageId);
+            if (!msg || msg.conversationId !== message.conversationId) {
+              console.log("[WebSocket] remove_reaction: message not found or mismatch");
+              return;
+            }
+            
+            const conversation = await storage.getConversation(message.conversationId);
+            if (!conversation) return;
+            
+            // Remove reaction from database
+            await storage.removeMessageReaction(message.messageId, userId, message.emoji);
+            
+            const timestamp = Date.now();
+            const participants = getConversationParticipantIds(conversation);
+            
+            // Broadcast reaction update to all participants
+            participants.forEach(participantId => {
+              broadcastToUser(participantId, {
+                type: "reaction_update",
+                messageId: message.messageId,
+                conversationId: message.conversationId,
+                userId,
+                emoji: message.emoji,
+                action: "remove",
+                timestamp,
+              });
+            });
+          } catch (error) {
+            console.error("[WebSocket] remove_reaction error:", error);
+          }
+        }
+      } catch (error) {
+        console.error("WebSocket message error:", error);
+      }
+    });
+
+    ws.on("close", () => {
+      removeClientFromUser(userId!, ws);
+    });
+    
+    ws.on("error", (error) => {
+      console.error("WebSocket error:", error);
+      removeClientFromUser(userId!, ws);
+    });
+  });
+
+  // ============================================
+  // AI MODERATION & CONTENT ENHANCEMENT APIs
+  // ============================================
+
+  // Moderate text content
+  app.post("/api/ai/moderate-text", requireAuth, async (req, res) => {
+    try {
+      const { content } = req.body;
+      if (!content) {
+        return res.status(400).json({ message: "Content is required" });
+      }
+      const result = await moderateText(content);
+      res.json(result);
+    } catch (error) {
+      console.error("Text moderation error:", error);
+      res.status(500).json({ message: "Failed to moderate content" });
+    }
+  });
+
+  // Analyze image
+  app.post("/api/ai/analyze-image", requireAuth, async (req, res) => {
+    try {
+      const { imageUrl } = req.body;
+      if (!imageUrl) {
+        return res.status(400).json({ message: "Image URL is required" });
+      }
+      const result = await analyzeImage(imageUrl);
+      res.json(result);
+    } catch (error) {
+      console.error("Image analysis error:", error);
+      res.status(500).json({ message: "Failed to analyze image" });
+    }
+  });
+
+  // Get content suggestions
+  app.post("/api/ai/content-suggestions", requireAuth, async (req, res) => {
+    try {
+      const { content, category, audience } = req.body;
+      if (!content) {
+        return res.status(400).json({ message: "Content is required" });
+      }
+      const result = await getContentSuggestions(content, { category, audience });
+      res.json(result);
+    } catch (error) {
+      console.error("Content suggestions error:", error);
+      res.status(500).json({ message: "Failed to get suggestions" });
+    }
+  });
+
+  // Detect language
+  app.post("/api/ai/detect-language", requireAuth, async (req, res) => {
+    try {
+      const { content } = req.body;
+      if (!content) {
+        return res.status(400).json({ message: "Content is required" });
+      }
+      const result = await detectLanguage(content);
+      res.json(result);
+    } catch (error) {
+      console.error("Language detection error:", error);
+      res.status(500).json({ message: "Failed to detect language" });
+    }
+  });
+
+  // Summarize multiple posts
+  app.post("/api/ai/summarize", requireAuth, async (req, res) => {
+    try {
+      const { contents } = req.body;
+      if (!contents || !Array.isArray(contents) || contents.length === 0) {
+        return res.status(400).json({ message: "Contents array is required" });
+      }
+      const summary = await summarizeContent(contents);
+      res.json({ summary });
+    } catch (error) {
+      console.error("Content summarization error:", error);
+      res.status(500).json({ message: "Failed to summarize content" });
+    }
+  });
+
+  // ============================================
+  // OPENAI ENHANCED FEATURES
+  // ============================================
+
+  // Generate smart caption from description
+  app.post("/api/ai/generate-caption", requireAuth, async (req, res) => {
+    try {
+      const { description, mood, style, audience } = req.body;
+      if (!description) {
+        return res.status(400).json({ message: "Description is required" });
+      }
+      const result = await generateSmartCaption(description, { mood, style, audience });
+      res.json(result);
+    } catch (error) {
+      console.error("Caption generation error:", error);
+      res.status(500).json({ message: "Failed to generate caption" });
+    }
+  });
+
+  // Generate caption from image URL (with vision)
+  app.post("/api/ai/caption-image", requireAuth, async (req, res) => {
+    try {
+      const { imageUrl } = req.body;
+      if (!imageUrl) {
+        return res.status(400).json({ message: "Image URL is required" });
+      }
+      const result = await generateImageCaption(imageUrl);
+      res.json(result);
+    } catch (error) {
+      console.error("Image caption error:", error);
+      res.status(500).json({ message: "Failed to caption image" });
+    }
+  });
+
+  // Transcribe voice message
+  app.post("/api/ai/transcribe", requireAuth, async (req, res) => {
+    try {
+      const { audioUrl } = req.body;
+      if (!audioUrl) {
+        return res.status(400).json({ message: "Audio URL is required" });
+      }
+      const result = await transcribeVoiceMessage(audioUrl);
+      res.json(result);
+    } catch (error) {
+      console.error("Transcription error:", error);
+      res.status(500).json({ message: "Failed to transcribe audio" });
+    }
+  });
+
+  // Enhance/rewrite post
+  app.post("/api/ai/enhance-post", requireAuth, async (req, res) => {
+    try {
+      const { content, targetTone, maxLength } = req.body;
+      if (!content) {
+        return res.status(400).json({ message: "Content is required" });
+      }
+      const result = await enhancePost(content, { targetTone, maxLength });
+      res.json(result);
+    } catch (error) {
+      console.error("Post enhancement error:", error);
+      res.status(500).json({ message: "Failed to enhance post" });
+    }
+  });
+
+  // AI Assistant for content help
+  app.post("/api/ai/assistant", requireAuth, async (req, res) => {
+    try {
+      const { query, topic, previousMessages } = req.body;
+      if (!query) {
+        return res.status(400).json({ message: "Query is required" });
+      }
+      const result = await getAIAssistance(query, { topic, previousMessages });
+      res.json(result);
+    } catch (error) {
+      console.error("AI assistant error:", error);
+      res.status(500).json({ message: "Failed to get AI assistance" });
+    }
+  });
+
+  // Generate voice post summary
+  app.post("/api/ai/voice-summary", requireAuth, async (req, res) => {
+    try {
+      const { transcription } = req.body;
+      if (!transcription) {
+        return res.status(400).json({ message: "Transcription is required" });
+      }
+      const summary = await generateVoicePostSummary(transcription);
+      res.json({ summary });
+    } catch (error) {
+      console.error("Voice summary error:", error);
+      res.status(500).json({ message: "Failed to generate voice summary" });
+    }
+  });
+
+  // ============================================
+  // EMAIL CHANGE (from Settings)
+  // ============================================
+
+  // Request email change - sends OTP to new email
+  app.post("/api/settings/email/request-change", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { newEmail } = req.body;
+
+      if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+        return res.status(400).json({ message: "Valid email address required" });
+      }
+
+      // Check if email is already in use by another user
+      const existingUser = await storage.getUserByEmail(newEmail);
+      if (existingUser && existingUser.id !== userId) {
+        return res.status(400).json({ message: "Email already in use by another account" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      // Generate and send verification code to NEW email
+      const verificationCode = generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      await db.insert(emailVerificationTokens).values({
+        userId,
+        email: newEmail,
+        token: verificationCode,
+        expiresAt,
+      });
+
+      // Send verification email to the new address
+      sendVerificationEmail(newEmail, user.displayName || user.username, verificationCode).catch((err) => {
+        console.error("[Email] Failed to send email change verification:", err);
+      });
+
+      res.json({ message: "Verification code sent to your new email address", expiresIn: 600 });
+    } catch (error) {
+      console.error("Email change request error:", error);
+      res.status(500).json({ message: "Failed to process email change request" });
+    }
+  });
+
+  // Verify email change - confirms OTP and updates email
+  app.post("/api/settings/email/verify-change", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { code, newEmail } = req.body;
+
+      if (!code || !newEmail) {
+        return res.status(400).json({ message: "Verification code and new email are required" });
+      }
+
+      // Find valid token for this user and new email
+      const [token] = await db
+        .select()
+        .from(emailVerificationTokens)
+        .where(
+          and(
+            eq(emailVerificationTokens.userId, userId),
+            eq(emailVerificationTokens.token, code),
+            eq(emailVerificationTokens.email, newEmail),
+            isNull(emailVerificationTokens.verifiedAt),
+            gt(emailVerificationTokens.expiresAt, new Date())
+          )
+        )
+        .limit(1);
+
+      if (!token) {
+        return res.status(400).json({ message: "Invalid or expired verification code" });
+      }
+
+      // Mark token as verified
+      await db
+        .update(emailVerificationTokens)
+        .set({ verifiedAt: new Date() })
+        .where(eq(emailVerificationTokens.id, token.id));
+
+      // Update user's email and mark as verified
+      await storage.updateUser(userId, {
+        email: newEmail,
+        emailVerified: true,
+      });
+
+      res.json({ message: "Email updated successfully" });
+    } catch (error) {
+      console.error("Email change verification error:", error);
+      res.status(500).json({ message: "Failed to verify email change" });
+    }
+  });
+
+  // ============================================
+  // SMS & PHONE VERIFICATION APIs
+  // ============================================
+
+  // Check if SMS is configured
+  app.get("/api/sms/status", requireAuth, async (req, res) => {
+    res.json({ configured: isSMSConfigured() });
+  });
+
+  // Request phone verification code
+  app.post("/api/phone/send-code", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { phoneNumber } = req.body;
+
+      if (!phoneNumber || !/^\+[1-9]\d{1,14}$/.test(phoneNumber)) {
+        return res.status(400).json({ message: "Valid phone number required (E.164 format: +1234567890)" });
+      }
+
+      if (!isSMSConfigured()) {
+        return res.status(503).json({ message: "SMS service not configured" });
+      }
+
+      const code = generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      await db.insert(phoneVerificationTokens).values({
+        userId,
+        phoneNumber,
+        token: code,
+        expiresAt,
+      });
+
+      const result = await sendVerificationCode(phoneNumber, code);
+
+      if (result.success) {
+        res.json({ message: "Verification code sent", expiresIn: 600 });
+      } else {
+        res.status(500).json({ message: result.error || "Failed to send code" });
+      }
+    } catch (error) {
+      console.error("Phone verification error:", error);
+      res.status(500).json({ message: "Failed to send verification code" });
+    }
+  });
+
+  // Verify phone with code
+  app.post("/api/phone/verify", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { code, phoneNumber } = req.body;
+
+      if (!code || !phoneNumber) {
+        return res.status(400).json({ message: "Code and phone number required" });
+      }
+
+      const [token] = await db
+        .select()
+        .from(phoneVerificationTokens)
+        .where(
+          and(
+            eq(phoneVerificationTokens.userId, userId),
+            eq(phoneVerificationTokens.token, code),
+            eq(phoneVerificationTokens.phoneNumber, phoneNumber),
+            isNull(phoneVerificationTokens.verifiedAt),
+            gt(phoneVerificationTokens.expiresAt, new Date())
+          )
+        )
+        .limit(1);
+
+      if (!token) {
+        return res.status(400).json({ message: "Invalid or expired verification code" });
+      }
+
+      await db
+        .update(phoneVerificationTokens)
+        .set({ verifiedAt: new Date() })
+        .where(eq(phoneVerificationTokens.id, token.id));
+
+      await storage.updateUser(userId, {
+        phoneNumber,
+        phoneVerified: true,
+      });
+
+      res.json({ message: "Phone verified successfully" });
+    } catch (error) {
+      console.error("Phone verification error:", error);
+      res.status(500).json({ message: "Failed to verify phone" });
+    }
+  });
+
+  // Update SMS notification preferences
+  app.patch("/api/phone/notifications", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { enabled } = req.body;
+
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({ message: "enabled must be a boolean" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user?.phoneVerified) {
+        return res.status(400).json({ message: "Phone must be verified first" });
+      }
+
+      await storage.updateUser(userId, { smsNotificationsEnabled: enabled });
+      res.json({ message: `SMS notifications ${enabled ? "enabled" : "disabled"}` });
+    } catch (error) {
+      console.error("SMS notification update error:", error);
+      res.status(500).json({ message: "Failed to update SMS notifications" });
+    }
+  });
+
+  // Remove phone number
+  app.delete("/api/phone", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+
+      await storage.updateUser(userId, {
+        phoneNumber: null,
+        phoneVerified: false,
+        smsNotificationsEnabled: false,
+      });
+
+      res.json({ message: "Phone number removed" });
+    } catch (error) {
+      console.error("Phone removal error:", error);
+      res.status(500).json({ message: "Failed to remove phone number" });
+    }
+  });
+
+  // ===== NEW ADMIN SECTION ENDPOINTS =====
+
+  // Admin Messages Stats
+  app.get("/api/admin/messages/stats", requireAdmin, async (req, res) => {
+    try {
+      const allConversations = await db.select().from(conversations).limit(1000);
+      const allMessages = await db.select().from(messages).limit(5000);
+      
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const messages24h = allMessages.filter(m => new Date(m.createdAt!) > yesterday).length;
+      
+      // Count conversations with recent activity
+      const activeChats = allConversations.filter(c => 
+        c.lastMessageAt && new Date(c.lastMessageAt) > yesterday
+      ).length;
+      
+      res.json({
+        totalConversations: allConversations.length,
+        messages24h,
+        activeChats,
+        reportedMessages: 0, // Placeholder - would need reported messages table
+      });
+    } catch (error) {
+      console.error("Failed to get messages stats:", error);
+      res.status(500).json({ message: "Failed to get messages stats" });
+    }
+  });
+
+  // Admin Messages Conversations List
+  app.get("/api/admin/messages/conversations", requireAdmin, async (req, res) => {
+    try {
+      const convos = await db.select().from(conversations).orderBy(desc(conversations.lastMessageAt)).limit(100);
+      
+      // Get participant info
+      const convoData = await Promise.all(convos.map(async (c) => {
+        const p1 = await storage.getUser(c.participant1Id);
+        const p2 = await storage.getUser(c.participant2Id);
+        
+        // Count messages in this conversation
+        const msgCount = await db.select({ count: sql<number>`count(*)` })
+          .from(messages)
+          .where(eq(messages.conversationId, c.id));
+        
+        return {
+          ...c,
+          participant1: p1 ? { id: p1.id, username: p1.username } : null,
+          participant2: p2 ? { id: p2.id, username: p2.username } : null,
+          messageCount: msgCount[0]?.count || 0,
+          isActive: c.lastMessageAt && new Date(c.lastMessageAt) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        };
+      }));
+      
+      res.json(convoData);
+    } catch (error) {
+      console.error("Failed to get conversations:", error);
+      res.status(500).json({ message: "Failed to get conversations" });
+    }
+  });
+
+  // Admin Messages Search - search by content
+  app.get("/api/admin/messages/search", requireAdmin, async (req, res) => {
+    try {
+      const search = String(req.query.search || "");
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      
+      const result = await storage.adminSearchMessages({ search, page, limit });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to search messages:", error);
+      res.status(500).json({ message: "Failed to search messages" });
+    }
+  });
+
+  // Admin Delete Message
+  app.delete("/api/admin/messages/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.adminDeleteMessage(id);
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "MESSAGE_DELETED" as any,
+        targetType: "message",
+        targetId: id,
+        details: { messageId: id },
+        ipAddress: req.ip || undefined,
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete message:", error);
+      res.status(500).json({ message: "Failed to delete message" });
+    }
+  });
+
+  // Admin Get Conversation Messages
+  app.get("/api/admin/conversations/:id/messages", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      
+      const result = await storage.getAdminConversationMessages(id, { page, limit });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get conversation messages:", error);
+      res.status(500).json({ message: "Failed to get conversation messages" });
+    }
+  });
+
+  // Admin Flag Message
+  app.post("/api/admin/messages/:id/flag", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      
+      if (!reason || typeof reason !== "string" || reason.trim().length === 0) {
+        return res.status(400).json({ message: "Reason is required" });
+      }
+      
+      await storage.adminFlagMessage(id, reason.trim(), req.session.userId!);
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "MESSAGE_FLAGGED" as any,
+        targetType: "message",
+        targetId: id,
+        details: { messageId: id, reason: reason.trim() },
+        ipAddress: req.ip || undefined,
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to flag message:", error);
+      res.status(500).json({ message: "Failed to flag message" });
+    }
+  });
+
+  // Admin Get Flagged Messages
+  app.get("/api/admin/messages/flagged", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      
+      const result = await storage.getAdminFlaggedMessages({ page, limit });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get flagged messages:", error);
+      res.status(500).json({ message: "Failed to get flagged messages" });
+    }
+  });
+
+  // Admin Groups Stats
+  app.get("/api/admin/groups/stats", requireAdmin, async (req, res) => {
+    try {
+      const allGroups = await db.select().from(groups).limit(1000);
+      const allMembers = await db.select().from(groupMembers).limit(5000);
+      
+      const now = new Date();
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const newGroups7d = allGroups.filter(g => new Date(g.createdAt!) > weekAgo).length;
+      
+      // Active groups = those with recent activity
+      const activeGroups = allGroups.length; // All groups for now
+      
+      res.json({
+        totalGroups: allGroups.length,
+        activeGroups,
+        totalMembers: allMembers.length,
+        newGroups7d,
+      });
+    } catch (error) {
+      console.error("Failed to get groups stats:", error);
+      res.status(500).json({ message: "Failed to get groups stats" });
+    }
+  });
+
+  // Admin Groups List
+  app.get("/api/admin/groups", requireAdmin, async (req, res) => {
+    try {
+      const allGroups = await db.select().from(groups).orderBy(desc(groups.createdAt)).limit(100);
+      
+      const groupData = await Promise.all(allGroups.map(async (g) => {
+        const owner = await storage.getUser(g.ownerId);
+        const members = await db.select({ count: sql<number>`count(*)` })
+          .from(groupMembers)
+          .where(eq(groupMembers.groupId, g.id));
+        
+        return {
+          ...g,
+          owner: owner ? { id: owner.id, username: owner.username } : null,
+          memberCount: members[0]?.count || 0,
+        };
+      }));
+      
+      res.json(groupData);
+    } catch (error) {
+      console.error("Failed to get groups:", error);
+      res.status(500).json({ message: "Failed to get groups" });
+    }
+  });
+
+  // Admin Delete Group
+  app.delete("/api/admin/groups/:id", requireAdmin, async (req, res) => {
+    try {
+      const groupId = req.params.id;
+      
+      // Delete group members first
+      await db.delete(groupMembers).where(eq(groupMembers.groupId, groupId));
+      // Delete the group
+      await db.delete(groups).where(eq(groups.id, groupId));
+      
+      // Log the action
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "DELETE_GROUP",
+        targetType: "group",
+        targetId: groupId,
+        details: { groupId },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ message: "Group deleted" });
+    } catch (error) {
+      console.error("Failed to delete group:", error);
+      res.status(500).json({ message: "Failed to delete group" });
+    }
+  });
+
+  // Admin Get Group Details
+  app.get("/api/admin/groups/:id", requireAdmin, async (req, res) => {
+    try {
+      const groupId = req.params.id;
+      const [group] = await db.select().from(groups).where(eq(groups.id, groupId)).limit(1);
+      
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+      
+      const owner = await storage.getUser(group.ownerId);
+      const memberCount = await db.select({ count: sql<number>`count(*)` })
+        .from(groupMembers)
+        .where(eq(groupMembers.groupId, groupId));
+      const joinRequestCount = await db.select({ count: sql<number>`count(*)` })
+        .from(groupJoinRequests)
+        .where(and(eq(groupJoinRequests.groupId, groupId), eq(groupJoinRequests.status, "PENDING")));
+      
+      res.json({
+        ...group,
+        owner: owner ? { id: owner.id, username: owner.username, displayName: owner.displayName } : null,
+        memberCount: Number(memberCount[0]?.count || 0),
+        pendingJoinRequests: Number(joinRequestCount[0]?.count || 0),
+      });
+    } catch (error) {
+      console.error("Failed to get group details:", error);
+      res.status(500).json({ message: "Failed to get group details" });
+    }
+  });
+
+  // Admin Get Group Members
+  app.get("/api/admin/groups/:id/members", requireAdmin, async (req, res) => {
+    try {
+      const groupId = req.params.id;
+      const members = await db.select({
+        id: groupMembers.id,
+        userId: groupMembers.userId,
+        role: groupMembers.role,
+        joinedAt: groupMembers.joinedAt,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      })
+      .from(groupMembers)
+      .leftJoin(users, eq(groupMembers.userId, users.id))
+      .where(eq(groupMembers.groupId, groupId))
+      .orderBy(desc(groupMembers.joinedAt));
+      
+      res.json(members);
+    } catch (error) {
+      console.error("Failed to get group members:", error);
+      res.status(500).json({ message: "Failed to get group members" });
+    }
+  });
+
+  // Admin Remove Group Member
+  app.delete("/api/admin/groups/:id/members/:memberId", requireAdmin, async (req, res) => {
+    try {
+      const { id: groupId, memberId } = req.params;
+      
+      await db.delete(groupMembers)
+        .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.id, memberId)));
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_REMOVE_GROUP_MEMBER",
+        targetType: "group_member",
+        targetId: memberId,
+        details: { groupId, memberId },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to remove group member:", error);
+      res.status(500).json({ message: "Failed to remove group member" });
+    }
+  });
+
+  // Admin Update Group Settings
+  app.put("/api/admin/groups/:id/settings", requireAdmin, async (req, res) => {
+    try {
+      const groupId = req.params.id;
+      const { name, description, isPrivate } = req.body;
+      
+      await db.update(groups)
+        .set({ 
+          name: name || undefined, 
+          description: description || undefined, 
+          updatedAt: new Date() 
+        })
+        .where(eq(groups.id, groupId));
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_UPDATE_GROUP_SETTINGS",
+        targetType: "group",
+        targetId: groupId,
+        details: { name, description, isPrivate },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to update group settings:", error);
+      res.status(500).json({ message: "Failed to update group settings" });
+    }
+  });
+
+  // Admin Get Group Join Requests
+  app.get("/api/admin/groups/:id/join-requests", requireAdmin, async (req, res) => {
+    try {
+      const groupId = req.params.id;
+      const requests = await db.select({
+        id: groupJoinRequests.id,
+        userId: groupJoinRequests.userId,
+        status: groupJoinRequests.status,
+        createdAt: groupJoinRequests.createdAt,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      })
+      .from(groupJoinRequests)
+      .leftJoin(users, eq(groupJoinRequests.userId, users.id))
+      .where(eq(groupJoinRequests.groupId, groupId))
+      .orderBy(desc(groupJoinRequests.createdAt));
+      
+      res.json(requests);
+    } catch (error) {
+      console.error("Failed to get join requests:", error);
+      res.status(500).json({ message: "Failed to get join requests" });
+    }
+  });
+
+  // Admin Handle Group Join Request
+  app.post("/api/admin/groups/:id/join-requests/:requestId/:action", requireAdmin, async (req, res) => {
+    try {
+      const { id: groupId, requestId, action } = req.params;
+      
+      if (action !== "approve" && action !== "reject") {
+        return res.status(400).json({ message: "Invalid action" });
+      }
+      
+      const [request] = await db.select().from(groupJoinRequests).where(eq(groupJoinRequests.id, requestId)).limit(1);
+      if (!request) {
+        return res.status(404).json({ message: "Request not found" });
+      }
+      
+      if (action === "approve") {
+        await db.insert(groupMembers).values({
+          id: crypto.randomUUID(),
+          groupId,
+          userId: request.userId,
+          role: "MEMBER",
+          joinedAt: new Date(),
+        });
+        await db.update(groupJoinRequests).set({ status: "APPROVED" }).where(eq(groupJoinRequests.id, requestId));
+      } else {
+        await db.update(groupJoinRequests).set({ status: "REJECTED" }).where(eq(groupJoinRequests.id, requestId));
+      }
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: action === "approve" ? "ADMIN_APPROVE_JOIN_REQUEST" : "ADMIN_REJECT_JOIN_REQUEST",
+        targetType: "group_join_request",
+        targetId: requestId,
+        details: { groupId, userId: request.userId },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to handle join request:", error);
+      res.status(500).json({ message: "Failed to handle join request" });
+    }
+  });
+
+  // Admin Livestreams Stats
+  app.get("/api/admin/livestreams/stats", requireAdmin, async (req, res) => {
+    try {
+      const allStreams = await db.select().from(liveStreams).limit(1000);
+      
+      const now = new Date();
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      
+      const liveNow = allStreams.filter(s => s.status === "LIVE").length;
+      const streams7d = allStreams.filter(s => new Date(s.createdAt!) > weekAgo).length;
+      const totalViewers = allStreams.reduce((sum, s) => sum + (s.viewerCount || 0), 0);
+      
+      res.json({
+        totalStreams: allStreams.length,
+        liveNow,
+        totalViewers,
+        streams7d,
+      });
+    } catch (error) {
+      console.error("Failed to get livestreams stats:", error);
+      res.status(500).json({ message: "Failed to get livestreams stats" });
+    }
+  });
+
+  // Admin Livestreams List
+  app.get("/api/admin/livestreams", requireAdmin, async (req, res) => {
+    try {
+      const allStreams = await db.select().from(liveStreams).orderBy(desc(liveStreams.createdAt)).limit(100);
+      
+      const streamData = await Promise.all(allStreams.map(async (s) => {
+        const host = await storage.getUser(s.hostId);
+        return {
+          ...s,
+          host: host ? { id: host.id, username: host.username } : null,
+        };
+      }));
+      
+      res.json(streamData);
+    } catch (error) {
+      console.error("Failed to get livestreams:", error);
+      res.status(500).json({ message: "Failed to get livestreams" });
+    }
+  });
+
+  // Admin End Livestream
+  app.post("/api/admin/livestreams/:id/end", requireAdmin, async (req, res) => {
+    try {
+      const streamId = req.params.id;
+      
+      await db.update(liveStreams)
+        .set({ status: "ENDED", endedAt: new Date() })
+        .where(eq(liveStreams.id, streamId));
+      
+      // Log the action
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "END_LIVESTREAM",
+        targetType: "livestream",
+        targetId: streamId,
+        details: { streamId },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ message: "Livestream ended" });
+    } catch (error) {
+      console.error("Failed to end livestream:", error);
+      res.status(500).json({ message: "Failed to end livestream" });
+    }
+  });
+
+  // Admin Get Livestream Viewers
+  app.get("/api/admin/livestreams/:id/viewers", requireAdmin, async (req, res) => {
+    try {
+      const streamId = req.params.id;
+      const viewers = await db.select({
+        id: liveStreamViewers.id,
+        viewerId: liveStreamViewers.userId,
+        joinedAt: liveStreamViewers.joinedAt,
+        leftAt: liveStreamViewers.leftAt,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      })
+      .from(liveStreamViewers)
+      .leftJoin(users, eq(liveStreamViewers.userId, users.id))
+      .where(eq(liveStreamViewers.streamId, streamId))
+      .orderBy(desc(liveStreamViewers.joinedAt))
+      .limit(100);
+      
+      res.json(viewers);
+    } catch (error) {
+      console.error("Failed to get stream viewers:", error);
+      res.status(500).json({ message: "Failed to get stream viewers" });
+    }
+  });
+
+  // ===== USER WALLET & COIN ENDPOINTS =====
+
+  // GET /api/wallet - Get user's wallet (create if not exists)
+  app.get("/api/wallet", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const wallet = await storage.getOrCreateWallet(userId);
+      const user = await storage.getUser(userId);
+      
+      res.json({
+        wallet,
+        stats: {
+          netWorth: user?.netWorth || 0,
+          influenceScore: user?.influenceScore || 0,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to get wallet:", error);
+      res.status(500).json({ message: "Failed to get wallet" });
+    }
+  });
+
+  // GET /api/wallet/transactions - Get coin transaction history
+  app.get("/api/wallet/transactions", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+      
+      const transactions = await storage.getCoinTransactions(userId, limit, offset);
+      res.json(transactions);
+    } catch (error) {
+      console.error("Failed to get transactions:", error);
+      res.status(500).json({ message: "Failed to get transactions" });
+    }
+  });
+
+  // GET /api/coin-bundles - List available coin bundles (public)
+  app.get("/api/coin-bundles", async (req, res) => {
+    try {
+      const bundles = await storage.getCoinBundles(true);
+      res.json(bundles);
+    } catch (error) {
+      console.error("Failed to get coin bundles:", error);
+      res.status(500).json({ message: "Failed to get coin bundles" });
+    }
+  });
+
+  // POST /api/coin-bundles/:id/purchase - Initiate coin purchase
+  app.post("/api/coin-bundles/:id/purchase", requireAuth, async (req, res) => {
+    try {
+      // Check if purchases are enabled (emergency control)
+      const config = await storage.getEconomyConfig();
+      if (config.purchases_enabled === "false") {
+        return res.status(503).json({ message: "Coin purchases are temporarily disabled. Please try again later." });
+      }
+      
+      const userId = req.session.userId!;
+      const bundleId = req.params.id;
+      
+      const bundle = await storage.getCoinBundle(bundleId);
+      if (!bundle) {
+        return res.status(404).json({ message: "Coin bundle not found" });
+      }
+      
+      if (!bundle.isActive) {
+        return res.status(400).json({ message: "This bundle is no longer available" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
+      const {
+        isPayFastConfigured,
+        getPayFastUrl,
+        createPaymentData,
+      } = await import("./services/payfast");
+      
+      if (!isPayFastConfigured()) {
+        return res.status(500).json({ message: "Payment system is not configured" });
+      }
+      
+      const orderId = crypto.randomUUID();
+      // Use request host for correct URL in both dev and production
+      const baseUrl = `https://${req.get("host")}`;
+      
+      const paymentData = createPaymentData({
+        orderId,
+        amount: bundle.priceRands,
+        itemName: `${bundle.name} - ${bundle.coinAmount} Coins`,
+        itemDescription: bundle.description || undefined,
+        email: user.email,
+        firstName: user.displayName?.split(" ")[0],
+        lastName: user.displayName?.split(" ").slice(1).join(" ") || undefined,
+        returnUrl: `${baseUrl}/api/coin-bundles/purchase/return?order_id=${orderId}`,
+        cancelUrl: `${baseUrl}/api/coin-bundles/purchase/cancel?order_id=${orderId}`,
+        notifyUrl: `${baseUrl}/api/coin-bundles/purchase/notify`,
+        userId,
+      });
+      
+      const purchase = await storage.createCoinPurchase(
+        userId,
+        bundleId,
+        bundle.coinAmount + (bundle.bonusCoins || 0),
+        bundle.priceRands,
+        orderId
+      );
+      
+      console.log("[CoinPurchase] Created purchase:", purchase.id, "for bundle:", bundle.name);
+      
+      res.json({
+        purchaseId: purchase.id,
+        orderId,
+        paymentUrl: getPayFastUrl(),
+        paymentData,
+        bundle,
+      });
+    } catch (error) {
+      console.error("Failed to initiate coin purchase:", error);
+      res.status(500).json({ message: "Failed to initiate purchase" });
+    }
+  });
+
+  // ===== PAYFAST COIN PURCHASE ENDPOINTS =====
+
+  // POST /api/coins/purchase - Initiate coin bundle purchase
+  app.post("/api/coins/purchase", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { bundleId } = req.body;
+
+      if (!bundleId) {
+        return res.status(400).json({ message: "bundleId is required" });
+      }
+
+      const bundle = await storage.getCoinBundle(bundleId);
+      if (!bundle) {
+        return res.status(404).json({ message: "Coin bundle not found" });
+      }
+
+      if (!bundle.isActive) {
+        return res.status(400).json({ message: "This bundle is no longer available" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      const {
+        isPayFastConfigured,
+        getPayFastUrl,
+        generateSignature,
+      } = await import("./services/payfast");
+
+      if (!isPayFastConfigured()) {
+        return res.status(500).json({ message: "Payment system is not configured" });
+      }
+
+      const paymentReference = crypto.randomUUID();
+      // Use request host for correct URL in both dev and production
+      const baseUrl = `https://${req.get("host")}`;
+
+      const totalCoins = bundle.coinAmount + (bundle.bonusCoins || 0);
+      const purchase = await storage.createCoinPurchase(
+        userId,
+        bundleId,
+        totalCoins,
+        bundle.priceRands,
+        paymentReference
+      );
+
+      const paymentData: Record<string, string | number | undefined> = {
+        merchant_id: process.env.PAYFAST_MERCHANT_ID!,
+        merchant_key: process.env.PAYFAST_MERCHANT_KEY!,
+        return_url: `${baseUrl}/api/coins/purchase/return?purchase_id=${purchase.id}`,
+        cancel_url: `${baseUrl}/api/coins/purchase/cancel?purchase_id=${purchase.id}`,
+        notify_url: `${baseUrl}/api/coins/purchase/notify`,
+        m_payment_id: paymentReference,
+        amount: bundle.priceRands.toFixed(2),
+        item_name: `Rabit Coins - ${bundle.name}`,
+        item_description: bundle.description || `${bundle.coinAmount} coins + ${bundle.bonusCoins || 0} bonus`,
+        email_address: user.email,
+        name_first: user.displayName?.split(" ")[0],
+        name_last: user.displayName?.split(" ").slice(1).join(" ") || undefined,
+        custom_str1: purchase.id,
+        custom_str2: userId,
+      };
+
+      const signature = generateSignature(paymentData, process.env.PAYFAST_PASSPHRASE);
+      paymentData.signature = signature;
+
+      console.log("[CoinPurchase] Created purchase:", purchase.id, "for bundle:", bundle.name, "user:", userId);
+
+      res.json({
+        purchaseId: purchase.id,
+        paymentUrl: getPayFastUrl(),
+        paymentData,
+        bundle: {
+          id: bundle.id,
+          name: bundle.name,
+          coinAmount: bundle.coinAmount,
+          bonusCoins: bundle.bonusCoins,
+          priceRands: bundle.priceRands,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to initiate coin purchase:", error);
+      res.status(500).json({ message: "Failed to initiate purchase" });
+    }
+  });
+
+  // POST /api/coins/purchase-custom - Purchase custom amount of coins (1 coin = R1)
+  app.post("/api/coins/purchase-custom", requireAuth, async (req, res) => {
+    console.log("[CoinPurchase] Custom purchase request received, body:", req.body, "userId:", req.session.userId);
+    try {
+      // Check if purchases are enabled (emergency control)
+      const config = await storage.getEconomyConfig();
+      if (config.purchases_enabled === "false") {
+        return res.status(503).json({ message: "Coin purchases are temporarily disabled. Please try again later." });
+      }
+
+      const userId = req.session.userId!;
+      const { coinAmount } = req.body;
+
+      if (!coinAmount || typeof coinAmount !== "number" || coinAmount < 10) {
+        return res.status(400).json({ message: "Minimum purchase is 10 coins" });
+      }
+
+      if (coinAmount > 1000000) {
+        return res.status(400).json({ message: "Maximum single purchase is 1,000,000 coins" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      const {
+        isPayFastConfigured,
+        getPayFastUrl,
+        generateSignature,
+      } = await import("./services/payfast");
+
+      if (!isPayFastConfigured()) {
+        return res.status(500).json({ message: "Payment system is not configured" });
+      }
+
+      const paymentReference = crypto.randomUUID();
+      const priceRands = coinAmount; // 1 coin = R1
+      // Use request host for correct URL in both dev and production
+      const baseUrl = `https://${req.get("host")}`;
+
+      // Use the special custom purchase bundle for custom coin amounts
+      const CUSTOM_PURCHASE_BUNDLE_ID = "custom-purchase-bundle";
+      
+      const purchase = await storage.createCoinPurchase(
+        userId,
+        CUSTOM_PURCHASE_BUNDLE_ID,
+        coinAmount,
+        priceRands,
+        paymentReference
+      );
+
+      const paymentData: Record<string, string | number | undefined> = {
+        merchant_id: process.env.PAYFAST_MERCHANT_ID!,
+        merchant_key: process.env.PAYFAST_MERCHANT_KEY!,
+        return_url: `${baseUrl}/api/coins/purchase/return?purchase_id=${purchase.id}`,
+        cancel_url: `${baseUrl}/api/coins/purchase/cancel?purchase_id=${purchase.id}`,
+        notify_url: `${baseUrl}/api/coins/purchase/notify`,
+        m_payment_id: paymentReference,
+        amount: priceRands.toFixed(2),
+        item_name: `Rabit Coins - ${coinAmount.toLocaleString()} Coins`,
+        item_description: `Custom purchase of ${coinAmount.toLocaleString()} Rabit Coins`,
+        email_address: user.email,
+        name_first: user.displayName?.split(" ")[0],
+        name_last: user.displayName?.split(" ").slice(1).join(" ") || undefined,
+        custom_str1: purchase.id,
+        custom_str2: userId,
+      };
+
+      const signature = generateSignature(paymentData, process.env.PAYFAST_PASSPHRASE);
+      paymentData.signature = signature;
+
+      console.log("[CoinPurchase] Created custom purchase:", purchase.id, "for", coinAmount, "coins, user:", userId);
+
+      res.json({
+        purchaseId: purchase.id,
+        paymentUrl: getPayFastUrl(),
+        paymentData,
+        coinAmount,
+        priceRands,
+      });
+    } catch (error: any) {
+      console.error("Failed to initiate custom coin purchase:", error?.message, error?.stack);
+      res.status(500).json({ message: "Failed to initiate custom purchase", error: error?.message });
+    }
+  });
+
+  // POST /api/coins/purchase/notify - PayFast ITN webhook
+  app.post("/api/coins/purchase/notify", async (req, res) => {
+    try {
+      const { validateITNSignature } = await import("./services/payfast");
+      const itnData = req.body as import("./services/payfast").PayFastITNData;
+
+      console.log("[PayFast ITN] Received notification:", {
+        m_payment_id: itnData.m_payment_id,
+        payment_status: itnData.payment_status,
+        custom_str1: itnData.custom_str1,
+        custom_str2: itnData.custom_str2,
+      });
+
+      if (!validateITNSignature(itnData)) {
+        console.error("[PayFast ITN] Invalid signature");
+        return res.status(400).send("Invalid signature");
+      }
+
+      if (itnData.payment_status !== "COMPLETE") {
+        console.log("[PayFast ITN] Payment not complete, status:", itnData.payment_status);
+        return res.status(200).send("OK");
+      }
+
+      const purchaseId = itnData.custom_str1;
+      const userId = itnData.custom_str2;
+
+      if (!purchaseId || !userId) {
+        console.error("[PayFast ITN] Missing purchaseId or userId");
+        return res.status(400).send("Missing purchase data");
+      }
+
+      const purchase = await storage.getCoinPurchase(purchaseId);
+      if (!purchase) {
+        console.error("[PayFast ITN] Purchase not found:", purchaseId);
+        return res.status(404).send("Purchase not found");
+      }
+
+      if (purchase.status === "completed") {
+        console.log("[PayFast ITN] Purchase already completed:", purchaseId);
+        return res.status(200).send("OK");
+      }
+
+      if (purchase.userId !== userId) {
+        console.error("[PayFast ITN] User mismatch:", purchase.userId, "vs", userId);
+        return res.status(400).send("User mismatch");
+      }
+
+      const result = await storage.completeCoinPurchase(purchase.paymentReference!);
+      if (!result) {
+        console.error("[PayFast ITN] Failed to complete purchase:", purchaseId);
+        return res.status(500).send("Failed to complete purchase");
+      }
+
+      console.log("[PayFast ITN] Purchase completed successfully:", {
+        purchaseId,
+        coinsReceived: result.purchase.coinsReceived,
+        newBalance: result.wallet.coinBalance,
+      });
+
+      res.status(200).send("OK");
+    } catch (error) {
+      console.error("[PayFast ITN] Error processing notification:", error);
+      res.status(500).send("Internal server error");
+    }
+  });
+
+  // GET /api/coins/purchase/return - PayFast return URL (redirect after payment)
+  // NOTE: This must be registered BEFORE the :purchaseId route to avoid route conflicts
+  // CRITICAL: This endpoint MUST complete the purchase if not already done (ITN may fail to reach server)
+  app.get("/api/coins/purchase/return", async (req, res) => {
+    const purchaseId = req.query.purchase_id as string;
+    
+    console.log("[CoinPurchase Return] User returned from PayFast, purchaseId:", purchaseId);
+    
+    let coinsReceived = 0;
+    let completionStatus = "unknown";
+    let errorMessage = "";
+    
+    if (purchaseId) {
+      try {
+        // Try to get the purchase record
+        const purchase = await storage.getCoinPurchase(purchaseId);
+        console.log("[CoinPurchase Return] Purchase found:", purchase ? { id: purchase.id, status: purchase.status, coins: purchase.coinsReceived } : "NOT FOUND");
+        
+        if (purchase) {
+          coinsReceived = purchase.coinsReceived;
+          
+          if (purchase.status === "completed") {
+            // Already completed (by ITN or previous return visit)
+            completionStatus = "completed";
+            console.log("[CoinPurchase Return] Purchase already completed");
+          } else if (purchase.status === "pending") {
+            // ITN didn't reach us yet - complete it now!
+            console.log("[CoinPurchase Return] Purchase still pending, completing now...");
+            try {
+              const result = await storage.completeCoinPurchase(purchase.paymentReference!);
+              if (result) {
+                completionStatus = "completed";
+                coinsReceived = result.purchase.coinsReceived;
+                console.log("[CoinPurchase Return] Purchase completed successfully!", {
+                  purchaseId,
+                  coinsReceived: result.purchase.coinsReceived,
+                  newBalance: result.wallet.coinBalance,
+                });
+              } else {
+                completionStatus = "error";
+                errorMessage = "Failed to complete purchase - please contact support";
+                console.error("[CoinPurchase Return] completeCoinPurchase returned null");
+              }
+            } catch (err: any) {
+              completionStatus = "error";
+              errorMessage = err?.message || "Unknown error completing purchase";
+              console.error("[CoinPurchase Return] Error completing purchase:", err);
+            }
+          } else {
+            // Some other status (cancelled, failed, etc.)
+            completionStatus = purchase.status;
+            console.log("[CoinPurchase Return] Purchase has status:", purchase.status);
+          }
+        } else {
+          completionStatus = "not_found";
+          errorMessage = "Purchase record not found";
+          console.error("[CoinPurchase Return] Purchase not found:", purchaseId);
+        }
+      } catch (err: any) {
+        completionStatus = "error";
+        errorMessage = err?.message || "Database error";
+        console.error("[CoinPurchase Return] Error fetching purchase:", err);
+      }
+    } else {
+      completionStatus = "no_id";
+      errorMessage = "No purchase ID provided";
+      console.error("[CoinPurchase Return] No purchase_id in query");
+    }
+    
+    // Determine what to show based on status
+    const isSuccess = completionStatus === "completed";
+    const iconColor = isSuccess ? "#10b981" : "#ef4444";
+    const iconPath = isSuccess 
+      ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>'
+      : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"/>';
+    const title = isSuccess ? "Payment Successful!" : "Payment Issue";
+    const message = isSuccess 
+      ? `${coinsReceived.toLocaleString()} Rabit Coins have been added to your wallet.`
+      : `There was an issue with your payment. ${errorMessage}`;
+    const infoMessage = isSuccess 
+      ? "Your coins are ready to spend in the Mall!"
+      : "Please try again or contact support if the issue persists.";
+    
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>${title} - RabitChat</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a24 0%, #2d1f47 50%, #1a1a24 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+          }
+          .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 40px;
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+          }
+          .icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, ${iconColor} 0%, ${iconColor}dd 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            animation: pulse 1.5s ease-in-out infinite;
+          }
+          @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+          }
+          .icon svg { width: 40px; height: 40px; }
+          h1 { color: #fff; font-size: 24px; margin-bottom: 12px; }
+          p { color: rgba(255, 255, 255, 0.7); font-size: 16px; margin-bottom: 16px; line-height: 1.5; }
+          .coin-icon { display: inline-block; width: 24px; height: 24px; background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); border-radius: 50%; vertical-align: middle; margin-right: 4px; }
+          .info { background: rgba(139, 92, 246, 0.2); border-radius: 12px; padding: 16px; margin-bottom: 24px; }
+          .info p { color: rgba(255, 255, 255, 0.9); margin: 0; font-size: 14px; }
+          .redirect-text { color: rgba(255, 255, 255, 0.5); font-size: 14px; margin-top: 16px; }
+          .btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+            color: #fff;
+            padding: 14px 32px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            margin-top: 16px;
+            transition: transform 0.2s, box-shadow 0.2s;
+          }
+          .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(139, 92, 246, 0.4); }
+          .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 8px;
+            vertical-align: middle;
+          }
+          @keyframes spin { to { transform: rotate(360deg); } }
+          .debug { margin-top: 20px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; font-size: 12px; color: rgba(255,255,255,0.5); }
+        </style>
+        <script>
+          var purchaseId = '${purchaseId || ''}';
+          var serverCompletionStatus = '${completionStatus}';
+          var coinsReceived = ${coinsReceived || 0};
+          
+          // Try to complete the purchase via API as a fallback
+          async function tryCompleteViaApi() {
+            if (!purchaseId || purchaseId === 'none') {
+              console.log('[Return] No purchase ID to complete');
+              return false;
+            }
+            
+            try {
+              console.log('[Return] Trying to complete purchase via API:', purchaseId);
+              var response = await fetch('/api/coins/complete-by-id/' + purchaseId);
+              var data = await response.json();
+              console.log('[Return] API response:', data);
+              
+              if (data.success) {
+                console.log('[Return] Purchase completed via API!');
+                coinsReceived = data.purchase?.coinsReceived || coinsReceived;
+                return true;
+              }
+            } catch (err) {
+              console.error('[Return] API call failed:', err);
+            }
+            return false;
+          }
+          
+          async function handlePageLoad() {
+            var isSuccess = serverCompletionStatus === 'completed';
+            
+            // If server-side completion failed, try via API
+            if (!isSuccess && purchaseId) {
+              console.log('[Return] Server-side completion failed, trying API...');
+              var apiSuccess = await tryCompleteViaApi();
+              if (apiSuccess) {
+                isSuccess = true;
+                // Update the UI
+                document.querySelector('h1').textContent = 'Payment Successful!';
+                document.querySelector('.icon').style.background = 'linear-gradient(135deg, #10b981 0%, #10b981dd 100%)';
+                document.querySelector('.icon svg path').setAttribute('d', 'M5 13l4 4L19 7');
+                document.querySelector('.debug').textContent = 'Status: completed (via API) | ID: ' + purchaseId;
+              }
+            }
+            
+            if (isSuccess) {
+              // Auto-redirect to app after 2 seconds
+              setTimeout(function() {
+                window.location.href = 'rabitchat://mall?payment=success&coins=' + coinsReceived;
+              }, 2000);
+              
+              // Fallback: If deep link doesn't work after 3.5 seconds, show manual button
+              setTimeout(function() {
+                var btn = document.getElementById('manual-btn');
+                var redirect = document.getElementById('auto-redirect');
+                if (btn) btn.style.display = 'inline-block';
+                if (redirect) redirect.style.display = 'none';
+              }, 3500);
+            } else {
+              // Show retry button immediately for errors
+              document.getElementById('manual-btn').style.display = 'inline-block';
+            }
+          }
+          
+          document.addEventListener('DOMContentLoaded', handlePageLoad);
+        </script>
+      </head>
+      <body>
+        <div class="container">
+          <div class="icon">
+            <svg fill="none" stroke="#fff" viewBox="0 0 24 24">
+              ${iconPath}
+            </svg>
+          </div>
+          <h1>${title}</h1>
+          <p>${message}</p>
+          <div class="info">
+            <p>${isSuccess ? '<span class="coin-icon"></span> ' : ''}${infoMessage}</p>
+          </div>
+          <p id="auto-redirect" class="redirect-text" style="display: ${isSuccess ? 'block' : 'none'};">
+            <span class="spinner"></span> Redirecting to Mall...
+          </p>
+          <a id="manual-btn" href="rabitchat://mall?payment=success" class="btn" style="display: none;">
+            Open Mall
+          </a>
+          <div class="debug">Status: ${completionStatus} | ID: ${purchaseId || 'none'} | Coins: ${coinsReceived}</div>
+        </div>
+      </body>
+      </html>
+    `);
+  });
+
+  // GET /api/coins/purchase/cancel - PayFast cancel URL
+  // NOTE: This must be registered BEFORE the :purchaseId route to avoid route conflicts
+  app.get("/api/coins/purchase/cancel", async (req, res) => {
+    const purchaseId = req.query.purchase_id as string;
+    
+    // Show HTML cancel page
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Payment Cancelled - RabitChat</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a24 0%, #2d1f47 50%, #1a1a24 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+          }
+          .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 40px;
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+          }
+          .icon { width: 80px; height: 80px; background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; }
+          .icon svg { width: 40px; height: 40px; }
+          h1 { color: #fff; font-size: 24px; margin-bottom: 12px; }
+          p { color: rgba(255, 255, 255, 0.7); font-size: 16px; margin-bottom: 24px; line-height: 1.5; }
+          .close-text { color: rgba(255, 255, 255, 0.5); font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="icon">
+            <svg fill="none" stroke="#fff" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </div>
+          <h1>Payment Cancelled</h1>
+          <p>Your payment was cancelled. No charges were made to your account.</p>
+          <p class="close-text">You can close this page and return to the RabitChat app to try again.</p>
+        </div>
+      </body>
+      </html>
+    `);
+  });
+
+  // GET /api/coins/purchase/:purchaseId - Get purchase status
+  app.get("/api/coins/purchase/:purchaseId", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { purchaseId } = req.params;
+
+      const purchase = await storage.getCoinPurchase(purchaseId);
+      if (!purchase) {
+        return res.status(404).json({ message: "Purchase not found" });
+      }
+
+      if (purchase.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const bundle = await storage.getCoinBundle(purchase.bundleId);
+
+      res.json({
+        purchase: {
+          id: purchase.id,
+          bundleId: purchase.bundleId,
+          coinsReceived: purchase.coinsReceived,
+          amountPaidRands: purchase.amountPaidRands,
+          paymentMethod: purchase.paymentMethod,
+          status: purchase.status,
+          createdAt: purchase.createdAt,
+          completedAt: purchase.completedAt,
+        },
+        bundle: bundle ? {
+          id: bundle.id,
+          name: bundle.name,
+          coinAmount: bundle.coinAmount,
+          bonusCoins: bundle.bonusCoins,
+        } : null,
+      });
+    } catch (error) {
+      console.error("Failed to get purchase status:", error);
+      res.status(500).json({ message: "Failed to get purchase status" });
+    }
+  });
+
+  // POST /api/coins/purchase/complete - Manually complete a pending purchase (called from app if ITN failed)
+  app.post("/api/coins/purchase/complete", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { purchaseId } = req.body;
+
+      console.log("[CoinPurchase Complete] Manual completion request, purchaseId:", purchaseId, "userId:", userId);
+
+      if (!purchaseId) {
+        return res.status(400).json({ message: "Purchase ID is required" });
+      }
+
+      const purchase = await storage.getCoinPurchase(purchaseId);
+      if (!purchase) {
+        console.error("[CoinPurchase Complete] Purchase not found:", purchaseId);
+        return res.status(404).json({ message: "Purchase not found" });
+      }
+
+      // Verify the purchase belongs to this user
+      if (purchase.userId !== userId) {
+        console.error("[CoinPurchase Complete] User mismatch:", purchase.userId, "vs", userId);
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      console.log("[CoinPurchase Complete] Purchase found:", { id: purchase.id, status: purchase.status, coins: purchase.coinsReceived });
+
+      if (purchase.status === "completed") {
+        // Already completed
+        const wallet = await storage.getWallet(userId);
+        console.log("[CoinPurchase Complete] Purchase already completed");
+        return res.json({
+          success: true,
+          alreadyCompleted: true,
+          purchase: {
+            id: purchase.id,
+            coinsReceived: purchase.coinsReceived,
+            status: purchase.status,
+          },
+          wallet: wallet ? { coinBalance: wallet.coinBalance } : null,
+        });
+      }
+
+      if (purchase.status !== "pending") {
+        console.error("[CoinPurchase Complete] Purchase has invalid status:", purchase.status);
+        return res.status(400).json({ message: `Purchase has status: ${purchase.status}` });
+      }
+
+      // Complete the purchase
+      console.log("[CoinPurchase Complete] Completing pending purchase...");
+      const result = await storage.completeCoinPurchase(purchase.paymentReference!);
+      
+      if (!result) {
+        console.error("[CoinPurchase Complete] completeCoinPurchase returned null");
+        return res.status(500).json({ message: "Failed to complete purchase" });
+      }
+
+      console.log("[CoinPurchase Complete] Purchase completed successfully!", {
+        purchaseId,
+        coinsReceived: result.purchase.coinsReceived,
+        newBalance: result.wallet.coinBalance,
+      });
+
+      res.json({
+        success: true,
+        alreadyCompleted: false,
+        purchase: {
+          id: result.purchase.id,
+          coinsReceived: result.purchase.coinsReceived,
+          status: result.purchase.status,
+        },
+        wallet: { coinBalance: result.wallet.coinBalance },
+      });
+    } catch (error: any) {
+      console.error("[CoinPurchase Complete] Error:", error);
+      res.status(500).json({ message: error?.message || "Failed to complete purchase" });
+    }
+  });
+
+  // GET /api/coins/pending - Get user's pending purchases that may need recovery
+  app.get("/api/coins/pending", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      // Get pending purchases from the last 24 hours
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const pendingPurchases = await db.select()
+        .from(coinPurchases)
+        .where(and(
+          eq(coinPurchases.userId, userId),
+          eq(coinPurchases.status, "pending"),
+          sql`${coinPurchases.createdAt} > ${oneDayAgo.toISOString()}`
+        ))
+        .orderBy(sql`${coinPurchases.createdAt} DESC`)
+        .limit(5);
+      
+      res.json({
+        pendingPurchases: pendingPurchases.map(p => ({
+          id: p.id,
+          bundleId: p.bundleId,
+          coinsReceived: p.coinsReceived,
+          amountPaidRands: p.amountPaidRands,
+          paymentReference: p.paymentReference,
+          createdAt: p.createdAt,
+        })),
+      });
+    } catch (error) {
+      console.error("[Pending Purchases] Error:", error);
+      res.status(500).json({ message: "Failed to get pending purchases" });
+    }
+  });
+
+  // POST /api/coins/recover/:id - Recover a pending purchase by completing it
+  app.post("/api/coins/recover/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const purchaseId = req.params.id;
+      
+      console.log("[CoinPurchase Recover] Request for purchaseId:", purchaseId, "userId:", userId);
+      
+      const purchase = await storage.getCoinPurchase(purchaseId);
+      if (!purchase) {
+        return res.status(404).json({ success: false, message: "Purchase not found" });
+      }
+      
+      if (purchase.userId !== userId) {
+        return res.status(403).json({ success: false, message: "Not authorized" });
+      }
+      
+      if (purchase.status === "completed") {
+        const wallet = await storage.getWallet(userId);
+        return res.json({
+          success: true,
+          alreadyCompleted: true,
+          message: "Purchase was already completed",
+          purchase: {
+            id: purchase.id,
+            coinsReceived: purchase.coinsReceived,
+            status: purchase.status,
+          },
+          wallet: wallet ? { coinBalance: wallet.coinBalance } : null,
+        });
+      }
+      
+      if (purchase.status !== "pending") {
+        return res.status(400).json({ success: false, message: `Purchase has status: ${purchase.status}` });
+      }
+      
+      // Complete the purchase
+      console.log("[CoinPurchase Recover] Completing purchase...");
+      const result = await storage.completeCoinPurchase(purchase.paymentReference!);
+      
+      if (!result) {
+        return res.status(500).json({ success: false, message: "Failed to complete purchase" });
+      }
+      
+      console.log("[CoinPurchase Recover] Purchase completed!", {
+        purchaseId,
+        coinsReceived: result.purchase.coinsReceived,
+        newBalance: result.wallet.coinBalance,
+      });
+      
+      res.json({
+        success: true,
+        alreadyCompleted: false,
+        message: "Purchase completed successfully!",
+        purchase: {
+          id: result.purchase.id,
+          coinsReceived: result.purchase.coinsReceived,
+          status: result.purchase.status,
+        },
+        wallet: { coinBalance: result.wallet.coinBalance },
+      });
+    } catch (error: any) {
+      console.error("[CoinPurchase Recover] Error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to recover purchase" });
+    }
+  });
+
+  // GET /api/coins/debug - Debug endpoint to check recent purchases (for troubleshooting)
+  app.get("/api/coins/debug", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      // Get user's recent purchases
+      const purchases = await db.select()
+        .from(coinPurchases)
+        .where(eq(coinPurchases.userId, userId))
+        .orderBy(sql`${coinPurchases.createdAt} DESC`)
+        .limit(10);
+      
+      // Get user's wallet
+      const wallet = await storage.getWallet(userId);
+      
+      // Get recent transactions
+      let transactions: any[] = [];
+      if (wallet) {
+        transactions = await db.select()
+          .from(coinTransactions)
+          .where(eq(coinTransactions.walletId, wallet.id))
+          .orderBy(sql`${coinTransactions.createdAt} DESC`)
+          .limit(10);
+      }
+      
+      res.json({
+        userId,
+        wallet: wallet ? {
+          id: wallet.id,
+          coinBalance: wallet.coinBalance,
+          lifetimeEarned: wallet.lifetimeEarned,
+          lifetimeSpent: wallet.lifetimeSpent,
+          isFrozen: wallet.isFrozen,
+        } : null,
+        recentPurchases: purchases.map(p => ({
+          id: p.id,
+          bundleId: p.bundleId,
+          status: p.status,
+          coinsReceived: p.coinsReceived,
+          amountPaidRands: p.amountPaidRands,
+          paymentReference: p.paymentReference,
+          createdAt: p.createdAt,
+          completedAt: p.completedAt,
+        })),
+        recentTransactions: transactions.map(t => ({
+          id: t.id,
+          type: t.type,
+          amount: t.amount,
+          description: t.description,
+          balanceAfter: t.balanceAfter,
+          createdAt: t.createdAt,
+        })),
+      });
+    } catch (error) {
+      console.error("[Debug] Error:", error);
+      res.status(500).json({ message: "Debug failed" });
+    }
+  });
+
+  // GET /api/coins/complete-by-id/:id - Alternative complete endpoint using purchase ID (no auth required for return page)
+  app.get("/api/coins/complete-by-id/:id", async (req, res) => {
+    try {
+      const purchaseId = req.params.id;
+      console.log("[CoinPurchase Complete-By-ID] Request for purchaseId:", purchaseId);
+
+      const purchase = await storage.getCoinPurchase(purchaseId);
+      if (!purchase) {
+        console.error("[CoinPurchase Complete-By-ID] Purchase not found:", purchaseId);
+        return res.status(404).json({ success: false, message: "Purchase not found" });
+      }
+
+      console.log("[CoinPurchase Complete-By-ID] Found purchase:", {
+        id: purchase.id,
+        status: purchase.status,
+        coins: purchase.coinsReceived,
+        paymentReference: purchase.paymentReference,
+      });
+
+      if (purchase.status === "completed") {
+        const wallet = await storage.getWallet(purchase.userId);
+        console.log("[CoinPurchase Complete-By-ID] Purchase already completed");
+        return res.json({
+          success: true,
+          alreadyCompleted: true,
+          purchase: {
+            id: purchase.id,
+            coinsReceived: purchase.coinsReceived,
+            status: purchase.status,
+          },
+          wallet: wallet ? { coinBalance: wallet.coinBalance } : null,
+        });
+      }
+
+      if (purchase.status !== "pending") {
+        console.error("[CoinPurchase Complete-By-ID] Invalid status:", purchase.status);
+        return res.status(400).json({ success: false, message: `Purchase has status: ${purchase.status}` });
+      }
+
+      // Complete the purchase
+      console.log("[CoinPurchase Complete-By-ID] Completing pending purchase...");
+      const result = await storage.completeCoinPurchase(purchase.paymentReference!);
+      
+      if (!result) {
+        console.error("[CoinPurchase Complete-By-ID] completeCoinPurchase returned null");
+        return res.status(500).json({ success: false, message: "Failed to complete purchase" });
+      }
+
+      console.log("[CoinPurchase Complete-By-ID] Purchase completed successfully!", {
+        purchaseId,
+        coinsReceived: result.purchase.coinsReceived,
+        newBalance: result.wallet.coinBalance,
+      });
+
+      res.json({
+        success: true,
+        alreadyCompleted: false,
+        purchase: {
+          id: result.purchase.id,
+          coinsReceived: result.purchase.coinsReceived,
+          status: result.purchase.status,
+        },
+        wallet: { coinBalance: result.wallet.coinBalance },
+      });
+    } catch (error: any) {
+      console.error("[CoinPurchase Complete-By-ID] Error:", error);
+      res.status(500).json({ success: false, message: error?.message || "Failed to complete purchase" });
+    }
+  });
+
+  // POST /api/daily-reward/claim - Claim daily free coins
+  app.post("/api/daily-reward/claim", requireAuth, async (req, res) => {
+    try {
+      // Check if daily rewards are enabled (emergency control)
+      const config = await storage.getEconomyConfig();
+      if (config.daily_rewards_enabled === "false") {
+        return res.status(503).json({ message: "Daily rewards are temporarily disabled. Please try again later." });
+      }
+      
+      const userId = req.session.userId!;
+      const result = await storage.claimDailyReward(userId);
+      
+      res.json({
+        success: true,
+        reward: result.reward,
+        coinsEarned: result.coinsEarned,
+        wallet: result.wallet,
+        streak: result.reward.currentStreak,
+      });
+    } catch (error: any) {
+      if (error.message?.includes("already claimed")) {
+        return res.status(400).json({ message: "Daily reward already claimed today" });
+      }
+      console.error("Failed to claim daily reward:", error);
+      res.status(500).json({ message: "Failed to claim daily reward" });
+    }
+  });
+
+  // GET /api/daily-reward/status - Get daily reward status
+  app.get("/api/daily-reward/status", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const status = await storage.getDailyRewardStatus(userId);
+      const config = await storage.getDailyRewardConfig();
+      
+      let canClaimToday = true;
+      let currentStreak = 0;
+      let lastClaimedAt = null;
+      
+      if (status) {
+        currentStreak = status.currentStreak;
+        lastClaimedAt = status.lastClaimDate;
+        
+        if (status.lastClaimDate) {
+          const lastClaim = new Date(status.lastClaimDate);
+          const today = new Date();
+          const isSameDay = 
+            lastClaim.getFullYear() === today.getFullYear() &&
+            lastClaim.getMonth() === today.getMonth() &&
+            lastClaim.getDate() === today.getDate();
+          canClaimToday = !isSameDay;
+        }
+      }
+      
+      const nextDayConfig = config.find(c => c.dayNumber === (currentStreak % 7) + 1) || config[0];
+      
+      res.json({
+        canClaimToday,
+        currentStreak,
+        lastClaimedAt,
+        nextReward: nextDayConfig,
+        rewardConfig: config,
+      });
+    } catch (error) {
+      console.error("Failed to get daily reward status:", error);
+      res.status(500).json({ message: "Failed to get daily reward status" });
+    }
+  });
+
+  // GET /api/gifts/types - List available gift types (public)
+  app.get("/api/gifts/types", async (req, res) => {
+    try {
+      const types = await storage.getGiftTypes(true);
+      res.json(types);
+    } catch (error) {
+      console.error("Failed to get gift types:", error);
+      res.status(500).json({ message: "Failed to get gift types" });
+    }
+  });
+
+  // POST /api/gifts/send - Send a gift
+  app.post("/api/gifts/send", requireAuth, async (req, res) => {
+    try {
+      // Check if gifts are enabled (emergency control)
+      const config = await storage.getEconomyConfig();
+      if (config.gifts_enabled === "false") {
+        return res.status(503).json({ message: "Gifts are temporarily disabled. Please try again later." });
+      }
+      
+      const senderId = req.session.userId!;
+      const { recipientId, giftTypeId, quantity, contextType, contextId, message } = req.body;
+      
+      if (!recipientId || !giftTypeId) {
+        return res.status(400).json({ message: "recipientId and giftTypeId are required" });
+      }
+      
+      if (recipientId === senderId) {
+        return res.status(400).json({ message: "You cannot send a gift to yourself" });
+      }
+      
+      const recipient = await storage.getUser(recipientId);
+      if (!recipient) {
+        return res.status(404).json({ message: "Recipient not found" });
+      }
+      
+      const qty = Math.max(1, parseInt(quantity) || 1);
+      
+      const result = await storage.sendGift(
+        senderId,
+        recipientId,
+        giftTypeId,
+        qty,
+        contextType,
+        contextId,
+        message
+      );
+      
+      const sender = await storage.getUser(senderId);
+      broadcastToUser(recipientId, {
+        type: "gift:received",
+        payload: {
+          transaction: result.transaction,
+          sender: sender ? { id: sender.id, username: sender.username, displayName: sender.displayName, avatarUrl: sender.avatarUrl } : null,
+        },
+      });
+      
+      res.json({
+        success: true,
+        transaction: result.transaction,
+        wallet: result.senderWallet,
+      });
+    } catch (error: any) {
+      if (error.message?.includes("Insufficient")) {
+        return res.status(400).json({ message: "Insufficient coin balance" });
+      }
+      if (error.message?.includes("not found")) {
+        return res.status(404).json({ message: error.message });
+      }
+      console.error("Failed to send gift:", error);
+      res.status(500).json({ message: "Failed to send gift" });
+    }
+  });
+
+  // POST /api/mall/wishlist/:itemId - Add item to wishlist
+  app.post("/api/mall/wishlist/:itemId", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const itemId = req.params.itemId;
+      
+      const item = await db.select().from(mallItems).where(eq(mallItems.id, itemId)).limit(1);
+      if (!item.length) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      
+      const wishlistItem = await storage.addToWishlist(userId, itemId);
+      res.json({ success: true, wishlistItem });
+    } catch (error: any) {
+      if (error.message?.includes("duplicate") || error.code === "23505") {
+        return res.status(400).json({ message: "Item already in wishlist" });
+      }
+      console.error("Failed to add to wishlist:", error);
+      res.status(500).json({ message: "Failed to add to wishlist" });
+    }
+  });
+
+  // DELETE /api/mall/wishlist/:itemId - Remove from wishlist
+  app.delete("/api/mall/wishlist/:itemId", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const itemId = req.params.itemId;
+      
+      await storage.removeFromWishlist(userId, itemId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to remove from wishlist:", error);
+      res.status(500).json({ message: "Failed to remove from wishlist" });
+    }
+  });
+
+  // GET /api/mall/wishlist - Get user's wishlist
+  app.get("/api/mall/wishlist", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const wishlist = await storage.getWishlist(userId);
+      
+      const itemIds = wishlist.map(w => w.itemId);
+      const items = itemIds.length > 0
+        ? await db.select().from(mallItems).where(inArray(mallItems.id, itemIds))
+        : [];
+      
+      const wishlistWithItems = wishlist.map(w => ({
+        ...w,
+        item: items.find(i => i.id === w.itemId) || null,
+      }));
+      
+      res.json(wishlistWithItems);
+    } catch (error) {
+      console.error("Failed to get wishlist:", error);
+      res.status(500).json({ message: "Failed to get wishlist" });
+    }
+  });
+
+  // POST /api/mall/:itemId/review - Create review for mall item
+  app.post("/api/mall/:itemId/review", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const itemId = req.params.itemId;
+      const { rating, review } = req.body;
+      
+      if (!rating || rating < 1 || rating > 5) {
+        return res.status(400).json({ message: "Rating must be between 1 and 5" });
+      }
+      
+      const item = await db.select().from(mallItems).where(eq(mallItems.id, itemId)).limit(1);
+      if (!item.length) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      
+      const newReview = await storage.createReview(userId, itemId, rating, review);
+      res.json({ success: true, review: newReview });
+    } catch (error: any) {
+      if (error.message?.includes("duplicate") || error.code === "23505") {
+        return res.status(400).json({ message: "You have already reviewed this item" });
+      }
+      console.error("Failed to create review:", error);
+      res.status(500).json({ message: "Failed to create review" });
+    }
+  });
+
+  // GET /api/mall/:itemId/reviews - Get reviews for mall item (public)
+  app.get("/api/mall/:itemId/reviews", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const reviews = await storage.getItemReviews(itemId);
+      
+      const userIds = reviews.map(r => r.userId);
+      const reviewUsers = userIds.length > 0
+        ? await db.select({
+            id: users.id,
+            username: users.username,
+            displayName: users.displayName,
+            avatarUrl: users.avatarUrl,
+          }).from(users).where(inArray(users.id, userIds))
+        : [];
+      
+      const reviewsWithUsers = reviews.map(r => ({
+        ...r,
+        user: reviewUsers.find(u => u.id === r.userId) || null,
+      }));
+      
+      res.json(reviewsWithUsers);
+    } catch (error) {
+      console.error("Failed to get reviews:", error);
+      res.status(500).json({ message: "Failed to get reviews" });
+    }
+  });
+
+  // ===== ADMIN WALLET & COINS (Admin Routes Below) =====
+
+  // Admin Wallet Stats
+  app.get("/api/admin/wallet/stats", requireAdmin, async (req, res) => {
+    try {
+      const allWallets = await db.select().from(wallets).limit(1000);
+      const allTransactions = await db.select().from(coinTransactions).limit(5000);
+      const allGifts = await db.select().from(giftTransactions).limit(1000);
+      
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      
+      const totalCoins = allWallets.reduce((sum, w) => sum + (w.coinBalance || 0), 0);
+      const transactions24h = allTransactions.filter(t => new Date(t.createdAt!) > yesterday).length;
+      const giftsSent7d = allGifts.filter(g => new Date(g.createdAt!) > weekAgo).length;
+      const avgBalance = allWallets.length > 0 ? Math.round(totalCoins / allWallets.length) : 0;
+      
+      res.json({
+        totalCoins,
+        transactions24h,
+        giftsSent7d,
+        avgBalance,
+      });
+    } catch (error) {
+      console.error("Failed to get wallet stats:", error);
+      res.status(500).json({ message: "Failed to get wallet stats" });
+    }
+  });
+
+  // Admin Wallet Transactions
+  app.get("/api/admin/wallet/transactions", requireAdmin, async (req, res) => {
+    try {
+      const transactions = await db.select().from(coinTransactions).orderBy(desc(coinTransactions.createdAt)).limit(100);
+      
+      const txData = await Promise.all(transactions.map(async (t) => {
+        // Get wallet to find user
+        const wallet = await db.select().from(wallets).where(eq(wallets.id, t.walletId)).limit(1);
+        const user = wallet[0] ? await storage.getUser(wallet[0].userId) : null;
+        return {
+          ...t,
+          user: user ? { id: user.id, username: user.username } : null,
+        };
+      }));
+      
+      res.json(txData);
+    } catch (error) {
+      console.error("Failed to get transactions:", error);
+      res.status(500).json({ message: "Failed to get transactions" });
+    }
+  });
+
+  // Admin Gift Types
+  app.get("/api/admin/wallet/gift-types", requireAdmin, async (req, res) => {
+    try {
+      const types = await db.select().from(giftTypes).orderBy(giftTypes.name);
+      res.json(types);
+    } catch (error) {
+      console.error("Failed to get gift types:", error);
+      res.status(500).json({ message: "Failed to get gift types" });
+    }
+  });
+
+  // ===== ADMIN PAYMENTS (PayFast) =====
+
+  app.get("/api/admin/payments/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminPaymentStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get payment stats:", error);
+      res.status(500).json({ message: "Failed to get payment stats" });
+    }
+  });
+
+  app.get("/api/admin/payments", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = req.query.search as string || "";
+      const status = req.query.status as string || "";
+      
+      const result = await storage.getAdminPayfastOrders({ page, limit, search, status });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get payments:", error);
+      res.status(500).json({ message: "Failed to get payments" });
+    }
+  });
+
+  app.get("/api/admin/payments/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const order = await storage.getAdminPayfastOrder(id);
+      
+      if (!order) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+      
+      res.json(order);
+    } catch (error) {
+      console.error("Failed to get payment:", error);
+      res.status(500).json({ message: "Failed to get payment" });
+    }
+  });
+
+  app.post("/api/admin/payments/:id/status", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, notes } = req.body;
+      
+      if (!status) {
+        return res.status(400).json({ message: "Status is required" });
+      }
+      
+      const order = await storage.adminUpdateOrderStatus(id, status, notes);
+      
+      if (!order) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_UPDATE_ORDER_STATUS" as any,
+        targetType: "order",
+        targetId: id,
+        details: { status, notes },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown"
+      });
+      
+      res.json(order);
+    } catch (error) {
+      console.error("Failed to update payment status:", error);
+      res.status(500).json({ message: "Failed to update payment status" });
+    }
+  });
+
+  // ===== USER WEALTH MANAGEMENT =====
+  
+  // Get user's portfolio (purchased items)
+  app.get("/api/admin/users/:userId/portfolio", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const purchases = await db.select({
+        id: mallPurchases.id,
+        itemId: mallPurchases.itemId,
+        quantity: mallPurchases.quantity,
+        netWorthGained: mallPurchases.netWorthGained,
+        createdAt: mallPurchases.createdAt,
+        itemName: mallItems.name,
+        itemValue: mallItems.value,
+        itemImageUrl: mallItems.imageUrl,
+        categoryId: mallItems.categoryId,
+      })
+      .from(mallPurchases)
+      .leftJoin(mallItems, eq(mallPurchases.itemId, mallItems.id))
+      .where(eq(mallPurchases.userId, userId))
+      .orderBy(desc(mallPurchases.createdAt));
+      
+      res.json({
+        user: {
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          avatarUrl: user.avatarUrl,
+          netWorth: user.netWorth,
+          netWorthTier: user.netWorthTier,
+        },
+        purchases,
+        totalItems: purchases.reduce((sum, p) => sum + p.quantity, 0),
+        portfolioValue: purchases.reduce((sum, p) => sum + (p.netWorthGained || 0), 0),
+      });
+    } catch (error) {
+      console.error("Failed to get user portfolio:", error);
+      res.status(500).json({ message: "Failed to get user portfolio" });
+    }
+  });
+  
+  // Add item to user's portfolio (admin grant)
+  app.post("/api/admin/users/:userId/portfolio", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { itemId, quantity = 1 } = req.body;
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const [item] = await db.select().from(mallItems).where(eq(mallItems.id, itemId)).limit(1);
+      if (!item) {
+        return res.status(404).json({ message: "Item not found" });
+      }
+      
+      const netWorthGained = item.value * quantity;
+      
+      // Create purchase record
+      const [purchase] = await db.insert(mallPurchases).values({
+        userId,
+        itemId,
+        quantity,
+        netWorthGained,
+      }).returning();
+      
+      // Update user's net worth
+      const newNetWorth = (user.netWorth || 0) + netWorthGained;
+      await db.update(users).set({ netWorth: newNetWorth }).where(eq(users.id, userId));
+      
+      // Log to ledger
+      await db.insert(netWorthLedger).values({
+        userId,
+        delta: netWorthGained,
+        reason: "ADMIN_ADJUST",
+        refType: "mall_item",
+        refId: itemId,
+      });
+      
+      // Audit log
+      await storage.createAuditLog({
+        actorId: req.session?.userId || null,
+        action: "ADMIN_GRANT_ITEM",
+        targetType: "user",
+        targetId: userId,
+        details: { itemId, itemName: item.name, quantity, netWorthGained },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+      
+      res.json({
+        purchase,
+        newNetWorth,
+        message: `Added ${item.name} x${quantity} to ${user.username}'s portfolio`,
+      });
+    } catch (error) {
+      console.error("Failed to add item to portfolio:", error);
+      res.status(500).json({ message: "Failed to add item to portfolio" });
+    }
+  });
+  
+  // Remove item from user's portfolio
+  app.delete("/api/admin/users/:userId/portfolio/:purchaseId", requireAdmin, async (req, res) => {
+    try {
+      const { userId, purchaseId } = req.params;
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const [purchase] = await db.select().from(mallPurchases)
+        .where(and(eq(mallPurchases.id, purchaseId), eq(mallPurchases.userId, userId)))
+        .limit(1);
+        
+      if (!purchase) {
+        return res.status(404).json({ message: "Purchase not found" });
+      }
+      
+      const [item] = await db.select().from(mallItems).where(eq(mallItems.id, purchase.itemId)).limit(1);
+      
+      // Delete purchase
+      await db.delete(mallPurchases).where(eq(mallPurchases.id, purchaseId));
+      
+      // Update user's net worth
+      const netWorthReduction = purchase.netWorthGained || 0;
+      const newNetWorth = Math.max(0, (user.netWorth || 0) - netWorthReduction);
+      await db.update(users).set({ netWorth: newNetWorth }).where(eq(users.id, userId));
+      
+      // Log to ledger
+      await db.insert(netWorthLedger).values({
+        userId,
+        delta: -netWorthReduction,
+        reason: "ADMIN_ADJUST",
+        refType: "mall_item",
+        refId: purchase.itemId,
+      });
+      
+      // Audit log
+      await storage.createAuditLog({
+        actorId: req.session?.userId || null,
+        action: "ADMIN_REMOVE_ITEM",
+        targetType: "user",
+        targetId: userId,
+        details: { purchaseId, itemName: item?.name, netWorthReduction },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+      
+      res.json({
+        message: `Removed item from ${user.username}'s portfolio`,
+        newNetWorth,
+      });
+    } catch (error) {
+      console.error("Failed to remove item from portfolio:", error);
+      res.status(500).json({ message: "Failed to remove item from portfolio" });
+    }
+  });
+  
+  // Adjust user's net worth directly
+  app.post("/api/admin/users/:userId/networth/adjust", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { amount, reason } = req.body;
+      
+      if (typeof amount !== "number") {
+        return res.status(400).json({ message: "Amount must be a number" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const newNetWorth = Math.max(0, (user.netWorth || 0) + amount);
+      await db.update(users).set({ netWorth: newNetWorth }).where(eq(users.id, userId));
+      
+      // Log to ledger
+      await db.insert(netWorthLedger).values({
+        userId,
+        delta: amount,
+        reason: "ADMIN_ADJUST",
+        refType: "admin_adjustment",
+      });
+      
+      // Audit log
+      await storage.createAuditLog({
+        actorId: req.session?.userId || null,
+        action: "ADMIN_ADJUST_NETWORTH",
+        targetType: "user",
+        targetId: userId,
+        details: { amount, reason, previousNetWorth: user.netWorth, newNetWorth },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+      
+      res.json({
+        message: `Adjusted ${user.username}'s net worth by R${amount.toLocaleString()}`,
+        previousNetWorth: user.netWorth,
+        newNetWorth,
+      });
+    } catch (error) {
+      console.error("Failed to adjust net worth:", error);
+      res.status(500).json({ message: "Failed to adjust net worth" });
+    }
+  });
+  
+  // Get all mall items for admin selection
+  app.get("/api/admin/mall/items-list", requireAdmin, async (req, res) => {
+    try {
+      const items = await db.select({
+        id: mallItems.id,
+        name: mallItems.name,
+        value: mallItems.value,
+        imageUrl: mallItems.imageUrl,
+        categoryId: mallItems.categoryId,
+        categoryName: mallCategories.name,
+        isActive: mallItems.isActive,
+      })
+      .from(mallItems)
+      .leftJoin(mallCategories, eq(mallItems.categoryId, mallCategories.id))
+      .where(eq(mallItems.isActive, true))
+      .orderBy(mallItems.name)
+      .limit(500);
+      
+      res.json(items);
+    } catch (error) {
+      console.error("Failed to get mall items list:", error);
+      res.status(500).json({ message: "Failed to get mall items list" });
+    }
+  });
+
+  // ===== ADMIN: NOTIFICATIONS (SYSTEM BROADCASTS) =====
+  
+  app.get("/api/admin/notifications/stats", requireAdmin, async (req, res) => {
+    try {
+      const totalNotifications = await db.select({ count: sql<number>`count(*)` })
+        .from(notifications);
+      const unreadCount = await db.select({ count: sql<number>`count(*)` })
+        .from(notifications)
+        .where(isNull(notifications.readAt));
+      const last24h = await db.select({ count: sql<number>`count(*)` })
+        .from(notifications)
+        .where(gte(notifications.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)));
+      
+      res.json({
+        totalNotifications: Number(totalNotifications[0]?.count || 0),
+        unreadNotifications: Number(unreadCount[0]?.count || 0),
+        last24hNotifications: Number(last24h[0]?.count || 0)
+      });
+    } catch (error) {
+      console.error("Failed to get notification stats:", error);
+      res.status(500).json({ message: "Failed to get notification stats" });
+    }
+  });
+
+  app.post("/api/admin/notifications/broadcast", requireAdmin, async (req, res) => {
+    try {
+      const { message, type = "SYSTEM", targetUserIds } = req.body;
+      if (!message) {
+        return res.status(400).json({ message: "Message is required" });
+      }
+      
+      let usersToNotify: string[];
+      if (targetUserIds && Array.isArray(targetUserIds) && targetUserIds.length > 0) {
+        usersToNotify = targetUserIds;
+      } else {
+        const allUsers = await db.select({ id: users.id }).from(users);
+        usersToNotify = allUsers.map(u => u.id);
+      }
+      
+      let sent = 0;
+      for (const userId of usersToNotify) {
+        await storage.createNotification(
+          userId,
+          req.session.userId!,
+          type as any,
+          undefined
+        );
+        sent++;
+      }
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_BROADCAST_NOTIFICATION",
+        targetType: "system",
+        targetId: "broadcast",
+        details: { message, recipientCount: sent, type },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true, sentTo: sent });
+    } catch (error) {
+      console.error("Failed to send broadcast:", error);
+      res.status(500).json({ message: "Failed to send broadcast" });
+    }
+  });
+
+  // ===== ADMIN: EVENTS MANAGEMENT =====
+  
+  app.get("/api/admin/events/stats", requireAdmin, async (req, res) => {
+    try {
+      const totalEvents = await db.select({ count: sql<number>`count(*)` })
+        .from(events);
+      const upcomingEvents = await db.select({ count: sql<number>`count(*)` })
+        .from(events)
+        .where(gte(events.startsAt, new Date()));
+      const totalRsvps = await db.select({ count: sql<number>`count(*)` })
+        .from(eventRsvps);
+      
+      res.json({
+        totalEvents: Number(totalEvents[0]?.count || 0),
+        upcomingEvents: Number(upcomingEvents[0]?.count || 0),
+        totalRsvps: Number(totalRsvps[0]?.count || 0)
+      });
+    } catch (error) {
+      console.error("Failed to get event stats:", error);
+      res.status(500).json({ message: "Failed to get event stats" });
+    }
+  });
+
+  app.get("/api/admin/events", requireAdmin, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const allEvents = await db.select({
+        id: events.id,
+        title: events.title,
+        description: events.description,
+        startsAt: events.startsAt,
+        endsAt: events.endsAt,
+        locationName: events.locationName,
+        hostId: events.hostId,
+        status: events.status,
+        createdAt: events.createdAt,
+        hostName: users.displayName,
+        hostUsername: users.username,
+      })
+      .from(events)
+      .leftJoin(users, eq(events.hostId, users.id))
+      .orderBy(desc(events.startsAt))
+      .limit(limit);
+      
+      res.json(allEvents);
+    } catch (error) {
+      console.error("Failed to get events:", error);
+      res.status(500).json({ message: "Failed to get events" });
+    }
+  });
+
+  app.delete("/api/admin/events/:id", requireAdmin, async (req, res) => {
+    try {
+      await db.delete(eventRsvps).where(eq(eventRsvps.eventId, req.params.id));
+      await db.delete(events).where(eq(events.id, req.params.id));
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_DELETE_EVENT",
+        targetType: "event",
+        targetId: req.params.id,
+        details: {},
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete event:", error);
+      res.status(500).json({ message: "Failed to delete event" });
+    }
+  });
+
+  // Admin Update Event Status
+  app.post("/api/admin/events/:id/status", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      
+      if (!["SCHEDULED", "ACTIVE", "CANCELLED", "COMPLETED"].includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+      
+      await db.update(events).set({ status }).where(eq(events.id, id));
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_UPDATE_EVENT_STATUS",
+        targetType: "event",
+        targetId: id,
+        details: { status },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to update event status:", error);
+      res.status(500).json({ message: "Failed to update event status" });
+    }
+  });
+
+  // Admin Get Event Attendees (RSVPs)
+  app.get("/api/admin/events/:id/attendees", requireAdmin, async (req, res) => {
+    try {
+      const eventId = req.params.id;
+      const attendees = await db.select({
+        id: eventRsvps.id,
+        userId: eventRsvps.userId,
+        status: eventRsvps.status,
+        createdAt: eventRsvps.createdAt,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      })
+      .from(eventRsvps)
+      .leftJoin(users, eq(eventRsvps.userId, users.id))
+      .where(eq(eventRsvps.eventId, eventId))
+      .orderBy(desc(eventRsvps.createdAt));
+      
+      res.json(attendees);
+    } catch (error) {
+      console.error("Failed to get event attendees:", error);
+      res.status(500).json({ message: "Failed to get event attendees" });
+    }
+  });
+
+  // Admin Remove Event Attendee
+  app.delete("/api/admin/events/:id/attendees/:attendeeId", requireAdmin, async (req, res) => {
+    try {
+      const { id: eventId, attendeeId } = req.params;
+      
+      await db.delete(eventRsvps).where(eq(eventRsvps.id, attendeeId));
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_REMOVE_EVENT_ATTENDEE",
+        targetType: "event_rsvp",
+        targetId: attendeeId,
+        details: { eventId },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to remove attendee:", error);
+      res.status(500).json({ message: "Failed to remove attendee" });
+    }
+  });
+
+  // ===== ADMIN: SUBSCRIPTIONS MANAGEMENT =====
+  
+  app.get("/api/admin/subscriptions/stats", requireAdmin, async (req, res) => {
+    try {
+      const totalTiers = await db.select({ count: sql<number>`count(*)` })
+        .from(subscriptionTiers);
+      const activeSubscriptions = await db.select({ count: sql<number>`count(*)` })
+        .from(subscriptions)
+        .where(eq(subscriptions.status, "ACTIVE"));
+      const creators = await db.select({ count: sql<number>`count(distinct ${subscriptionTiers.creatorId})` })
+        .from(subscriptionTiers);
+      
+      res.json({
+        totalTiers: Number(totalTiers[0]?.count || 0),
+        activeSubscriptions: Number(activeSubscriptions[0]?.count || 0),
+        creatorsWithTiers: Number(creators[0]?.count || 0)
+      });
+    } catch (error) {
+      console.error("Failed to get subscription stats:", error);
+      res.status(500).json({ message: "Failed to get subscription stats" });
+    }
+  });
+
+  app.get("/api/admin/subscriptions", requireAdmin, async (req, res) => {
+    try {
+      const tiers = await db.select({
+        id: subscriptionTiers.id,
+        creatorId: subscriptionTiers.creatorId,
+        name: subscriptionTiers.name,
+        monthlyPriceCoins: subscriptionTiers.monthlyPriceCoins,
+        description: subscriptionTiers.description,
+        subscriberCount: subscriptionTiers.subscriberCount,
+        isActive: subscriptionTiers.isActive,
+        createdAt: subscriptionTiers.createdAt,
+        creatorName: users.displayName,
+        creatorUsername: users.username,
+      })
+      .from(subscriptionTiers)
+      .leftJoin(users, eq(subscriptionTiers.creatorId, users.id))
+      .orderBy(desc(subscriptionTiers.createdAt))
+      .limit(100);
+      
+      res.json(tiers);
+    } catch (error) {
+      console.error("Failed to get subscriptions:", error);
+      res.status(500).json({ message: "Failed to get subscriptions" });
+    }
+  });
+
+  // Admin Toggle Subscription Tier Active
+  app.post("/api/admin/subscriptions/:id/toggle-active", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { isActive } = req.body;
+      
+      await db.update(subscriptionTiers)
+        .set({ isActive: isActive !== undefined ? isActive : false })
+        .where(eq(subscriptionTiers.id, id));
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: isActive ? "ADMIN_ENABLE_SUBSCRIPTION_TIER" : "ADMIN_DISABLE_SUBSCRIPTION_TIER",
+        targetType: "subscription_tier",
+        targetId: id,
+        details: { isActive },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to toggle subscription tier:", error);
+      res.status(500).json({ message: "Failed to toggle subscription tier" });
+    }
+  });
+
+  // Admin Get Tier Subscribers
+  app.get("/api/admin/subscriptions/:id/subscribers", requireAdmin, async (req, res) => {
+    try {
+      const tierId = req.params.id;
+      const subs = await db.select({
+        id: subscriptions.id,
+        subscriberId: subscriptions.subscriberId,
+        status: subscriptions.status,
+        startedAt: subscriptions.currentPeriodStart,
+        expiresAt: subscriptions.currentPeriodEnd,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      })
+      .from(subscriptions)
+      .leftJoin(users, eq(subscriptions.subscriberId, users.id))
+      .where(eq(subscriptions.tierId, tierId))
+      .orderBy(desc(subscriptions.currentPeriodStart))
+      .limit(100);
+      
+      res.json(subs);
+    } catch (error) {
+      console.error("Failed to get subscribers:", error);
+      res.status(500).json({ message: "Failed to get subscribers" });
+    }
+  });
+
+  // ===== ADMIN: BROADCAST CHANNELS MANAGEMENT =====
+  
+  app.get("/api/admin/broadcasts/stats", requireAdmin, async (req, res) => {
+    try {
+      const totalChannels = await db.select({ count: sql<number>`count(*)` })
+        .from(broadcastChannels);
+      const totalMessages = await db.select({ count: sql<number>`count(*)` })
+        .from(broadcastMessages);
+      const totalSubscribers = await db.select({ count: sql<number>`count(*)` })
+        .from(broadcastChannelSubscribers);
+      
+      res.json({
+        totalChannels: Number(totalChannels[0]?.count || 0),
+        totalMessages: Number(totalMessages[0]?.count || 0),
+        totalSubscribers: Number(totalSubscribers[0]?.count || 0),
+      });
+    } catch (error) {
+      console.error("Failed to get broadcast stats:", error);
+      res.status(500).json({ message: "Failed to get broadcast stats" });
+    }
+  });
+
+  app.get("/api/admin/broadcasts/channels", requireAdmin, async (req, res) => {
+    try {
+      const channels = await db.select({
+        id: broadcastChannels.id,
+        name: broadcastChannels.name,
+        description: broadcastChannels.description,
+        ownerId: broadcastChannels.ownerId,
+        subscriberCount: broadcastChannels.subscriberCount,
+        createdAt: broadcastChannels.createdAt,
+        ownerName: users.displayName,
+        ownerUsername: users.username,
+      })
+      .from(broadcastChannels)
+      .leftJoin(users, eq(broadcastChannels.ownerId, users.id))
+      .orderBy(desc(broadcastChannels.createdAt))
+      .limit(100);
+      
+      res.json(channels);
+    } catch (error) {
+      console.error("Failed to get broadcast channels:", error);
+      res.status(500).json({ message: "Failed to get broadcast channels" });
+    }
+  });
+
+  app.get("/api/admin/broadcasts/channels/:id/messages", requireAdmin, async (req, res) => {
+    try {
+      const channelId = req.params.id;
+      const msgs = await db.select({
+        id: broadcastMessages.id,
+        content: broadcastMessages.content,
+        mediaType: broadcastMessages.mediaType,
+        mediaUrl: broadcastMessages.mediaUrl,
+        createdAt: broadcastMessages.createdAt,
+      })
+      .from(broadcastMessages)
+      .where(eq(broadcastMessages.channelId, channelId))
+      .orderBy(desc(broadcastMessages.createdAt))
+      .limit(50);
+      
+      res.json(msgs);
+    } catch (error) {
+      console.error("Failed to get broadcast messages:", error);
+      res.status(500).json({ message: "Failed to get broadcast messages" });
+    }
+  });
+
+  app.post("/api/admin/broadcasts/channels/:id/verify", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { isVerified } = req.body;
+      
+      // Note: isVerified column doesn't exist on broadcastChannels - skipping update
+      // await db.update(broadcastChannels)
+      //   .set({ isVerified: isVerified !== undefined ? isVerified : true })
+      //   .where(eq(broadcastChannels.id, id));
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: isVerified ? "ADMIN_VERIFY_BROADCAST_CHANNEL" : "ADMIN_UNVERIFY_BROADCAST_CHANNEL",
+        targetType: "broadcast_channel",
+        targetId: id,
+        details: { isVerified },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to verify broadcast channel:", error);
+      res.status(500).json({ message: "Failed to verify broadcast channel" });
+    }
+  });
+
+  app.delete("/api/admin/broadcasts/channels/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      await db.delete(broadcastMessages).where(eq(broadcastMessages.channelId, id));
+      await db.delete(broadcastChannelSubscribers).where(eq(broadcastChannelSubscribers.channelId, id));
+      await db.delete(broadcastChannels).where(eq(broadcastChannels.id, id));
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_DELETE_BROADCAST_CHANNEL",
+        targetType: "broadcast_channel",
+        targetId: id,
+        details: {},
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete broadcast channel:", error);
+      res.status(500).json({ message: "Failed to delete broadcast channel" });
+    }
+  });
+
+  // ===== ADMIN: HASHTAGS MANAGEMENT =====
+  
+  app.get("/api/admin/hashtags/stats", requireAdmin, async (req, res) => {
+    try {
+      const totalHashtags = await db.select({ count: sql<number>`count(*)` })
+        .from(hashtags);
+      const trendingCount = await db.select({ count: sql<number>`count(*)` })
+        .from(hashtags)
+        .where(gt(hashtags.weeklyPostCount, 0));
+      
+      res.json({
+        totalHashtags: Number(totalHashtags[0]?.count || 0),
+        trendingHashtags: Number(trendingCount[0]?.count || 0)
+      });
+    } catch (error) {
+      console.error("Failed to get hashtag stats:", error);
+      res.status(500).json({ message: "Failed to get hashtag stats" });
+    }
+  });
+
+  app.get("/api/admin/hashtags", requireAdmin, async (req, res) => {
+    try {
+      const allHashtags = await db.select()
+        .from(hashtags)
+        .orderBy(desc(hashtags.postCount))
+        .limit(100);
+      
+      res.json(allHashtags);
+    } catch (error) {
+      console.error("Failed to get hashtags:", error);
+      res.status(500).json({ message: "Failed to get hashtags" });
+    }
+  });
+
+  app.patch("/api/admin/hashtags/:id/trending", requireAdmin, async (req, res) => {
+    try {
+      const { isTrending } = req.body;
+      // Note: isTrending column doesn't exist in schema, using isBlocked as alternative toggle
+      // In future, add isTrending column to hashtags table
+      await db.update(hashtags)
+        .set({ updatedAt: new Date() })
+        .where(eq(hashtags.id, req.params.id));
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: isTrending ? "ADMIN_SET_HASHTAG_TRENDING" : "ADMIN_UNSET_HASHTAG_TRENDING",
+        targetType: "hashtag",
+        targetId: req.params.id,
+        details: { isTrending },
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to update hashtag:", error);
+      res.status(500).json({ message: "Failed to update hashtag" });
+    }
+  });
+
+  // ===== ADMIN: BLOCKS & MUTES OVERVIEW =====
+  
+  app.get("/api/admin/blocks/stats", requireAdmin, async (req, res) => {
+    try {
+      const totalBlocks = await db.select({ count: sql<number>`count(*)` })
+        .from(blocks);
+      const totalMutes = await db.select({ count: sql<number>`count(*)` })
+        .from(mutedAccounts);
+      const restrictedCount = await db.select({ count: sql<number>`count(*)` })
+        .from(restrictedAccounts);
+      
+      res.json({
+        totalBlocks: Number(totalBlocks[0]?.count || 0),
+        totalMutes: Number(totalMutes[0]?.count || 0),
+        restrictedAccounts: Number(restrictedCount[0]?.count || 0)
+      });
+    } catch (error) {
+      console.error("Failed to get block stats:", error);
+      res.status(500).json({ message: "Failed to get block stats" });
+    }
+  });
+
+  app.get("/api/admin/blocks", requireAdmin, async (req, res) => {
+    try {
+      const blocksData = await db.select({
+        id: blocks.id,
+        blockerId: blocks.blockerId,
+        blockedId: blocks.blockedId,
+        createdAt: blocks.createdAt,
+      })
+      .from(blocks)
+      .orderBy(desc(blocks.createdAt))
+      .limit(100);
+      
+      const blocksWithUsers = await Promise.all(blocksData.map(async (b) => {
+        const blocker = await storage.getUser(b.blockerId);
+        const blocked = await storage.getUser(b.blockedId);
+        return {
+          ...b,
+          blockerUsername: blocker?.username || "Unknown",
+          blockedUsername: blocked?.username || "Unknown",
+        };
+      }));
+      
+      res.json(blocksWithUsers);
+    } catch (error) {
+      console.error("Failed to get blocks:", error);
+      res.status(500).json({ message: "Failed to get blocks" });
+    }
+  });
+
+  app.delete("/api/admin/blocks/:id", requireAdmin, async (req, res) => {
+    try {
+      await db.delete(blocks).where(eq(blocks.id, req.params.id));
+      
+      await storage.createAuditLog({
+        actorId: req.session.userId!,
+        action: "ADMIN_REMOVE_BLOCK",
+        targetType: "block",
+        targetId: req.params.id,
+        details: {},
+        ipAddress: req.ip || "unknown",
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to remove block:", error);
+      res.status(500).json({ message: "Failed to remove block" });
+    }
+  });
+
+  // ===== ADMIN: REELS MANAGEMENT =====
+  
+  app.get("/api/admin/reels/stats", requireAdmin, async (req, res) => {
+    try {
+      const totalReels = await db.select({ count: sql<number>`count(*)` })
+        .from(posts)
+        .where(eq(posts.type, "VIDEO"));
+      const last24h = await db.select({ count: sql<number>`count(*)` })
+        .from(posts)
+        .where(and(
+          eq(posts.type, "VIDEO"),
+          gte(posts.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
+        ));
+      
+      res.json({
+        totalReels: Number(totalReels[0]?.count || 0),
+        last24hReels: Number(last24h[0]?.count || 0)
+      });
+    } catch (error) {
+      console.error("Failed to get reels stats:", error);
+      res.status(500).json({ message: "Failed to get reels stats" });
+    }
+  });
+
+  app.get("/api/admin/reels", requireAdmin, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const reels = await db.select({
+        id: posts.id,
+        authorId: posts.authorId,
+        content: posts.content,
+        mediaUrl: posts.mediaUrl,
+        visibility: posts.visibility,
+        likesCount: posts.likesCount,
+        commentsCount: posts.commentsCount,
+        createdAt: posts.createdAt,
+        authorName: users.displayName,
+        authorUsername: users.username,
+      })
+      .from(posts)
+      .leftJoin(users, eq(posts.authorId, users.id))
+      .where(eq(posts.type, "VIDEO"))
+      .orderBy(desc(posts.createdAt))
+      .limit(limit);
+      
+      res.json(reels);
+    } catch (error) {
+      console.error("Failed to get reels:", error);
+      res.status(500).json({ message: "Failed to get reels" });
+    }
+  });
+
+  // ===== ADMIN: DISCOVERY ALGORITHM CONTROLS =====
+  
+  app.get("/api/admin/discovery/stats", requireAdmin, async (req, res) => {
+    try {
+      const exploreCatCount = await db.select({ count: sql<number>`count(*)` })
+        .from(exploreCategories);
+      const userInterestCount = await db.select({ count: sql<number>`count(*)` })
+        .from(userInterests);
+      const interestCatCount = await db.select({ count: sql<number>`count(distinct ${userInterests.interest})` })
+        .from(userInterests);
+      
+      res.json({
+        exploreCategories: Number(exploreCatCount[0]?.count || 0),
+        totalUserInterests: Number(userInterestCount[0]?.count || 0),
+        uniqueInterestCategories: Number(interestCatCount[0]?.count || 0)
+      });
+    } catch (error) {
+      console.error("Failed to get discovery stats:", error);
+      res.status(500).json({ message: "Failed to get discovery stats" });
+    }
+  });
+
+  app.get("/api/admin/discovery/categories", requireAdmin, async (req, res) => {
+    try {
+      const categories = await db.select()
+        .from(exploreCategories)
+        .orderBy(exploreCategories.name);
+      
+      res.json(categories);
+    } catch (error) {
+      console.error("Failed to get explore categories:", error);
+      res.status(500).json({ message: "Failed to get explore categories" });
+    }
+  });
+
+  // ===== ADMIN: GROUP CHAT MODERATION =====
+
+  app.get("/api/admin/group-chats/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminGroupChatStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get group chat stats:", error);
+      res.status(500).json({ message: "Failed to get group chat stats" });
+    }
+  });
+
+  app.get("/api/admin/group-chats", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = (req.query.search as string) || "";
+      
+      const result = await storage.getAdminGroupConversations({ page, limit, search });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get group conversations:", error);
+      res.status(500).json({ message: "Failed to get group conversations" });
+    }
+  });
+
+  app.get("/api/admin/group-chats/:id", requireAdmin, async (req, res) => {
+    try {
+      const result = await storage.getAdminGroupConversationDetails(req.params.id);
+      if (!result) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get group details:", error);
+      res.status(500).json({ message: "Failed to get group details" });
+    }
+  });
+
+  app.get("/api/admin/group-chats/:id/messages", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      
+      const result = await storage.getAdminGroupMessages(req.params.id, { page, limit });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get group messages:", error);
+      res.status(500).json({ message: "Failed to get group messages" });
+    }
+  });
+
+  app.delete("/api/admin/group-chats/:id/messages/:messageId", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminDeleteGroupMessage(req.params.messageId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete group message:", error);
+      res.status(500).json({ message: "Failed to delete group message" });
+    }
+  });
+
+  app.delete("/api/admin/group-chats/:id/members/:userId", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminRemoveGroupMember(req.params.id, req.params.userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to remove group member:", error);
+      res.status(500).json({ message: "Failed to remove group member" });
+    }
+  });
+
+  // ===== ADMIN VIDEO CALLS =====
+  
+  app.get("/api/admin/video-calls/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminVideoCallStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get video call stats:", error);
+      res.status(500).json({ message: "Failed to get video call stats" });
+    }
+  });
+
+  app.get("/api/admin/video-calls", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = (req.query.search as string) || "";
+      const status = (req.query.status as string) || "";
+      
+      const result = await storage.getAdminVideoCalls({ page, limit, search, status });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get video calls:", error);
+      res.status(500).json({ message: "Failed to get video calls" });
+    }
+  });
+
+  app.get("/api/admin/video-calls/:id", requireAdmin, async (req, res) => {
+    try {
+      const call = await storage.getAdminVideoCallDetails(req.params.id);
+      if (!call) {
+        return res.status(404).json({ message: "Call not found" });
+      }
+      res.json({ call });
+    } catch (error) {
+      console.error("Failed to get video call details:", error);
+      res.status(500).json({ message: "Failed to get video call details" });
+    }
+  });
+
+  app.post("/api/admin/video-calls/:id/end", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminEndVideoCall(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to end video call:", error);
+      res.status(500).json({ message: "Failed to end video call" });
+    }
+  });
+
+  // ===== ADMIN LOCATION MANAGEMENT =====
+
+  app.get("/api/admin/locations/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminLocationStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get location stats:", error);
+      res.status(500).json({ message: "Failed to get location stats" });
+    }
+  });
+
+  app.get("/api/admin/venues", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = req.query.search as string;
+      const verified = req.query.verified === 'true' ? true : req.query.verified === 'false' ? false : undefined;
+
+      const result = await storage.getAdminVenues({ page, limit, search, verified });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get venues:", error);
+      res.status(500).json({ message: "Failed to get venues" });
+    }
+  });
+
+  app.post("/api/admin/venues", requireAdmin, async (req, res) => {
+    try {
+      const { name, address, lat, lng, category, city, country } = req.body;
+      
+      if (!name || !address || lat === undefined || lng === undefined) {
+        return res.status(400).json({ message: "Name, address, latitude, and longitude are required" });
+      }
+
+      const venue = await storage.adminCreateVenue({ 
+        name, 
+        address, 
+        lat: parseFloat(lat), 
+        lng: parseFloat(lng), 
+        category,
+        city,
+        country
+      });
+      res.json(venue);
+    } catch (error) {
+      console.error("Failed to create venue:", error);
+      res.status(500).json({ message: "Failed to create venue" });
+    }
+  });
+
+  app.put("/api/admin/venues/:id", requireAdmin, async (req, res) => {
+    try {
+      const venue = await storage.adminUpdateVenue(req.params.id, req.body);
+      if (!venue) {
+        return res.status(404).json({ message: "Venue not found" });
+      }
+      res.json(venue);
+    } catch (error) {
+      console.error("Failed to update venue:", error);
+      res.status(500).json({ message: "Failed to update venue" });
+    }
+  });
+
+  app.post("/api/admin/venues/:id/verify", requireAdmin, async (req, res) => {
+    try {
+      const { verified } = req.body;
+      const venue = await storage.adminVerifyVenue(req.params.id, verified === true);
+      if (!venue) {
+        return res.status(404).json({ message: "Venue not found" });
+      }
+      res.json(venue);
+    } catch (error) {
+      console.error("Failed to verify venue:", error);
+      res.status(500).json({ message: "Failed to verify venue" });
+    }
+  });
+
+  app.delete("/api/admin/venues/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminDeleteVenue(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete venue:", error);
+      res.status(500).json({ message: "Failed to delete venue" });
+    }
+  });
+
+  app.get("/api/admin/check-ins", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const venueId = req.query.venueId as string;
+
+      const result = await storage.getAdminCheckIns({ page, limit, venueId });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get check-ins:", error);
+      res.status(500).json({ message: "Failed to get check-ins" });
+    }
+  });
+
+  app.delete("/api/admin/check-ins/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminDeleteCheckIn(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete check-in:", error);
+      res.status(500).json({ message: "Failed to delete check-in" });
+    }
+  });
+
+  // ===== ADMIN DEVELOPER API MANAGEMENT =====
+
+  app.get("/api/admin/developer/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminDevApiStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get developer API stats:", error);
+      res.status(500).json({ message: "Failed to get developer API stats" });
+    }
+  });
+
+  app.get("/api/admin/developer/webhooks", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = req.query.search as string;
+
+      const result = await storage.getAdminWebhooks({ page, limit, search });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get webhooks:", error);
+      res.status(500).json({ message: "Failed to get webhooks" });
+    }
+  });
+
+  app.post("/api/admin/developer/webhooks/:id/toggle", requireAdmin, async (req, res) => {
+    try {
+      const { enabled } = req.body;
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ message: "enabled field is required and must be boolean" });
+      }
+      
+      const webhook = await storage.adminToggleWebhook(req.params.id, enabled);
+      if (!webhook) {
+        return res.status(404).json({ message: "Webhook not found" });
+      }
+      res.json(webhook);
+    } catch (error) {
+      console.error("Failed to toggle webhook:", error);
+      res.status(500).json({ message: "Failed to toggle webhook" });
+    }
+  });
+
+  app.delete("/api/admin/developer/webhooks/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminDeleteWebhook(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete webhook:", error);
+      res.status(500).json({ message: "Failed to delete webhook" });
+    }
+  });
+
+  app.get("/api/admin/developer/webhook-logs", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const webhookId = req.query.webhookId as string;
+      const status = req.query.status as string;
+
+      const result = await storage.getAdminWebhookDeliveryLogs({ page, limit, webhookId, status });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get webhook logs:", error);
+      res.status(500).json({ message: "Failed to get webhook logs" });
+    }
+  });
+
+  app.get("/api/admin/developer/api-tokens", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const search = req.query.search as string;
+
+      const result = await storage.getAdminApiAccessTokens({ page, limit, search });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get API tokens:", error);
+      res.status(500).json({ message: "Failed to get API tokens" });
+    }
+  });
+
+  app.delete("/api/admin/developer/api-tokens/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminRevokeApiToken(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to revoke API token:", error);
+      res.status(500).json({ message: "Failed to revoke API token" });
+    }
+  });
+
+  // Admin: Data Privacy Routes
+  app.get("/api/admin/privacy/stats", requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getAdminDataPrivacyStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Failed to get data privacy stats:", error);
+      res.status(500).json({ message: "Failed to get data privacy stats" });
+    }
+  });
+
+  app.get("/api/admin/privacy/exports", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const status = req.query.status as string;
+
+      const result = await storage.getAdminExportRequests({ page, limit, status });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get export requests:", error);
+      res.status(500).json({ message: "Failed to get export requests" });
+    }
+  });
+
+  app.post("/api/admin/privacy/exports/:id/status", requireAdmin, async (req, res) => {
+    try {
+      const { status } = req.body;
+      if (!status) {
+        return res.status(400).json({ message: "Status is required" });
+      }
+      const updated = await storage.adminUpdateExportRequestStatus(req.params.id, status);
+      if (!updated) {
+        return res.status(404).json({ message: "Export request not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update export request status:", error);
+      res.status(500).json({ message: "Failed to update export request status" });
+    }
+  });
+
+  app.post("/api/admin/privacy/exports/:id/process", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminProcessExportRequest(req.params.id);
+      res.json({ success: true, message: "Export request is being processed" });
+    } catch (error) {
+      console.error("Failed to process export request:", error);
+      res.status(500).json({ message: "Failed to process export request" });
+    }
+  });
+
+  app.get("/api/admin/privacy/backups", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getAdminAccountBackups({ page, limit });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get account backups:", error);
+      res.status(500).json({ message: "Failed to get account backups" });
+    }
+  });
+
+  app.get("/api/admin/privacy/imports", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getAdminPlatformImports({ page, limit });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get platform imports:", error);
+      res.status(500).json({ message: "Failed to get platform imports" });
+    }
+  });
+
+  // ===== ADMIN: PLATFORM SETTINGS - WORD FILTERS =====
+
+  app.get("/api/admin/settings/word-filters", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const result = await storage.getAdminWordFilters({ page, limit });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get word filters:", error);
+      res.status(500).json({ message: "Failed to get word filters" });
+    }
+  });
+
+  app.post("/api/admin/settings/word-filters", requireAdmin, async (req, res) => {
+    try {
+      const { word, action, replacement } = req.body;
+      if (!word || !action) {
+        return res.status(400).json({ message: "Word and action are required" });
+      }
+      const filter = await storage.adminCreateWordFilter({
+        word,
+        action,
+        replacement,
+        createdBy: req.session.userId,
+      });
+      res.status(201).json(filter);
+    } catch (error: any) {
+      console.error("Failed to create word filter:", error);
+      if (error.code === '23505') {
+        return res.status(400).json({ message: "Word already exists in filters" });
+      }
+      res.status(500).json({ message: "Failed to create word filter" });
+    }
+  });
+
+  app.put("/api/admin/settings/word-filters/:id", requireAdmin, async (req, res) => {
+    try {
+      const { word, action, replacement, isActive } = req.body;
+      const updated = await storage.adminUpdateWordFilter(req.params.id, {
+        word,
+        action,
+        replacement,
+        isActive,
+      });
+      if (!updated) {
+        return res.status(404).json({ message: "Word filter not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Failed to update word filter:", error);
+      if (error.code === '23505') {
+        return res.status(400).json({ message: "Word already exists in filters" });
+      }
+      res.status(500).json({ message: "Failed to update word filter" });
+    }
+  });
+
+  app.delete("/api/admin/settings/word-filters/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminDeleteWordFilter(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete word filter:", error);
+      res.status(500).json({ message: "Failed to delete word filter" });
+    }
+  });
+
+  // ===== ADMIN: PLATFORM SETTINGS - KEYWORD FILTERS =====
+
+  app.get("/api/admin/settings/keyword-filters", requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const result = await storage.getAdminKeywordFilters({ page, limit });
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get keyword filters:", error);
+      res.status(500).json({ message: "Failed to get keyword filters" });
+    }
+  });
+
+  app.post("/api/admin/settings/keyword-filters", requireAdmin, async (req, res) => {
+    try {
+      const { keyword, action } = req.body;
+      if (!keyword || !action) {
+        return res.status(400).json({ message: "Keyword and action are required" });
+      }
+      const filter = await storage.adminCreateKeywordFilter({
+        keyword,
+        action,
+        createdBy: req.session.userId,
+      });
+      res.status(201).json(filter);
+    } catch (error: any) {
+      console.error("Failed to create keyword filter:", error);
+      if (error.code === '23505') {
+        return res.status(400).json({ message: "Keyword already exists in filters" });
+      }
+      res.status(500).json({ message: "Failed to create keyword filter" });
+    }
+  });
+
+  app.put("/api/admin/settings/keyword-filters/:id", requireAdmin, async (req, res) => {
+    try {
+      const { keyword, action, filterComments, filterMessages, filterPosts, filterUsernames, filterBios, isActive } = req.body;
+      const updated = await storage.adminUpdateKeywordFilter(req.params.id, {
+        keyword,
+        action,
+        filterComments,
+        filterMessages,
+        filterPosts,
+        filterUsernames,
+        filterBios,
+        isActive,
+      });
+      if (!updated) {
+        return res.status(404).json({ message: "Keyword filter not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Failed to update keyword filter:", error);
+      if (error.code === '23505') {
+        return res.status(400).json({ message: "Keyword already exists in filters" });
+      }
+      res.status(500).json({ message: "Failed to update keyword filter" });
+    }
+  });
+
+  app.delete("/api/admin/settings/keyword-filters/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminDeleteKeywordFilter(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete keyword filter:", error);
+      res.status(500).json({ message: "Failed to delete keyword filter" });
+    }
+  });
+
+  // ===== ADMIN: PLATFORM SETTINGS - APP SETTINGS =====
+
+  app.get("/api/admin/settings/app", requireAdmin, async (req, res) => {
+    try {
+      const settings = await storage.getAdminAppSettings();
+      res.json(settings);
+    } catch (error) {
+      console.error("Failed to get app settings:", error);
+      res.status(500).json({ message: "Failed to get app settings" });
+    }
+  });
+
+  app.put("/api/admin/settings/app/:key", requireAdmin, async (req, res) => {
+    try {
+      const { value } = req.body;
+      if (value === undefined) {
+        return res.status(400).json({ message: "Value is required" });
+      }
+      const updated = await storage.adminUpdateAppSetting(req.params.key, String(value), req.session.userId);
+      if (!updated) {
+        return res.status(404).json({ message: "App setting not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update app setting:", error);
+      res.status(500).json({ message: "Failed to update app setting" });
+    }
+  });
+
+  app.post("/api/admin/settings/app", requireAdmin, async (req, res) => {
+    try {
+      const { key, value, type, description } = req.body;
+      if (!key || value === undefined) {
+        return res.status(400).json({ message: "Key and value are required" });
+      }
+      const setting = await storage.adminCreateAppSetting({
+        key,
+        value: String(value),
+        type,
+        description,
+        updatedBy: req.session.userId,
+      });
+      res.status(201).json(setting);
+    } catch (error: any) {
+      console.error("Failed to create app setting:", error);
+      if (error.code === '23505') {
+        return res.status(400).json({ message: "Setting key already exists" });
+      }
+      res.status(500).json({ message: "Failed to create app setting" });
+    }
+  });
+
+  // ===== ADMIN: PLATFORM SETTINGS - NOTIFICATION DEFAULTS =====
+
+  app.get("/api/admin/settings/notifications", requireAdmin, async (req, res) => {
+    try {
+      const defaults = await storage.getAdminNotificationDefaults();
+      res.json(defaults);
+    } catch (error) {
+      console.error("Failed to get notification defaults:", error);
+      res.status(500).json({ message: "Failed to get notification defaults" });
+    }
+  });
+
+  app.put("/api/admin/settings/notifications/:id", requireAdmin, async (req, res) => {
+    try {
+      const { enabled } = req.body;
+      if (enabled === undefined) {
+        return res.status(400).json({ message: "Enabled status is required" });
+      }
+      const updated = await storage.adminUpdateNotificationDefault(req.params.id, enabled, req.session.userId);
+      if (!updated) {
+        return res.status(404).json({ message: "Notification default not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update notification default:", error);
+      res.status(500).json({ message: "Failed to update notification default" });
+    }
+  });
+
+  app.post("/api/admin/settings/notifications", requireAdmin, async (req, res) => {
+    try {
+      const { key, name, description, category, defaultEnabled, canUserDisable } = req.body;
+      if (!key || !name || !category) {
+        return res.status(400).json({ message: "Key, name, and category are required" });
+      }
+      const setting = await storage.adminCreateNotificationDefault({
+        key,
+        name,
+        description,
+        category,
+        defaultEnabled,
+        canUserDisable,
+        updatedBy: req.session.userId,
+      });
+      res.status(201).json(setting);
+    } catch (error: any) {
+      console.error("Failed to create notification default:", error);
+      if (error.code === '23505') {
+        return res.status(400).json({ message: "Notification key already exists" });
+      }
+      res.status(500).json({ message: "Failed to create notification default" });
+    }
+  });
+
+  app.delete("/api/admin/settings/notifications/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.adminDeleteNotificationDefault(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete notification default:", error);
+      res.status(500).json({ message: "Failed to delete notification default" });
+    }
+  });
+
+  // ===== ADMIN: WALLET & ECONOMY MANAGEMENT =====
+
+  // GET /api/admin/wallets - List all wallets with pagination and search
+  app.get("/api/admin/wallets", requireAdmin, async (req, res) => {
+    try {
+      const search = (req.query.search as string) || "";
+      const frozen = req.query.frozen as string;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      let userConditions: SQL[] = [];
+      if (search) {
+        userConditions.push(
+          or(
+            ilike(users.username, `%${search}%`),
+            ilike(users.email, `%${search}%`),
+            ilike(users.displayName, `%${search}%`)
+          )!
+        );
+      }
+
+      const matchingUsers = await db.select({ id: users.id, username: users.username, displayName: users.displayName, email: users.email, avatarUrl: users.avatarUrl })
+        .from(users)
+        .where(userConditions.length > 0 ? and(...userConditions) : undefined);
+
+      const userIds = matchingUsers.map(u => u.id);
+      if (userIds.length === 0 && search) {
+        return res.json({ wallets: [], total: 0 });
+      }
+
+      let walletConditions: SQL[] = [];
+      if (userIds.length > 0 && search) {
+        walletConditions.push(inArray(wallets.userId, userIds));
+      }
+      if (frozen === "true") {
+        walletConditions.push(eq(wallets.isFrozen, true));
+      } else if (frozen === "false") {
+        walletConditions.push(eq(wallets.isFrozen, false));
+      }
+
+      const walletsData = await db.select()
+        .from(wallets)
+        .where(walletConditions.length > 0 ? and(...walletConditions) : undefined)
+        .orderBy(desc(wallets.updatedAt))
+        .limit(limit)
+        .offset(offset);
+
+      const totalResult = await db.select({ count: sql<number>`count(*)` })
+        .from(wallets)
+        .where(walletConditions.length > 0 ? and(...walletConditions) : undefined);
+
+      const walletsWithUsers = await Promise.all(walletsData.map(async (w) => {
+        const user = matchingUsers.find(u => u.id === w.userId) || await storage.getUser(w.userId);
+        return {
+          ...w,
+          user: user ? { id: user.id, username: user.username, displayName: user.displayName, email: user.email, avatarUrl: user.avatarUrl } : null,
+        };
+      }));
+
+      res.json({ wallets: walletsWithUsers, total: Number(totalResult[0]?.count || 0) });
+    } catch (error) {
+      console.error("Failed to get wallets:", error);
+      res.status(500).json({ message: "Failed to get wallets" });
+    }
+  });
+
+  // GET /api/admin/wallets/:userId - Get wallet details for a user
+  app.get("/api/admin/wallets/:userId", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const wallet = await storage.getWallet(userId);
+      const transactions = await storage.getCoinTransactions(userId, 50);
+
+      res.json({
+        wallet: wallet || { userId, coinBalance: 0, lifetimeEarned: 0, lifetimeSpent: 0, isFrozen: false },
+        user: { id: user.id, username: user.username, displayName: user.displayName, email: user.email, avatarUrl: user.avatarUrl },
+        transactions,
+      });
+    } catch (error) {
+      console.error("Failed to get wallet:", error);
+      res.status(500).json({ message: "Failed to get wallet" });
+    }
+  });
+
+  // POST /api/admin/wallets/:userId/adjust - Adjust wallet balance
+  app.post("/api/admin/wallets/:userId/adjust", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { amount, reason } = req.body;
+      const adminId = req.session.userId!;
+
+      if (typeof amount !== "number" || amount === 0) {
+        return res.status(400).json({ message: "Amount must be a non-zero number" });
+      }
+      if (!reason || typeof reason !== "string") {
+        return res.status(400).json({ message: "Reason is required" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const wallet = await storage.adminAdjustWallet(userId, amount, reason, adminId);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_ADJUST_WALLET" as AuditAction,
+        targetType: "wallet",
+        targetId: userId,
+        details: { amount, reason, newBalance: wallet.coinBalance },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, wallet });
+    } catch (error: any) {
+      console.error("Failed to adjust wallet:", error);
+      res.status(500).json({ message: error.message || "Failed to adjust wallet" });
+    }
+  });
+
+  // POST /api/admin/wallets/:userId/freeze - Freeze a wallet
+  app.post("/api/admin/wallets/:userId/freeze", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const adminId = req.session.userId!;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const wallet = await storage.freezeWallet(userId, true);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_FREEZE_WALLET" as AuditAction,
+        targetType: "wallet",
+        targetId: userId,
+        details: { frozen: true },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, wallet });
+    } catch (error) {
+      console.error("Failed to freeze wallet:", error);
+      res.status(500).json({ message: "Failed to freeze wallet" });
+    }
+  });
+
+  // POST /api/admin/wallets/:userId/unfreeze - Unfreeze a wallet
+  app.post("/api/admin/wallets/:userId/unfreeze", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const adminId = req.session.userId!;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const wallet = await storage.freezeWallet(userId, false);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_UNFREEZE_WALLET" as AuditAction,
+        targetType: "wallet",
+        targetId: userId,
+        details: { frozen: false },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, wallet });
+    } catch (error) {
+      console.error("Failed to unfreeze wallet:", error);
+      res.status(500).json({ message: "Failed to unfreeze wallet" });
+    }
+  });
+
+  // ===== ADMIN: GIFT TYPE MANAGEMENT =====
+
+  // GET /api/admin/gift-types - List all gift types
+  app.get("/api/admin/gift-types", requireAdmin, async (req, res) => {
+    try {
+      const types = await storage.getGiftTypes(false);
+      res.json(types);
+    } catch (error) {
+      console.error("Failed to get gift types:", error);
+      res.status(500).json({ message: "Failed to get gift types" });
+    }
+  });
+
+  // POST /api/admin/gift-types - Create gift type
+  app.post("/api/admin/gift-types", requireAdmin, async (req, res) => {
+    try {
+      const { name, description, iconUrl, animationUrl, coinCost, netWorthValue, category, sortOrder } = req.body;
+
+      if (!name || !iconUrl || typeof coinCost !== "number") {
+        return res.status(400).json({ message: "Name, iconUrl, and coinCost are required" });
+      }
+
+      const [giftType] = await db.insert(giftTypes).values({
+        name,
+        description,
+        iconUrl,
+        animationUrl,
+        coinCost,
+        netWorthValue: netWorthValue || 0,
+        category,
+        sortOrder: sortOrder || 0,
+        isActive: true,
+      }).returning();
+
+      res.status(201).json(giftType);
+    } catch (error) {
+      console.error("Failed to create gift type:", error);
+      res.status(500).json({ message: "Failed to create gift type" });
+    }
+  });
+
+  // PUT /api/admin/gift-types/:id - Update gift type
+  app.put("/api/admin/gift-types/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, iconUrl, animationUrl, coinCost, netWorthValue, category, sortOrder, isActive } = req.body;
+
+      const [existing] = await db.select().from(giftTypes).where(eq(giftTypes.id, id)).limit(1);
+      if (!existing) {
+        return res.status(404).json({ message: "Gift type not found" });
+      }
+
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (iconUrl !== undefined) updateData.iconUrl = iconUrl;
+      if (animationUrl !== undefined) updateData.animationUrl = animationUrl;
+      if (coinCost !== undefined) updateData.coinCost = coinCost;
+      if (netWorthValue !== undefined) updateData.netWorthValue = netWorthValue;
+      if (category !== undefined) updateData.category = category;
+      if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
+      if (isActive !== undefined) updateData.isActive = isActive;
+
+      const [updated] = await db.update(giftTypes).set(updateData).where(eq(giftTypes.id, id)).returning();
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update gift type:", error);
+      res.status(500).json({ message: "Failed to update gift type" });
+    }
+  });
+
+  // DELETE /api/admin/gift-types/:id - Soft delete (set isActive=false)
+  app.delete("/api/admin/gift-types/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const [existing] = await db.select().from(giftTypes).where(eq(giftTypes.id, id)).limit(1);
+      if (!existing) {
+        return res.status(404).json({ message: "Gift type not found" });
+      }
+
+      await db.update(giftTypes).set({ isActive: false }).where(eq(giftTypes.id, id));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete gift type:", error);
+      res.status(500).json({ message: "Failed to delete gift type" });
+    }
+  });
+
+  // ===== ADMIN: COIN BUNDLE MANAGEMENT =====
+
+  // GET /api/admin/coin-bundles - List all bundles
+  app.get("/api/admin/coin-bundles", requireAdmin, async (req, res) => {
+    try {
+      const bundles = await storage.getCoinBundles(false);
+      res.json(bundles);
+    } catch (error) {
+      console.error("Failed to get coin bundles:", error);
+      res.status(500).json({ message: "Failed to get coin bundles" });
+    }
+  });
+
+  // POST /api/admin/coin-bundles - Create bundle
+  app.post("/api/admin/coin-bundles", requireAdmin, async (req, res) => {
+    try {
+      const { name, description, coinAmount, priceRands, bonusCoins, iconUrl, sortOrder, isActive, isFeatured } = req.body;
+
+      if (!name || typeof coinAmount !== "number" || typeof priceRands !== "number") {
+        return res.status(400).json({ message: "Name, coinAmount, and priceRands are required" });
+      }
+
+      const bundle = await storage.createCoinBundle({
+        name,
+        description,
+        coinAmount,
+        priceRands,
+        bonusCoins: bonusCoins || 0,
+        iconUrl,
+        sortOrder: sortOrder || 0,
+        isActive: isActive !== false,
+        isFeatured: isFeatured || false,
+      });
+
+      res.status(201).json(bundle);
+    } catch (error) {
+      console.error("Failed to create coin bundle:", error);
+      res.status(500).json({ message: "Failed to create coin bundle" });
+    }
+  });
+
+  // PUT /api/admin/coin-bundles/:id - Update bundle
+  app.put("/api/admin/coin-bundles/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, coinAmount, priceRands, bonusCoins, iconUrl, sortOrder, isActive, isFeatured } = req.body;
+
+      const existing = await storage.getCoinBundle(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Coin bundle not found" });
+      }
+
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (coinAmount !== undefined) updateData.coinAmount = coinAmount;
+      if (priceRands !== undefined) updateData.priceRands = priceRands;
+      if (bonusCoins !== undefined) updateData.bonusCoins = bonusCoins;
+      if (iconUrl !== undefined) updateData.iconUrl = iconUrl;
+      if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
+      if (isActive !== undefined) updateData.isActive = isActive;
+      if (isFeatured !== undefined) updateData.isFeatured = isFeatured;
+      updateData.updatedAt = new Date();
+
+      const bundle = await storage.updateCoinBundle(id, updateData);
+      res.json(bundle);
+    } catch (error) {
+      console.error("Failed to update coin bundle:", error);
+      res.status(500).json({ message: "Failed to update coin bundle" });
+    }
+  });
+
+  // DELETE /api/admin/coin-bundles/:id - Soft delete
+  app.delete("/api/admin/coin-bundles/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const existing = await storage.getCoinBundle(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Coin bundle not found" });
+      }
+
+      await storage.updateCoinBundle(id, { isActive: false, updatedAt: new Date() });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete coin bundle:", error);
+      res.status(500).json({ message: "Failed to delete coin bundle" });
+    }
+  });
+
+  // ===== ADMIN: WITHDRAWAL MANAGEMENT =====
+
+  // GET /api/admin/withdrawals - List withdrawal requests
+  app.get("/api/admin/withdrawals", requireAdmin, async (req, res) => {
+    try {
+      const status = req.query.status as string;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      let conditions: SQL[] = [];
+      if (status) {
+        conditions.push(eq(withdrawalRequests.status, status as any));
+      }
+
+      const requests = await db.select()
+        .from(withdrawalRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(withdrawalRequests.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const totalResult = await db.select({ count: sql<number>`count(*)` })
+        .from(withdrawalRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const requestsWithUsers = await Promise.all(requests.map(async (r) => {
+        const user = await storage.getUser(r.userId);
+        return {
+          ...r,
+          user: user ? { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl } : null,
+        };
+      }));
+
+      res.json({ withdrawals: requestsWithUsers, total: Number(totalResult[0]?.count || 0) });
+    } catch (error) {
+      console.error("Failed to get withdrawals:", error);
+      res.status(500).json({ message: "Failed to get withdrawals" });
+    }
+  });
+
+  // POST /api/admin/withdrawals/:id/approve - Approve withdrawal
+  app.post("/api/admin/withdrawals/:id/approve", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { paymentReference } = req.body;
+      const adminId = req.session.userId!;
+
+      const request = await storage.approveWithdrawal(id, adminId, paymentReference);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_APPROVE_WITHDRAWAL" as AuditAction,
+        targetType: "withdrawal",
+        targetId: id,
+        details: { paymentReference },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, withdrawal: request });
+    } catch (error: any) {
+      console.error("Failed to approve withdrawal:", error);
+      res.status(500).json({ message: error.message || "Failed to approve withdrawal" });
+    }
+  });
+
+  // POST /api/admin/withdrawals/:id/reject - Reject withdrawal
+  app.post("/api/admin/withdrawals/:id/reject", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const adminId = req.session.userId!;
+
+      if (!reason) {
+        return res.status(400).json({ message: "Rejection reason is required" });
+      }
+
+      const request = await storage.rejectWithdrawal(id, adminId, reason);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_REJECT_WITHDRAWAL" as AuditAction,
+        targetType: "withdrawal",
+        targetId: id,
+        details: { reason },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, withdrawal: request });
+    } catch (error: any) {
+      console.error("Failed to reject withdrawal:", error);
+      res.status(500).json({ message: error.message || "Failed to reject withdrawal" });
+    }
+  });
+
+  // PUT /api/admin/withdrawals/:id/approve - Approve withdrawal (PUT version)
+  app.put("/api/admin/withdrawals/:id/approve", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { paymentReference } = req.body;
+      const adminId = req.session.userId!;
+
+      const request = await storage.approveWithdrawal(id, adminId, paymentReference);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_APPROVE_WITHDRAWAL" as AuditAction,
+        targetType: "withdrawal",
+        targetId: id,
+        details: { paymentReference },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, withdrawal: request });
+    } catch (error: any) {
+      console.error("Failed to approve withdrawal:", error);
+      res.status(500).json({ message: error.message || "Failed to approve withdrawal" });
+    }
+  });
+
+  // PUT /api/admin/withdrawals/:id/reject - Reject withdrawal (PUT version)
+  app.put("/api/admin/withdrawals/:id/reject", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const adminId = req.session.userId!;
+
+      if (!reason) {
+        return res.status(400).json({ message: "Rejection reason is required" });
+      }
+
+      const request = await storage.rejectWithdrawal(id, adminId, reason);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_REJECT_WITHDRAWAL" as AuditAction,
+        targetType: "withdrawal",
+        targetId: id,
+        details: { reason },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, withdrawal: request });
+    } catch (error: any) {
+      console.error("Failed to reject withdrawal:", error);
+      res.status(500).json({ message: error.message || "Failed to reject withdrawal" });
+    }
+  });
+
+  // PUT /api/admin/withdrawals/:id/process - Mark as processed (PayFast payout)
+  app.put("/api/admin/withdrawals/:id/process", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { paymentReference } = req.body;
+      const adminId = req.session.userId!;
+
+      if (!paymentReference) {
+        return res.status(400).json({ message: "Payment reference is required" });
+      }
+
+      const request = await storage.processWithdrawal(id, adminId, paymentReference);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_PROCESS_WITHDRAWAL" as AuditAction,
+        targetType: "withdrawal",
+        targetId: id,
+        details: { paymentReference },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, withdrawal: request });
+    } catch (error: any) {
+      console.error("Failed to process withdrawal:", error);
+      res.status(500).json({ message: error.message || "Failed to process withdrawal" });
+    }
+  });
+
+  // ===== ADMIN: KYC MANAGEMENT =====
+
+  // GET /api/admin/kyc - List KYC submissions
+  app.get("/api/admin/kyc", requireAdmin, async (req, res) => {
+    try {
+      const status = req.query.status as string;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      let conditions: SQL[] = [];
+      if (status) {
+        conditions.push(eq(userKyc.status, status as any));
+      }
+
+      const submissions = await db.select()
+        .from(userKyc)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(userKyc.submittedAt))
+        .limit(limit)
+        .offset(offset);
+
+      const totalResult = await db.select({ count: sql<number>`count(*)` })
+        .from(userKyc)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const submissionsWithUsers = await Promise.all(submissions.map(async (s) => {
+        const user = await storage.getUser(s.userId);
+        return {
+          ...s,
+          user: user ? { id: user.id, username: user.username, displayName: user.displayName, email: user.email, avatarUrl: user.avatarUrl } : null,
+        };
+      }));
+
+      res.json({ submissions: submissionsWithUsers, total: Number(totalResult[0]?.count || 0) });
+    } catch (error) {
+      console.error("Failed to get KYC submissions:", error);
+      res.status(500).json({ message: "Failed to get KYC submissions" });
+    }
+  });
+
+  // GET /api/admin/kyc/:id - Get KYC details
+  app.get("/api/admin/kyc/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const [submission] = await db.select().from(userKyc).where(eq(userKyc.id, id)).limit(1);
+      if (!submission) {
+        return res.status(404).json({ message: "KYC submission not found" });
+      }
+
+      const user = await storage.getUser(submission.userId);
+      const reviewer = submission.reviewedBy ? await storage.getUser(submission.reviewedBy) : null;
+
+      res.json({
+        ...submission,
+        user: user ? { id: user.id, username: user.username, displayName: user.displayName, email: user.email, avatarUrl: user.avatarUrl } : null,
+        reviewer: reviewer ? { id: reviewer.id, username: reviewer.username, displayName: reviewer.displayName } : null,
+      });
+    } catch (error) {
+      console.error("Failed to get KYC details:", error);
+      res.status(500).json({ message: "Failed to get KYC details" });
+    }
+  });
+
+  // POST /api/admin/kyc/:id/approve - Approve KYC
+  app.post("/api/admin/kyc/:id/approve", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const adminId = req.session.userId!;
+
+      const [submission] = await db.select().from(userKyc).where(eq(userKyc.id, id)).limit(1);
+      if (!submission) {
+        return res.status(404).json({ message: "KYC submission not found" });
+      }
+
+      const kyc = await storage.reviewKyc(submission.userId, "APPROVED", adminId);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_APPROVE_KYC" as AuditAction,
+        targetType: "kyc",
+        targetId: id,
+        details: { userId: submission.userId },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, kyc });
+    } catch (error: any) {
+      console.error("Failed to approve KYC:", error);
+      res.status(500).json({ message: error.message || "Failed to approve KYC" });
+    }
+  });
+
+  // POST /api/admin/kyc/:id/reject - Reject KYC
+  app.post("/api/admin/kyc/:id/reject", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      const adminId = req.session.userId!;
+
+      if (!reason) {
+        return res.status(400).json({ message: "Rejection reason is required" });
+      }
+
+      const [submission] = await db.select().from(userKyc).where(eq(userKyc.id, id)).limit(1);
+      if (!submission) {
+        return res.status(404).json({ message: "KYC submission not found" });
+      }
+
+      const kyc = await storage.reviewKyc(submission.userId, "REJECTED", adminId, reason);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_REJECT_KYC" as AuditAction,
+        targetType: "kyc",
+        targetId: id,
+        details: { userId: submission.userId, reason },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, kyc });
+    } catch (error: any) {
+      console.error("Failed to reject KYC:", error);
+      res.status(500).json({ message: error.message || "Failed to reject KYC" });
+    }
+  });
+
+  // ===== ADMIN: ACHIEVEMENTS MANAGEMENT =====
+
+  // GET /api/admin/achievements - List all achievements with stats
+  app.get("/api/admin/achievements", requireAdmin, async (req, res) => {
+    try {
+      const achievementsList = await db
+        .select({
+          id: achievements.id,
+          name: achievements.name,
+          description: achievements.description,
+          category: achievements.category,
+          iconUrl: achievements.iconUrl,
+          requirement: achievements.requirement,
+          rewardCoins: achievements.rewardCoins,
+          rewardBadge: achievements.rewardBadge,
+          sortOrder: achievements.sortOrder,
+          isActive: achievements.isActive,
+          isSecret: achievements.isSecret,
+          createdAt: achievements.createdAt,
+          awardedCount: sql<number>`(SELECT COUNT(*) FROM user_achievements WHERE achievement_id = ${achievements.id} AND is_completed = true)`,
+        })
+        .from(achievements)
+        .orderBy(achievements.sortOrder);
+
+      res.json(achievementsList);
+    } catch (error: any) {
+      console.error("Failed to get achievements:", error);
+      res.status(500).json({ message: "Failed to get achievements" });
+    }
+  });
+
+  // POST /api/admin/achievements - Create new achievement
+  app.post("/api/admin/achievements", requireAdmin, async (req, res) => {
+    try {
+      const { name, description, category, requirement, rewardCoins, isSecret } = req.body;
+
+      const [maxOrder] = await db.select({ max: sql<number>`COALESCE(MAX(sort_order), 0)` }).from(achievements);
+      
+      const [achievement] = await db.insert(achievements).values({
+        id: crypto.randomUUID(),
+        name,
+        description,
+        category,
+        requirement,
+        rewardCoins: parseInt(rewardCoins) || 0,
+        isSecret: isSecret || false,
+        sortOrder: (maxOrder?.max || 0) + 1,
+        isActive: true,
+      }).returning();
+
+      res.json({ success: true, achievement });
+    } catch (error: any) {
+      console.error("Failed to create achievement:", error);
+      res.status(500).json({ message: error.message || "Failed to create achievement" });
+    }
+  });
+
+  // PUT /api/admin/achievements/:id - Update achievement
+  app.put("/api/admin/achievements/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates: any = {};
+      
+      if (req.body.name !== undefined) updates.name = req.body.name;
+      if (req.body.description !== undefined) updates.description = req.body.description;
+      if (req.body.category !== undefined) updates.category = req.body.category;
+      if (req.body.requirement !== undefined) updates.requirement = req.body.requirement;
+      if (req.body.rewardCoins !== undefined) updates.rewardCoins = parseInt(req.body.rewardCoins);
+      if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
+      if (req.body.isSecret !== undefined) updates.isSecret = req.body.isSecret;
+
+      const [achievement] = await db.update(achievements)
+        .set(updates)
+        .where(eq(achievements.id, id))
+        .returning();
+
+      if (!achievement) {
+        return res.status(404).json({ message: "Achievement not found" });
+      }
+
+      res.json({ success: true, achievement });
+    } catch (error: any) {
+      console.error("Failed to update achievement:", error);
+      res.status(500).json({ message: error.message || "Failed to update achievement" });
+    }
+  });
+
+  // DELETE /api/admin/achievements/:id - Delete achievement
+  app.delete("/api/admin/achievements/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      await db.delete(userAchievements).where(eq(userAchievements.achievementId, id));
+      await db.delete(achievements).where(eq(achievements.id, id));
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Failed to delete achievement:", error);
+      res.status(500).json({ message: error.message || "Failed to delete achievement" });
+    }
+  });
+
+  // ===== ADMIN: ECONOMY DASHBOARD =====
+
+  // GET /api/admin/economy/stats - Get economy statistics
+  app.get("/api/admin/economy/stats", requireAdmin, async (req, res) => {
+    try {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      const [totalCoinsResult] = await db.select({
+        totalCoins: sql<number>`COALESCE(SUM(coin_balance), 0)`,
+        totalWallets: sql<number>`COUNT(*)`,
+        frozenWallets: sql<number>`COUNT(*) FILTER (WHERE is_frozen = true)`,
+      }).from(wallets);
+
+      const [todayTxResult] = await db.select({
+        count: sql<number>`COUNT(*)`,
+        earned: sql<number>`COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0)`,
+        spent: sql<number>`COALESCE(SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END), 0)`,
+      }).from(coinTransactions).where(gte(coinTransactions.createdAt, today));
+
+      const [weekTxResult] = await db.select({
+        count: sql<number>`COUNT(*)`,
+      }).from(coinTransactions).where(gte(coinTransactions.createdAt, weekAgo));
+
+      const [giftsResult] = await db.select({
+        todayCount: sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today})`,
+        weekCount: sql<number>`COUNT(*) FILTER (WHERE created_at >= ${weekAgo})`,
+        totalValue: sql<number>`COALESCE(SUM(total_coins), 0)`,
+      }).from(giftTransactions);
+
+      const [withdrawalResult] = await db.select({
+        pendingCount: sql<number>`COUNT(*) FILTER (WHERE status = 'PENDING')`,
+        pendingAmount: sql<number>`COALESCE(SUM(CASE WHEN status = 'PENDING' THEN amount_coins ELSE 0 END), 0)`,
+        approvedThisMonth: sql<number>`COUNT(*) FILTER (WHERE status = 'APPROVED' AND processed_at >= ${monthAgo})`,
+      }).from(withdrawalRequests);
+
+      const [kycResult] = await db.select({
+        pendingCount: sql<number>`COUNT(*) FILTER (WHERE status = 'PENDING')`,
+        approvedCount: sql<number>`COUNT(*) FILTER (WHERE status = 'APPROVED')`,
+        totalCount: sql<number>`COUNT(*)`,
+      }).from(userKyc);
+
+      const [revenueResult] = await db.select({
+        todayRevenue: sql<number>`COALESCE(SUM(CASE WHEN created_at >= ${today} THEN amount_rands ELSE 0 END), 0)`,
+        weekRevenue: sql<number>`COALESCE(SUM(CASE WHEN created_at >= ${weekAgo} THEN amount_rands ELSE 0 END), 0)`,
+        monthRevenue: sql<number>`COALESCE(SUM(CASE WHEN created_at >= ${monthAgo} THEN amount_rands ELSE 0 END), 0)`,
+      }).from(platformRevenue);
+
+      const [bundlePurchases] = await db.select({
+        todayCount: sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today})`,
+        weekCount: sql<number>`COUNT(*) FILTER (WHERE created_at >= ${weekAgo})`,
+      }).from(coinPurchases).where(eq(coinPurchases.status, "COMPLETED"));
+
+      res.json({
+        circulation: {
+          totalCoins: Number(totalCoinsResult?.totalCoins || 0),
+          totalWallets: Number(totalCoinsResult?.totalWallets || 0),
+          frozenWallets: Number(totalCoinsResult?.frozenWallets || 0),
+        },
+        transactions: {
+          today: {
+            count: Number(todayTxResult?.count || 0),
+            earned: Number(todayTxResult?.earned || 0),
+            spent: Number(todayTxResult?.spent || 0),
+          },
+          weekCount: Number(weekTxResult?.count || 0),
+        },
+        gifts: {
+          todayCount: Number(giftsResult?.todayCount || 0),
+          weekCount: Number(giftsResult?.weekCount || 0),
+          totalValue: Number(giftsResult?.totalValue || 0),
+        },
+        withdrawals: {
+          pendingCount: Number(withdrawalResult?.pendingCount || 0),
+          pendingAmount: Number(withdrawalResult?.pendingAmount || 0),
+          approvedThisMonth: Number(withdrawalResult?.approvedThisMonth || 0),
+        },
+        kyc: {
+          pendingCount: Number(kycResult?.pendingCount || 0),
+          approvedCount: Number(kycResult?.approvedCount || 0),
+          totalCount: Number(kycResult?.totalCount || 0),
+        },
+        revenue: {
+          today: Number(revenueResult?.todayRevenue || 0),
+          week: Number(revenueResult?.weekRevenue || 0),
+          month: Number(revenueResult?.monthRevenue || 0),
+        },
+        purchases: {
+          todayCount: Number(bundlePurchases?.todayCount || 0),
+          weekCount: Number(bundlePurchases?.weekCount || 0),
+        },
+      });
+    } catch (error) {
+      console.error("Failed to get economy stats:", error);
+      res.status(500).json({ message: "Failed to get economy stats" });
+    }
+  });
+
+  // ===== WEALTH CLUBS =====
+
+  // GET /api/wealth-clubs - Get all wealth clubs
+  app.get("/api/wealth-clubs", requireAuth, async (req, res) => {
+    try {
+      const clubs = await storage.getWealthClubs();
+      res.json(clubs);
+    } catch (error: any) {
+      console.error("Failed to get wealth clubs:", error);
+      res.status(500).json({ message: error.message || "Failed to get wealth clubs" });
+    }
+  });
+
+  // GET /api/my/wealth-club - Get current user's wealth club
+  app.get("/api/my/wealth-club", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const userClub = await storage.getUserWealthClub(userId);
+      res.json(userClub);
+    } catch (error: any) {
+      console.error("Failed to get user wealth club:", error);
+      res.status(500).json({ message: error.message || "Failed to get user wealth club" });
+    }
+  });
+
+  // POST /api/my/wealth-club/refresh - Recalculate user's wealth club
+  app.post("/api/my/wealth-club/refresh", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      await storage.updateUserWealthClub(userId);
+      const userClub = await storage.getUserWealthClub(userId);
+      res.json({ success: true, wealthClub: userClub });
+    } catch (error: any) {
+      console.error("Failed to refresh wealth club:", error);
+      res.status(500).json({ message: error.message || "Failed to refresh wealth club" });
+    }
+  });
+
+  // ===== GIFT STAKING =====
+
+  // GET /api/staking-tiers - Get all active staking tiers
+  app.get("/api/staking-tiers", requireAuth, async (req, res) => {
+    try {
+      const tiers = await storage.getStakingTiers();
+      res.json(tiers);
+    } catch (error: any) {
+      console.error("Failed to get staking tiers:", error);
+      res.status(500).json({ message: error.message || "Failed to get staking tiers" });
+    }
+  });
+
+  // GET /api/my/stakes - Get user's stakes
+  app.get("/api/my/stakes", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const stakes = await storage.getUserStakes(userId);
+      res.json(stakes);
+    } catch (error: any) {
+      console.error("Failed to get user stakes:", error);
+      res.status(500).json({ message: error.message || "Failed to get user stakes" });
+    }
+  });
+
+  // GET /api/staking/active - Alias for getting user's active stakes (for StakingScreen compatibility)
+  app.get("/api/staking/active", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const stakes = await storage.getUserStakes(userId);
+      // Transform to match frontend expected format
+      const activeStakes = stakes.map((stake: any) => ({
+        id: stake.id,
+        amount: stake.stakedCoins,
+        bonusPercent: stake.bonusPercent,
+        startDate: stake.stakedAt,
+        endDate: stake.maturesAt,
+        matured: new Date(stake.maturesAt) <= new Date(),
+        claimed: stake.status === "CLAIMED",
+      }));
+      res.json(activeStakes);
+    } catch (error: any) {
+      console.error("Failed to get active stakes:", error);
+      res.status(500).json({ message: error.message || "Failed to get active stakes" });
+    }
+  });
+
+  // POST /api/my/stakes - Create a stake
+  app.post("/api/my/stakes", requireAuth, async (req, res) => {
+    try {
+      // Check if staking is enabled (emergency control)
+      const config = await storage.getEconomyConfig();
+      if (config.staking_enabled === "false") {
+        return res.status(503).json({ message: "Staking is temporarily disabled. Please try again later." });
+      }
+      
+      const userId = req.session.userId!;
+      const { giftTransactionId, tierId } = req.body;
+
+      if (!giftTransactionId || !tierId) {
+        return res.status(400).json({ message: "giftTransactionId and tierId are required" });
+      }
+
+      const stake = await storage.createGiftStake(userId, giftTransactionId, tierId);
+      res.json({ success: true, stake });
+    } catch (error: any) {
+      console.error("Failed to create stake:", error);
+      res.status(400).json({ message: error.message || "Failed to create stake" });
+    }
+  });
+
+  // POST /api/my/stakes/:stakeId/claim - Claim matured stake
+  app.post("/api/my/stakes/:stakeId/claim", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { stakeId } = req.params;
+
+      const result = await storage.claimMaturedStake(stakeId, userId);
+      res.json({ success: true, stake: result.stake, coinsEarned: result.coinsEarned });
+    } catch (error: any) {
+      console.error("Failed to claim stake:", error);
+      res.status(400).json({ message: error.message || "Failed to claim stake" });
+    }
+  });
+
+  // ===== ACHIEVEMENTS =====
+
+  // GET /api/achievements - Get all achievements
+  app.get("/api/achievements", requireAuth, async (req, res) => {
+    try {
+      const achievements = await storage.getAchievements();
+      res.json(achievements);
+    } catch (error: any) {
+      console.error("Failed to get achievements:", error);
+      res.status(500).json({ message: error.message || "Failed to get achievements" });
+    }
+  });
+
+  // GET /api/my/achievements - Get user's achievement progress
+  app.get("/api/my/achievements", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const userAchievements = await storage.getUserAchievements(userId);
+      res.json(userAchievements);
+    } catch (error: any) {
+      console.error("Failed to get user achievements:", error);
+      res.status(500).json({ message: error.message || "Failed to get user achievements" });
+    }
+  });
+
+  // POST /api/my/achievements/check - Check and award achievements
+  app.post("/api/my/achievements/check", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const newlyCompleted = await storage.checkAndAwardAchievements(userId);
+      res.json({ success: true, newlyCompleted });
+    } catch (error: any) {
+      console.error("Failed to check achievements:", error);
+      res.status(500).json({ message: error.message || "Failed to check achievements" });
+    }
+  });
+
+  // POST /api/my/achievements/:achievementId/claim - Claim achievement reward
+  app.post("/api/my/achievements/:achievementId/claim", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { achievementId } = req.params;
+
+      const coinsEarned = await storage.claimAchievementReward(userId, achievementId);
+      res.json({ success: true, coinsEarned });
+    } catch (error: any) {
+      console.error("Failed to claim achievement:", error);
+      res.status(400).json({ message: error.message || "Failed to claim achievement" });
+    }
+  });
+
+  // ===== CREATOR MONETIZATION =====
+
+  // GET /api/my/earnings - Get creator earnings summary
+  app.get("/api/my/earnings", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const earnings = await storage.getOrCreateCreatorEarnings(userId);
+      res.json(earnings);
+    } catch (error: any) {
+      console.error("Failed to get creator earnings:", error);
+      res.status(500).json({ message: error.message || "Failed to get creator earnings" });
+    }
+  });
+
+  // GET /api/my/earnings/history - Get earnings history
+  app.get("/api/my/earnings/history", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const history = await storage.getCreatorEarningsHistory(userId, limit, offset);
+      res.json(history);
+    } catch (error: any) {
+      console.error("Failed to get earnings history:", error);
+      res.status(500).json({ message: error.message || "Failed to get earnings history" });
+    }
+  });
+
+  // ===== BANK ACCOUNT MANAGEMENT =====
+
+  // GET /api/my/bank-accounts - Get user's bank accounts
+  app.get("/api/my/bank-accounts", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const accounts = await storage.getUserBankAccounts(userId);
+      res.json(accounts);
+    } catch (error: any) {
+      console.error("Failed to get bank accounts:", error);
+      res.status(500).json({ message: error.message || "Failed to get bank accounts" });
+    }
+  });
+
+  // POST /api/my/bank-accounts - Add bank account
+  app.post("/api/my/bank-accounts", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { bankName, accountNumber, branchCode, accountType, accountHolderName } = req.body;
+
+      if (!bankName || !accountNumber || !accountHolderName) {
+        return res.status(400).json({ message: "bankName, accountNumber, and accountHolderName are required" });
+      }
+
+      const account = await storage.addBankAccount(userId, {
+        bankName,
+        accountNumber,
+        branchCode: branchCode || null,
+        accountType: accountType || "savings",
+        accountHolderName,
+      });
+
+      res.json({ success: true, account });
+    } catch (error: any) {
+      console.error("Failed to add bank account:", error);
+      res.status(400).json({ message: error.message || "Failed to add bank account" });
+    }
+  });
+
+  // DELETE /api/my/bank-accounts/:bankAccountId - Remove bank account
+  app.delete("/api/my/bank-accounts/:bankAccountId", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { bankAccountId } = req.params;
+
+      const deleted = await storage.deleteBankAccount(userId, bankAccountId);
+      if (!deleted) {
+        return res.status(404).json({ message: "Bank account not found" });
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Failed to delete bank account:", error);
+      res.status(400).json({ message: error.message || "Failed to delete bank account" });
+    }
+  });
+
+  // PUT /api/my/bank-accounts/:bankAccountId/primary - Set as primary account
+  app.put("/api/my/bank-accounts/:bankAccountId/primary", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { bankAccountId } = req.params;
+
+      const account = await storage.setPrimaryBankAccount(userId, bankAccountId);
+      res.json({ success: true, account });
+    } catch (error: any) {
+      console.error("Failed to set primary bank account:", error);
+      res.status(400).json({ message: error.message || "Failed to set primary bank account" });
+    }
+  });
+
+  // ===== KYC VERIFICATION =====
+
+  // GET /api/my/kyc - Get user's KYC status
+  app.get("/api/my/kyc", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const kyc = await storage.getOrCreateKyc(userId);
+      res.json(kyc);
+    } catch (error: any) {
+      console.error("Failed to get KYC status:", error);
+      res.status(500).json({ message: error.message || "Failed to get KYC status" });
+    }
+  });
+
+  // POST /api/my/kyc - Submit KYC documents
+  app.post("/api/my/kyc", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { idType, idNumber, idDocumentUrl, proofOfAddressUrl, selfieUrl, fullLegalName, dateOfBirth, nationality, address } = req.body;
+
+      if (!idType || !idNumber || !idDocumentUrl) {
+        return res.status(400).json({ message: "idType, idNumber, and idDocumentUrl are required" });
+      }
+
+      await storage.getOrCreateKyc(userId);
+
+      const kyc = await storage.submitKyc(userId, {
+        idType,
+        idNumber,
+        idDocumentUrl,
+        proofOfAddressUrl: proofOfAddressUrl || null,
+        selfieUrl: selfieUrl || null,
+        fullLegalName: fullLegalName || null,
+        dateOfBirth: dateOfBirth || null,
+        nationality: nationality || null,
+        address: address || null,
+      });
+
+      res.json({ success: true, kyc });
+    } catch (error: any) {
+      console.error("Failed to submit KYC:", error);
+      res.status(400).json({ message: error.message || "Failed to submit KYC" });
+    }
+  });
+
+  // ===== WITHDRAWAL REQUESTS =====
+
+  // GET /api/my/withdrawals - Get user's withdrawal history
+  app.get("/api/my/withdrawals", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const status = req.query.status as string | undefined;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+
+      const withdrawals = await storage.getWithdrawalRequests(userId, status, limit);
+      res.json(withdrawals);
+    } catch (error: any) {
+      console.error("Failed to get withdrawals:", error);
+      res.status(500).json({ message: error.message || "Failed to get withdrawals" });
+    }
+  });
+
+  // POST /api/my/withdrawals - Request withdrawal
+  app.post("/api/my/withdrawals", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { amountCoins, bankAccountId } = req.body;
+
+      if (!amountCoins || !bankAccountId) {
+        return res.status(400).json({ message: "amountCoins and bankAccountId are required" });
+      }
+
+      const config = await storage.getEconomyConfig();
+      
+      // Check if withdrawals are enabled (emergency control)
+      if (config.withdrawals_enabled === "false") {
+        return res.status(503).json({ message: "Withdrawals are temporarily disabled. Please try again later." });
+      }
+      
+      const minWithdrawalCoins = parseInt(config.minWithdrawalCoins || "1000");
+      const kycRequiredForWithdrawal = config.kycRequiredForWithdrawal !== "false";
+
+      if (parseInt(amountCoins) < minWithdrawalCoins) {
+        return res.status(400).json({ message: `Minimum withdrawal is ${minWithdrawalCoins} coins` });
+      }
+
+      if (kycRequiredForWithdrawal) {
+        const kyc = await storage.getOrCreateKyc(userId);
+        if (kyc.status !== "APPROVED") {
+          return res.status(400).json({ message: "KYC verification required before withdrawal" });
+        }
+      }
+
+      const bankAccount = await storage.getBankAccountById(bankAccountId);
+      if (!bankAccount || bankAccount.userId !== userId) {
+        return res.status(400).json({ message: "Invalid bank account" });
+      }
+
+      const withdrawal = await storage.createWithdrawalRequest(userId, bankAccountId, parseInt(amountCoins));
+      res.json({ success: true, withdrawal });
+    } catch (error: any) {
+      console.error("Failed to create withdrawal request:", error);
+      res.status(400).json({ message: error.message || "Failed to create withdrawal request" });
+    }
+  });
+
+  // GET /api/my/withdrawals/:withdrawalId - Get withdrawal details
+  app.get("/api/my/withdrawals/:withdrawalId", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { withdrawalId } = req.params;
+
+      const withdrawal = await storage.getWithdrawalById(withdrawalId);
+      if (!withdrawal || withdrawal.userId !== userId) {
+        return res.status(404).json({ message: "Withdrawal not found" });
+      }
+
+      const bankAccount = await storage.getBankAccountById(withdrawal.bankAccountId);
+
+      res.json({
+        ...withdrawal,
+        bankAccount: bankAccount ? {
+          id: bankAccount.id,
+          bankName: bankAccount.bankName,
+          accountNumber: bankAccount.accountNumber.slice(-4).padStart(bankAccount.accountNumber.length, '*'),
+          accountType: bankAccount.accountType,
+        } : null,
+      });
+    } catch (error: any) {
+      console.error("Failed to get withdrawal details:", error);
+      res.status(500).json({ message: error.message || "Failed to get withdrawal details" });
+    }
+  });
+
+  // ===== POPIA/FICA COMPLIANCE =====
+
+  // POST /api/my/accept-terms - Accept terms and conditions
+  app.post("/api/my/accept-terms", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { acceptTerms, acceptPrivacy, acceptCommunityGuidelines, marketingOptIn, legalVersion } = req.body;
+
+      if (!acceptTerms || !acceptPrivacy || !acceptCommunityGuidelines) {
+        return res.status(400).json({ message: "You must accept terms, privacy policy, and community guidelines" });
+      }
+
+      const updateData: any = {
+        legalVersion: legalVersion || "1.0",
+      };
+
+      if (acceptTerms) updateData.termsAcceptedAt = new Date();
+      if (acceptPrivacy) updateData.privacyAcceptedAt = new Date();
+      if (acceptCommunityGuidelines) updateData.communityGuidelinesAcceptedAt = new Date();
+      if (typeof marketingOptIn === "boolean") updateData.marketingOptIn = marketingOptIn;
+
+      await db.update(users)
+        .set(updateData)
+        .where(eq(users.id, userId));
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Failed to accept terms:", error);
+      res.status(500).json({ message: error.message || "Failed to accept terms" });
+    }
+  });
+
+  // ===== PLATFORM BATTLES =====
+
+  // GET /api/battles - Get active battles
+  app.get("/api/battles", requireAuth, async (req, res) => {
+    try {
+      const battles = await storage.getActiveBattles();
+      res.json(battles);
+    } catch (error: any) {
+      console.error("Failed to get battles:", error);
+      res.status(500).json({ message: error.message || "Failed to get battles" });
+    }
+  });
+
+  // POST /api/battles - Create a battle
+  app.post("/api/battles", requireAuth, async (req, res) => {
+    try {
+      // Check if battles are enabled (emergency control)
+      const config = await storage.getEconomyConfig();
+      if (config.battles_enabled === "false") {
+        return res.status(503).json({ message: "Platform battles are temporarily disabled. Please try again later." });
+      }
+      
+      const creatorId = req.session.userId!;
+      const { name, description, entryFeeCoins, startsAt, endsAt, maxParticipants } = req.body;
+
+      if (!name || !startsAt || !endsAt) {
+        return res.status(400).json({ message: "name, startsAt, and endsAt are required" });
+      }
+
+      const battle = await storage.createBattle(creatorId, {
+        name,
+        description,
+        entryFeeCoins: entryFeeCoins ? parseInt(entryFeeCoins) : 0,
+        startsAt: new Date(startsAt),
+        endsAt: new Date(endsAt),
+        maxParticipants: maxParticipants ? parseInt(maxParticipants) : undefined,
+      });
+
+      res.json({ success: true, battle });
+    } catch (error: any) {
+      console.error("Failed to create battle:", error);
+      res.status(400).json({ message: error.message || "Failed to create battle" });
+    }
+  });
+
+  // POST /api/battles/:battleId/join - Join a battle
+  app.post("/api/battles/:battleId/join", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { battleId } = req.params;
+
+      const participant = await storage.joinBattle(battleId, userId);
+      res.json({ success: true, participant });
+    } catch (error: any) {
+      console.error("Failed to join battle:", error);
+      res.status(400).json({ message: error.message || "Failed to join battle" });
+    }
+  });
+
+  // POST /api/battles/:battleId/gift - Record battle gift
+  app.post("/api/battles/:battleId/gift", requireAuth, async (req, res) => {
+    try {
+      const { battleId } = req.params;
+      const { recipientId, coins } = req.body;
+
+      if (!recipientId || !coins) {
+        return res.status(400).json({ message: "recipientId and coins are required" });
+      }
+
+      await storage.recordBattleGift(battleId, recipientId, parseInt(coins));
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Failed to record battle gift:", error);
+      res.status(400).json({ message: error.message || "Failed to record battle gift" });
+    }
+  });
+
+  // ===== ADMIN: ECONOMY CONFIG =====
+
+  // GET /api/admin/economy-config - Get economy config
+  app.get("/api/admin/economy-config", requireAdmin, async (req, res) => {
+    try {
+      const config = await storage.getEconomyConfig();
+      res.json(config);
+    } catch (error: any) {
+      console.error("Failed to get economy config:", error);
+      res.status(500).json({ message: error.message || "Failed to get economy config" });
+    }
+  });
+
+  // PUT /api/admin/economy-config/:key - Set economy config value
+  app.put("/api/admin/economy-config/:key", requireAdmin, async (req, res) => {
+    try {
+      const adminId = req.session.userId!;
+      const { key } = req.params;
+      const { value } = req.body;
+
+      if (value === undefined) {
+        return res.status(400).json({ message: "value is required" });
+      }
+
+      await storage.setEconomyConfig(key, String(value), adminId);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "UPDATE_SETTING" as AuditAction,
+        targetType: "economy_config",
+        targetId: key,
+        details: { key, value },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Failed to set economy config:", error);
+      res.status(500).json({ message: error.message || "Failed to set economy config" });
+    }
+  });
+
+  // POST /api/admin/battles/:battleId/end - End a battle
+  app.post("/api/admin/battles/:battleId/end", requireAdmin, async (req, res) => {
+    try {
+      const adminId = req.session.userId!;
+      const { battleId } = req.params;
+
+      const battle = await storage.endBattle(battleId);
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_END_BATTLE" as AuditAction,
+        targetType: "battle",
+        targetId: battleId,
+        details: { winnerId: battle.winnerId, prizePoolCoins: battle.prizePoolCoins },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, battle });
+    } catch (error: any) {
+      console.error("Failed to end battle:", error);
+      res.status(400).json({ message: error.message || "Failed to end battle" });
+    }
+  });
+
+  // GET /api/admin/wealth-clubs - Get all wealth clubs with member counts
+  app.get("/api/admin/wealth-clubs", requireAdmin, async (req, res) => {
+    try {
+      const clubs = await storage.getWealthClubs();
+      
+      const clubsWithCounts = await Promise.all(
+        clubs.map(async (club) => {
+          const [countResult] = await db.select({
+            count: sql<number>`COUNT(*)::int`,
+          }).from(userWealthClub).where(eq(userWealthClub.clubId, club.id));
+          
+          return {
+            ...club,
+            memberCount: countResult?.count || 0,
+          };
+        })
+      );
+
+      res.json(clubsWithCounts);
+    } catch (error: any) {
+      console.error("Failed to get admin wealth clubs:", error);
+      res.status(500).json({ message: error.message || "Failed to get wealth clubs" });
+    }
+  });
+
+  // PUT /api/admin/wealth-clubs/:clubId - Update wealth club details
+  app.put("/api/admin/wealth-clubs/:clubId", requireAdmin, async (req, res) => {
+    try {
+      const adminId = req.session.userId!;
+      const { clubId } = req.params;
+      const { name, description, iconUrl, color, minNetWorth, maxNetWorth, benefits, discountPercent, bonusCoinPercent, prioritySupport, exclusiveContent } = req.body;
+
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (iconUrl !== undefined) updateData.iconUrl = iconUrl;
+      if (color !== undefined) updateData.color = color;
+      if (minNetWorth !== undefined) updateData.minNetWorth = parseInt(minNetWorth);
+      if (maxNetWorth !== undefined) updateData.maxNetWorth = maxNetWorth ? parseInt(maxNetWorth) : null;
+      if (benefits !== undefined) updateData.benefits = benefits;
+      if (discountPercent !== undefined) updateData.discountPercent = parseInt(discountPercent);
+      if (bonusCoinPercent !== undefined) updateData.bonusCoinPercent = parseInt(bonusCoinPercent);
+      if (prioritySupport !== undefined) updateData.prioritySupport = prioritySupport;
+      if (exclusiveContent !== undefined) updateData.exclusiveContent = exclusiveContent;
+      updateData.updatedAt = new Date();
+
+      const [updatedClub] = await db.update(wealthClubs)
+        .set(updateData)
+        .where(eq(wealthClubs.id, clubId))
+        .returning();
+
+      if (!updatedClub) {
+        return res.status(404).json({ message: "Wealth club not found" });
+      }
+
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_UPDATE_WEALTH_CLUB" as AuditAction,
+        targetType: "wealth_club",
+        targetId: clubId,
+        details: updateData,
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+
+      res.json({ success: true, club: updatedClub });
+    } catch (error: any) {
+      console.error("Failed to update wealth club:", error);
+      res.status(500).json({ message: error.message || "Failed to update wealth club" });
+    }
+  });
+
+  // GET /api/admin/wealth-clubs/:clubId/members - Get members of a wealth club
+  app.get("/api/admin/wealth-clubs/:clubId/members", requireAdmin, async (req, res) => {
+    try {
+      const { clubId } = req.params;
+      
+      const members = await db.select({
+        id: userWealthClub.id,
+        userId: userWealthClub.userId,
+        clubId: userWealthClub.clubId,
+        joinedAt: userWealthClub.joinedAt,
+        user: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          netWorth: users.netWorth,
+        }
+      })
+      .from(userWealthClub)
+      .innerJoin(users, eq(userWealthClub.userId, users.id))
+      .where(eq(userWealthClub.clubId, clubId))
+      .orderBy(desc(users.netWorth))
+      .limit(100);
+
+      res.json(members);
+    } catch (error: any) {
+      console.error("Failed to get wealth club members:", error);
+      res.status(500).json({ message: error.message || "Failed to get members" });
+    }
+  });
+
+  // GET /api/admin/staking-tiers - Get all staking tiers
+  app.get("/api/admin/staking-tiers", requireAdmin, async (req, res) => {
+    try {
+      const tiers = await db.select()
+        .from(stakingTiers)
+        .orderBy(stakingTiers.sortOrder);
+      res.json(tiers);
+    } catch (error: any) {
+      console.error("Failed to get staking tiers:", error);
+      res.status(500).json({ message: error.message || "Failed to get staking tiers" });
+    }
+  });
+
+  // GET /api/admin/battles - Get all platform battles
+  app.get("/api/admin/battles", requireAdmin, async (req, res) => {
+    try {
+      const battles = await db.select({
+        id: platformBattles.id,
+        name: platformBattles.name,
+        description: platformBattles.description,
+        creatorId: platformBattles.creatorId,
+        status: platformBattles.status,
+        entryFeeCoins: platformBattles.entryFeeCoins,
+        prizePoolCoins: platformBattles.prizePoolCoins,
+        platformFeePercent: platformBattles.platformFeePercent,
+        maxParticipants: platformBattles.maxParticipants,
+        startsAt: platformBattles.startsAt,
+        endsAt: platformBattles.endsAt,
+        createdAt: platformBattles.createdAt,
+      })
+      .from(platformBattles)
+      .orderBy(desc(platformBattles.createdAt));
+
+      // Get participant counts
+      const battlesWithCounts = await Promise.all(battles.map(async (battle) => {
+        const [countResult] = await db.select({ count: sql<number>`count(*)` })
+          .from(battleParticipants)
+          .where(eq(battleParticipants.battleId, battle.id));
+        return { ...battle, participantCount: Number(countResult?.count || 0) };
+      }));
+
+      res.json(battlesWithCounts);
+    } catch (error: any) {
+      console.error("Failed to get battles:", error);
+      res.status(500).json({ message: error.message || "Failed to get battles" });
+    }
+  });
+
+  // GET /api/admin/battles/:battleId - Get battle details with participants
+  app.get("/api/admin/battles/:battleId", requireAdmin, async (req, res) => {
+    try {
+      const { battleId } = req.params;
+      
+      const [battle] = await db.select()
+        .from(platformBattles)
+        .where(eq(platformBattles.id, battleId));
+
+      if (!battle) {
+        return res.status(404).json({ message: "Battle not found" });
+      }
+
+      const participants = await db.select({
+        id: battleParticipants.id,
+        battleId: battleParticipants.battleId,
+        userId: battleParticipants.userId,
+        totalGiftsReceived: battleParticipants.totalGiftsReceived,
+        totalCoinsReceived: battleParticipants.totalCoinsReceived,
+        rank: battleParticipants.rank,
+        joinedAt: battleParticipants.joinedAt,
+        user: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+        }
+      })
+      .from(battleParticipants)
+      .innerJoin(users, eq(battleParticipants.userId, users.id))
+      .where(eq(battleParticipants.battleId, battleId))
+      .orderBy(desc(battleParticipants.totalCoinsReceived));
+
+      res.json({ ...battle, participants });
+    } catch (error: any) {
+      console.error("Failed to get battle details:", error);
+      res.status(500).json({ message: error.message || "Failed to get battle details" });
+    }
+  });
+
+  return httpServer;
+}

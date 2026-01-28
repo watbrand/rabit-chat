@@ -1,0 +1,382 @@
+✅ MASTER DEBUG + FIX PROMPT (PASTE INTO REPLIT)
+
+PROMPT:
+
+We are debugging RabitChat. Do not add new features. Do not rebuild. Fix what’s broken and make everything work on Android + iOS reliably. All changes must be full-stack: UI + API + DB + admin + policies. No placeholders, no dead buttons, no “works on web only”.
+
+Non-negotiable deliverables
+
+Create /docs/BUGFIX_REPORT.md with:
+
+Each issue ID
+
+Root cause
+
+Files changed
+
+Fix summary
+
+How to test (step-by-step)
+
+Add /docs/TEST_PLAN.md containing:
+
+Android checklist
+
+iOS checklist
+
+Admin checklist
+
+Expected results for each step
+
+Add a “doctor” style script or section that verifies:
+
+env vars present
+
+upload limits
+
+core API endpoints respond
+
+policies enforced
+
+A) ANDROID CRITICAL FAILURES (highest priority)
+A1. Android profile edits not saving (cover photo/avatar/profile updates)
+
+Symptoms: Android does not persist cover photo/profile edits; seems like saves don’t work.
+Required logic & fixes:
+
+Confirm whether requests from Android are failing due to:
+
+missing auth cookie (mobile WebView/Safari/Chrome cookie rules)
+
+CORS/sameSite cookie settings
+
+incorrect request method/headers
+
+API returning 401/403 silently
+
+Ensure mobile requests include auth and the API actually persists to DB.
+
+Add explicit UI error handling: if save fails, show readable error and do not “pretend saved”.
+
+Verify PATCH /api/me/profile and any upload flow returns success and the profile re-fetches updated fields.
+
+A2. Android settings icon (top right) not working
+
+Symptoms: Tap does nothing.
+Required logic & fixes:
+
+Confirm the button has a click handler and correct route.
+
+Fix z-index/overlay issues in mobile header that can block taps.
+
+Ensure navigation works for Android and iOS.
+
+Add automated sanity checks: every header icon must route correctly.
+
+A3. Android cannot create posts at all
+
+Symptoms: Posting fails completely on Android.
+Required logic & fixes:
+
+Identify whether the failure is:
+
+upload failing (file picker, size/type)
+
+create post API failing (auth, validation)
+
+client not sending required fields (durationMs, thumbnailUrl)
+
+Add logging to capture request body and server validation errors (no sensitive data).
+
+Ensure create post flow works for:
+
+text
+
+photo
+
+video
+
+voice
+
+Ensure strict privacy policies do not incorrectly block creation.
+
+A4. Save/Bookmark not working + Comments not working
+
+Symptoms: Like works but verify; comments fail; save fails.
+Required logic & fixes:
+
+Verify endpoints exist and are wired from UI:
+
+POST /api/posts/:id/comments
+
+GET /api/posts/:id/comments
+
+POST /api/posts/:id/save toggle
+
+Ensure DB constraints and transactions are correct.
+
+Ensure UI uses returned state (liked/saved/commentCount) and refreshes correctly.
+
+Add consistent error handling (no silent failures).
+
+Add minimal integration tests / smoke checks for:
+
+create comment
+
+toggle save
+
+toggle like
+
+B) MEDIA: VIDEO PLAYBACK + FILE LIMITS
+B1. Video uploads but does not play back
+
+Symptoms: Upload succeeds, playback fails.
+Required logic & fixes:
+
+Determine whether the video URL is:
+
+inaccessible (private URL, expired signature)
+
+wrong MIME type served
+
+blocked by CORS
+
+incompatible encoding
+
+Ensure playback works on Android + iOS:
+
+correct <video> attributes
+
+correct Content-Type and range requests if needed
+
+use compatible formats (e.g., mp4/h264 baseline if transcoding not available)
+
+Fix thumbnail/duration handling so the player renders correctly.
+
+B2. Increase max video upload size to 500MB
+
+Requirement: Set max video upload limit to 500MB wherever it is enforced:
+
+Upload endpoint validation
+
+Storage provider limits
+
+Replit/server body limits
+
+Any reverse proxy config
+Update docs with the new limit and show exact config changes.
+
+C) CROSS-DEVICE UI / NAVIGATION
+C1. Move “New Post (+)” icon to left corner
+
+Requirement: Move the create post icon to the left corner. Must work on Android and iOS.
+Rules:
+
+Only change layout; do not break navigation or permissions.
+
+Verify tap works on all devices.
+
+C2. Messages blurry on iPhone (and check Android)
+
+Symptoms: Message is clear for seconds then becomes blurry.
+Required logic & fixes:
+
+Investigate CSS effects:
+
+blur filters from glass UI applied to message bubbles
+
+backdrop-filter overlay stacking issues
+
+iOS rendering bug with transforms/backdrop-filter
+
+Fix by isolating chat bubbles from blur layers:
+
+adjust z-index and containment
+
+remove blur filter from message content layer
+
+ensure readability always
+
+Verify on iPhone + Android.
+
+C3. Notification panel hidden under header
+
+Symptoms: Top notification is clipped/hidden by header.
+Fix:
+
+Correct padding/safe-area insets
+
+Ensure scroll container starts below header
+
+Validate on Android + iOS.
+
+D) NOTIFICATIONS: FULL BACKEND LOGIC + DEEP LINKING
+D1. Notifications must open the exact target
+
+Requirement:
+When a notification is clicked it must deep-link to the correct entity:
+
+Like notification -> opens that specific post
+
+Comment notification -> opens the post and comments
+
+Follow notification -> opens the follower’s profile
+
+Message notification -> opens the conversation
+
+Required logic:
+
+Ensure Notification model stores:
+
+type
+
+actorId
+
+targetType + targetId (postId/commentId/conversationId/userId)
+
+Ensure API returns a deepLink object:
+
+{ kind: "post", id }, { kind: "profile", username }, { kind: "conversation", id }
+
+UI must route based on deepLink deterministically.
+
+Respect privacy rules:
+
+If target is not viewable due to strict privacy/block -> show friendly message.
+
+E) FOLLOW BUTTON LOGIC (“FOLLOW BACK”)
+E1. Follow Back label
+
+Requirement:
+If User A is viewing User B and:
+
+B follows A
+
+A does NOT follow B
+Then button label must say “Follow Back”.
+Otherwise:
+
+If A follows B -> “Following”
+
+Else -> “Follow”
+
+Needed backend data:
+
+Profile endpoint must return:
+
+isFollowing
+
+isFollowedBy (does this user follow me?)
+UI uses these to label correctly.
+
+F) ADMIN PANEL BROKEN FUNCTIONS
+F1. Admin panel actions not working
+
+Symptoms: Admin site functions fail (tested via Android).
+Required logic & fixes:
+
+Verify admin endpoints:
+
+require auth + RBAC permissions
+
+return proper errors
+
+Ensure admin UI calls correct endpoints and handles responses.
+
+Fix any CORS/auth cookie issues that affect admin actions on mobile.
+
+Add a clear admin test checklist in /docs/TEST_PLAN.md:
+
+verify user
+
+suspend user
+
+hide post
+
+resolve report
+
+edit user settings
+
+view audit logs
+
+G) POST VIEWER EXPERIENCE
+G1. Image click opens full image
+
+Requirement: Clicking an image opens a full-screen viewer with zoom/pan optional, and a close/back button. No cropping.
+
+G2. Video click opens full-screen reels viewer
+
+Requirement:
+
+Full-screen viewer starts at that post.
+
+Scrolling continues through that user’s posts.
+
+If the user has no more posts, load alternative posts (fallback feed) seamlessly.
+
+Logic:
+
+Add endpoint that returns a swipe queue:
+
+first batch: target user posts
+
+fallback batch: global feed posts
+
+Maintain the viewer with cursor pagination.
+
+Respect strict privacy and hidden posts policies.
+
+H) FINAL QUALITY GATE (NO LOOSE ENDS)
+H1. Test every button + flow
+
+Requirement: Before marking done:
+
+Validate every button and screen path
+
+Fix all dead taps / missing handlers
+
+No silent failures
+
+All state changes persist in DB and reflect after refresh/relogin
+
+H2. Add instrumentation for debugging
+
+Add minimal server-side logs for failures (auth errors, validation errors)
+
+Add client-side error boundary/toast messages for failed actions
+
+Ensure logs do not leak sensitive data
+
+Final output required
+
+When finished, provide:
+
+Updated /docs/BUGFIX_REPORT.md
+
+Updated /docs/TEST_PLAN.md
+
+A short “What to test on Android/iOS/Admin” summary
+
+Confirm the following are fully functional on both Android and iOS:
+
+profile updates
+
+settings navigation
+
+posting for all 4 types
+
+comments
+
+saves
+
+video playback
+
+messages readability
+
+notifications deep-linking
+
+follow-back label
+
+admin actions
+
+Do not stop until all are green.

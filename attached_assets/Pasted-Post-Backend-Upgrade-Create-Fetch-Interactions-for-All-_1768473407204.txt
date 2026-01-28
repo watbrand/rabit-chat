@@ -1,0 +1,103 @@
+Post Backend Upgrade: Create + Fetch + Interactions for All Types
+
+PROMPT:
+Upgrade backend APIs for posts so all 4 post types work end-to-end and power both feed and profile views.
+
+Create post
+
+POST /api/posts
+Request supports:
+
+type (TEXT/PHOTO/VIDEO/VOICE)
+
+caption (optional)
+
+content (required for TEXT; optional otherwise)
+
+mediaUrl (required for PHOTO/VIDEO/VOICE)
+
+thumbnailUrl (required for VIDEO/VOICE; optional for PHOTO)
+
+durationMs (required for VIDEO/VOICE)
+
+visibility (PUBLIC/FOLLOWERS/PRIVATE)
+
+commentsEnabled
+
+Validation rules:
+
+TEXT: content required, mediaUrl must be null
+
+PHOTO: mediaUrl required, content optional
+
+VIDEO: mediaUrl + thumbnailUrl + durationMs required
+
+VOICE: mediaUrl + thumbnailUrl + durationMs required (thumbnail can be auto-generated later)
+
+enforce max caption length and max content length via AppSetting (maxPostLength)
+
+apply policy: if user is not allowed to set certain visibility (admin-locked settings), enforce
+
+Fetch feed
+
+GET /api/posts?cursor=&limit=
+Return post cards with:
+
+author basic info + cover/avatar + badges (verified/networth/influence)
+
+counts: likes/comments/shares/saves/views
+
+viewer flags: liked, saved, followingAuthor, canComment, canView
+Apply canViewPost policy.
+
+Post detail
+
+GET /api/posts/:id
+Apply policy and include richer fields
+
+Likes
+
+POST /api/posts/:id/like toggle, atomic transaction updates likeCount
+
+Comments
+
+GET /api/posts/:id/comments
+
+POST /api/posts/:id/comments (apply canComment)
+Atomic update commentCount
+
+Saves / Bookmarks
+
+POST /api/posts/:id/save toggle
+Atomic update saveCount (add if missing)
+
+Shares
+
+POST /api/posts/:id/share
+Increment shareCount; optional store share events
+
+Views (video/voice)
+
+POST /api/posts/:id/view
+
+Deduplicate basic views (per user per day or per session) to avoid spam
+
+Update viewCount
+
+Admin integration
+
+If post is hidden/deleted by admin:
+
+must reflect in feed/profile via policy
+
+Log admin actions to AuditLog
+
+Deliverables
+
+Updated route handlers
+
+zod validation for all requests
+
+/docs/API_POSTS.md describing endpoints and rules
+
+No profile UI changes yet.

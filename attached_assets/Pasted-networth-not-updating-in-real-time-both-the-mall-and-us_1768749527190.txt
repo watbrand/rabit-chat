@@ -1,0 +1,31 @@
+networth not updating in real time (both the mall and users profile, even after they bought stuff from the mall. fix this. it needs to update immediately and in real time
+
+i said where a video is played, it auto needs to switch to reels mode (when you scroll the algorithm must play other reels within the app from other users (suggestions) and the users name on the reels when you click it must direct to the users profile...anywhere a video is played, whether its feed, discover, user profile, etc apply the same logic as Instagram and how it works, deep search and make it happen
+
+some mall items cannot purchase, please do a deep test and search
+
+it does not wanna upload stories, it says invalid file type. please allow all types of media files, 1000mb file limit for stories, all types of posts
+
+im following people but my profile does not update both whom im following / followed, fix that.
+
+on discover reels, i played one video and all was well, when i scroll down other videos play but still using the previous videos sound, fix that
+
+then now it does not want to record, it says error: couldn't start recording. 
+
+when you visit a users profile and click on the networth, it must show the same information each user see's in their own profile / account 
+
+now its refusing post stories it says: invalid file type. fix this
+
+i said on every page when you pull the screen down it must do a hard refresh and update any changes made. 
+
+notifications are not working, deep fix
+
+in the mall, i tried buying an item with 200 quantity and it refused (500 failed to purchase mall item)
+
+the worldwide net worth is not accurate across the mall. the mall is fine but users profile is not fine
+
+the toggle menu 9when reels are opened is not working (it must work) users must be able to like, comment, etc. 
+
+on the discover page, when a page is viewed on full screen mode, and a user scrolls, it must suggest and show other contents related to pictures as well.
+
+discover doesn't have voice notes. please include that the same way as other contents, apply the same logic as pictures (what i stated above) 

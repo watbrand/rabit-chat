@@ -1,0 +1,142 @@
+Schema Upgrade: Posts, Settings, Profile, Playlists, Featured
+
+PROMPT:
+Extend the RabitChat database schema to support the finalized profile + post system and strict privacy. Do not break existing data.
+
+Goals
+
+Support 4 content types: text, photo, video, voice
+
+Support strict private accounts + per-post visibility
+
+Support bookmarks/saves
+
+Support playlists/series for video + voice
+
+Support pinned posts and featured intro card
+
+Support user settings system (privacy/notifications/media prefs)
+
+Ensure admin system continues to work (RBAC + audit logs)
+
+Prisma changes (add/extend models)
+
+Extend Post:
+
+type: enum PostType { TEXT PHOTO VIDEO VOICE }
+
+caption: string? (or reuse content field)
+
+content: string? (text body)
+
+mediaUrl: string? (single URL for now)
+
+thumbnailUrl: string?
+
+durationMs: int? (video/voice)
+
+aspectRatio: float? (optional)
+
+visibility: enum Visibility { PUBLIC FOLLOWERS PRIVATE }
+
+commentsEnabled: boolean default true
+
+isHidden: boolean default false (soft hide)
+
+hiddenReason: string? (optional)
+
+editedAt: datetime? (optional)
+
+Add Bookmark:
+
+id, userId, postId
+
+unique(userId, postId)
+
+Add UserSettings (1:1):
+
+userId unique
+
+privateAccount boolean default false (STRICT BEHAVIOR enforced)
+
+commentPolicy enum Policy { EVERYONE FOLLOWERS NOBODY }
+
+messagePolicy enum Policy { EVERYONE FOLLOWERS NOBODY }
+
+mentionPolicy enum Policy { EVERYONE FOLLOWERS NOBODY }
+
+notifications JSON (likes/comments/follows/messages/mentions toggles)
+
+mediaPrefs JSON (autoplay/dataSaver/uploadQuality)
+
+createdAt, updatedAt
+
+Add Playlist:
+
+id, userId, title, description?, type enum { VIDEO VOICE }, isPublic boolean default true
+
+createdAt, updatedAt
+
+Add PlaylistItem:
+
+id, playlistId, postId, order int
+
+unique(playlistId, postId)
+
+Add FeaturedIntro:
+
+userId unique
+
+title, body, ctaText?, ctaUrl?
+
+updatedAt
+
+Add Pin:
+
+id, userId, postId, order int
+
+unique(userId, postId)
+
+enforce max 3 pins in application logic
+
+Extend User:
+
+coverUrl string? (banner/cover photo)
+
+category enum { PERSONAL CREATOR BUSINESS } default PERSONAL
+
+location string? (optional)
+
+linkUrl string? (optional)
+
+joinedAt uses createdAt
+
+Data integrity & indexes
+
+Add indexes for:
+
+Post(createdAt), Post(authorId, createdAt), Post(type, createdAt)
+
+Message(conversationId, createdAt)
+
+Ensure constraints for Like/Follow/Conversation remain.
+
+Migration + seed
+
+Create migration and update seed:
+
+Ensure every user has a UserSettings row (create on signup if missing)
+
+Seed example playlists and pins for demo data (safe)
+
+Deliverables
+
+Updated prisma schema
+
+Migrations pass
+
+Prisma client generated
+
+Update /docs/DB_SCHEMA.md describing new tables and why they exist
+
+Do not implement UI yet.

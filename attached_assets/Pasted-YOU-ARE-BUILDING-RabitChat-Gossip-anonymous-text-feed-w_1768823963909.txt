@@ -1,0 +1,252 @@
+YOU ARE BUILDING: RabitChat “Gossip” (anonymous text feed) with HARD location segmentation.
+
+PRIMARY OBJECTIVE
+- Provide an anonymous, text-only “Gossip” feed.
+- Segment posts by location using:
+  Country -> (if South Africa) Province -> City/Town -> Kasi/Hood/Village
+- Other countries (Botswana, Lesotho, Mozambique, Zimbabwe) are country-only: NO further categories.
+
+ZERO-IDENTITY REQUIREMENT (STRICT)
+- Under NO circumstance may a gossip post be linkable to a person.
+- Do NOT store: user_id, account_id, email, phone, session_id, ip_address, device_id, fingerprint, anon_key, headers, cookies, analytics ids.
+- Do NOT log request headers for gossip routes.
+- Do NOT include “createdBy” fields anywhere.
+- Do NOT create internal “audit trail” that links to a user.
+- Posts must be untraceable even by app owners/admins.
+
+Allowed fields per post ONLY:
+- id, country_code, province, city_town, kasi_hood_village, text, created_at, status, reports_count
+
+COUNTRIES SUPPORTED (FIXED)
+- ZA = South Africa (DEEP categories)
+- BW = Botswana (COUNTRY ONLY)
+- LS = Lesotho (COUNTRY ONLY)
+- MZ = Mozambique (COUNTRY ONLY)
+- ZW = Zimbabwe (COUNTRY ONLY)
+
+LOCATION RULES (MANDATORY)
+1) If country_code != "ZA":
+   - province, city_town, kasi_hood_village MUST be NULL.
+   - user sees only the country feed for that country.
+   - posting requires only: country_code + text.
+
+2) If country_code == "ZA":
+   - province, city_town, kasi_hood_village are REQUIRED (must not be null/empty).
+   - province must be 1 of 9:
+     Eastern Cape, Free State, Gauteng, KwaZulu-Natal, Limpopo, Mpumalanga, Northern Cape, North West, Western Cape
+   - City/Town and Kasi/Hood/Village must come from FULL authoritative dataset:
+     City/Town = MAIN PLACE
+     Kasi/Hood/Village = SUB PLACE
+   - NO manual or partial lists. Must be generated/imported so “nothing is left behind”.
+
+DATA SOURCE & GENERATION (MANDATORY, NOT OPTIONAL)
+- Use authoritative Main Place and Sub Place layer exports for South Africa.
+- Implement a generator script that:
+  a) downloads all Main Place features + all Sub Place features with pagination
+  b) detects field names robustly
+  c) filters to South Africa and groups by province
+  d) nests sub places under the correct main place
+  e) outputs JSON: /data/locations.json
+  f) outputs a checksum file: /data/locations.sha256 (for integrity + to detect changes)
+
+OUTPUT JSON MUST BE EXACTLY THIS SHAPE:
+{
+  "generated_at": "<ISO>",
+  "countries": [
+    {
+      "code": "ZA",
+      "name": "South Africa",
+      "type": "deep",
+      "provinces": [
+        {
+          "name": "<province>",
+          "cities_towns": [
+            {
+              "name": "<main_place_name>",
+              "kasis_hoods_villages": [
+                { "name": "<sub_place_name>" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    { "code": "BW", "name": "Botswana", "type": "country_only" },
+    { "code": "LS", "name": "Lesotho", "type": "country_only" },
+    { "code": "MZ", "name": "Mozambique", "type": "country_only" },
+    { "code": "ZW", "name": "Zimbabwe", "type": "country_only" }
+  ],
+  "source": {
+    "main_place_query_url": "<env MAIN_PLACE_QUERY_URL>",
+    "sub_place_query_url": "<env SUB_PLACE_QUERY_URL>",
+    "mapping": "City/Town = Main Place; Kasi/Hood/Village = Sub Place"
+  }
+}
+
+FILES TO CREATE (REQUIRED)
+1) scripts/generate_locations.js
+   - Uses MAIN_PLACE_QUERY_URL + SUB_PLACE_QUERY_URL from env
+   - Handles pagination via resultOffset/resultRecordCount
+   - Writes data/locations.json and data/locations.sha256
+
+2) scripts/import_locations.js
+   - Reads data/locations.json
+   - Upserts locations into DB tables below (ZA only)
+   - Validates expected shape and fails loudly if missing provinces or empty arrays
+
+DATABASE (SQLITE or POSTGRES — pick one and implement migrations)
+Tables:
+
+countries
+- code TEXT PK
+- name TEXT UNIQUE
+- type TEXT CHECK IN ('deep','country_only')
+
+za_locations
+- id UUID PK
+- type TEXT CHECK IN ('province','city_town','kasi_hood_village')
+- name TEXT
+- parent_id UUID NULL
+- province TEXT NULL  (for quick filtering)
+- created_at TIMESTAMP
+
+Constraints:
+- For type='province', parent_id IS NULL and province=name
+- For type='city_town', parent_id references province row
+- For type='kasi_hood_village', parent_id references city_town row
+
+gossip_posts
+- id UUID PK
+- country_code TEXT NOT NULL FK -> countries(code)
+- province TEXT NULL
+- city_town TEXT NULL
+- kasi_hood_village TEXT NULL
+- text TEXT NOT NULL
+- created_at TIMESTAMP NOT NULL
+- status TEXT NOT NULL CHECK IN ('active','hidden','deleted')
+- reports_count INTEGER NOT NULL DEFAULT 0
+
+VALIDATION CONSTRAINTS (ENFORCE IN CODE + DB WHERE POSSIBLE)
+- If country_code != 'ZA' THEN province IS NULL AND city_town IS NULL AND kasi_hood_village IS NULL
+- If country_code = 'ZA' THEN province, city_town, kasi_hood_village are NOT NULL
+
+gossip_reports
+- id UUID PK
+- post_id UUID NOT NULL FK -> gossip_posts(id)
+- reason TEXT NOT NULL
+- created_at TIMESTAMP NOT NULL
+
+NO “reporter_id” field.
+
+API (IMPLEMENT EXACTLY)
+Countries:
+- GET /api/countries
+  -> returns [{code,name,type}] from DB
+
+ZA Location endpoints (only for ZA):
+- GET /api/za/provinces
+- GET /api/za/cities?province=<name>&q=<optional>
+- GET /api/za/kasis?province=<name>&city_town=<name>&q=<optional>
+Rules:
+- q search must be case-insensitive
+- stable ordering (alphabetical)
+
+Gossip:
+- POST /api/gossip
+  Body:
+    {
+      "country_code": "ZA|BW|LS|MZ|ZW",
+      "province": "...(ZA only)",
+      "city_town": "...(ZA only)",
+      "kasi_hood_village": "...(ZA only)",
+      "text": "..."
+    }
+  Validation:
+   - text trimmed, non-empty
+   - max length 500 (configurable constant)
+   - ZA requires full location; non-ZA must not include extra fields
+   - For ZA: verify existence using za_locations (must match parent chain)
+
+- GET /api/gossip
+  Query:
+    country_code=... (required)
+    province=... (ZA only)
+    city_town=... (ZA only)
+    kasi_hood_village=... (ZA only)
+    limit=30
+    cursor=<created_at or id cursor>
+  Behavior:
+   - non-ZA: ignore/deny province/city/kasi filters
+   - ZA: apply filters in order (province -> city -> kasi)
+   - return newest first
+   - return next_cursor
+
+Reporting:
+- POST /api/gossip/:id/report
+  Body: { reason }
+  - Insert into gossip_reports
+  - Increment reports_count atomically
+  - No user identity stored
+
+Admin moderation (admin auth exists elsewhere; here only implement endpoints):
+- GET /api/admin/gossip/reported?country_code=...
+- POST /api/admin/gossip/:id/hide
+- POST /api/admin/gossip/:id/delete
+Rules:
+- hide sets status='hidden'
+- delete sets status='deleted'
+- feed must exclude hidden/deleted (unless admin)
+
+UI (MINIMUM WORKING, NOT PRETTY)
+- Screen: Gossip
+  Step 1: Country selector
+  If country != ZA:
+    - show text box + Post
+    - show feed for that country
+  If country == ZA:
+    - show Province selector (9)
+    - show City/Town searchable selector (from API)
+    - show Kasi/Hood/Village searchable selector (from API)
+    - Post button disabled until all 3 selected + text valid
+- Show current scope breadcrumb:
+  - “Botswana”
+  - “South Africa > Gauteng > Johannesburg > Soweto”
+
+LOGGING RULES (STRICT)
+- For gossip routes, log only:
+  route name, status code, latency
+- Do NOT log request bodies or headers.
+
+ACCEPTANCE TESTS (MUST PASS)
+1) Non-ZA post:
+   - POST /api/gossip with {country_code:"BW", text:"hi"} => 201 created; province/city/kasi stored as NULL.
+2) Non-ZA reject extra fields:
+   - POST /api/gossip with {country_code:"BW", province:"x", text:"hi"} => 400.
+3) ZA requires full chain:
+   - POST /api/gossip with {country_code:"ZA", province:"Gauteng", text:"hi"} => 400.
+4) ZA validates hierarchy:
+   - if city_town is not under selected province => 400.
+   - if kasi not under selected city_town => 400.
+5) Feed filtering:
+   - GET /api/gossip?country_code=ZW returns only ZW posts.
+   - GET /api/gossip?country_code=ZA&province=Gauteng returns only Gauteng posts.
+6) Generated locations completeness:
+   - data/locations.json must contain all 9 provinces
+   - each province must have >=1 city_town
+   - total city_town count > 0 and total sub places > 0
+   - generator prints counts and exits non-zero if data empty.
+
+STARTUP STEPS (RUNBOOK)
+- Set env in Replit Secrets:
+  MAIN_PLACE_QUERY_URL
+  SUB_PLACE_QUERY_URL
+- Run:
+  node scripts/generate_locations.js
+  node scripts/import_locations.js
+- Start server
+- Verify acceptance tests by calling endpoints
+
+IMPORTANT:
+- Do not introduce municipalities anywhere in the UI.
+- City/Town and Kasi/Hood/Village naming comes from Main/Sub Place data only.
+- Begin with South Africa deep segmentation; other countries stay country-only.

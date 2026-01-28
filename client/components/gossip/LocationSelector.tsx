@@ -1,0 +1,335 @@
+import React, { useState, useEffect } from "react";
+import { View, Pressable, StyleSheet, Modal, FlatList, TextInput, ActivityIndicator } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { Feather } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
+import { ThemedText } from "@/components/ThemedText";
+import { useTheme } from "@/hooks/useTheme";
+import { Spacing, BorderRadius } from "@/constants/theme";
+import { type Country, type ZaLocation, getCountryFlag } from "./AnonGossipTypes";
+
+interface LocationSelectorProps {
+  selectedCountry: string | null;
+  selectedLocation: ZaLocation | null;
+  onSelect: (country: string | null, location: ZaLocation | null, displayText: string) => void;
+}
+
+export function LocationSelector({ selectedCountry, selectedLocation, onSelect }: LocationSelectorProps) {
+  const { theme } = useTheme();
+  const [showModal, setShowModal] = useState(false);
+  const [step, setStep] = useState<"country" | "province" | "city" | "kasi">("country");
+  const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
+  const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const { data: countries = [] } = useQuery<Country[]>({
+    queryKey: ["/api/gossip/countries"],
+    staleTime: 1000 * 60 * 60,
+  });
+
+  const { data: zaLocations = [], isLoading: loadingLocations } = useQuery<ZaLocation[]>({
+    queryKey: ["/api/gossip/za-locations", { province: selectedProvince, city: selectedCity, level: step === "province" ? 1 : step === "city" ? 2 : 3 }],
+    enabled: selectedCountry === "ZA" && (step === "province" || step === "city" || step === "kasi"),
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const getDisplayText = () => {
+    if (selectedLocation) {
+      const parts = [selectedLocation.province];
+      if (selectedLocation.city) parts.push(selectedLocation.city);
+      if (selectedLocation.kasi) parts.push(selectedLocation.kasi);
+      return parts.join(" > ");
+    }
+    if (selectedCountry) {
+      const country = countries.find(c => c.code === selectedCountry);
+      return country ? `${getCountryFlag(country.code)} ${country.name}` : selectedCountry;
+    }
+    return "Select Location";
+  };
+
+  const handleCountrySelect = (code: string) => {
+    if (code === "ZA") {
+      setStep("province");
+    } else {
+      const country = countries.find(c => c.code === code);
+      onSelect(code, null, country ? `${getCountryFlag(country.code)} ${country.name}` : code);
+      setShowModal(false);
+      resetSelection();
+    }
+  };
+
+  const handleProvinceSelect = (province: string) => {
+    setSelectedProvince(province);
+    setStep("city");
+  };
+
+  const handleCitySelect = (city: string) => {
+    setSelectedCity(city);
+    setStep("kasi");
+  };
+
+  const handleKasiSelect = (location: ZaLocation) => {
+    const displayText = `${location.province} > ${location.city || ""} > ${location.kasi || ""}`.replace(/ > $/g, "");
+    onSelect("ZA", location, displayText);
+    setShowModal(false);
+    resetSelection();
+  };
+
+  const resetSelection = () => {
+    setStep("country");
+    setSelectedProvince(null);
+    setSelectedCity(null);
+    setSearchQuery("");
+  };
+
+  const handleBack = () => {
+    if (step === "kasi") {
+      setSelectedCity(null);
+      setStep("city");
+    } else if (step === "city") {
+      setSelectedProvince(null);
+      setStep("province");
+    } else if (step === "province") {
+      setStep("country");
+    }
+  };
+
+  const getProvinces = () => {
+    const provinces = new Set<string>();
+    zaLocations.filter(l => l.level === 1).forEach(l => provinces.add(l.province));
+    return Array.from(provinces);
+  };
+
+  const getCities = () => {
+    return zaLocations.filter(l => l.level === 2 && l.province === selectedProvince);
+  };
+
+  const getKasis = () => {
+    return zaLocations.filter(l => l.level === 3 && l.province === selectedProvince && l.city === selectedCity);
+  };
+
+  const filteredCountries = countries.filter(c =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.code.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <>
+      <Pressable
+        style={[styles.selector, { backgroundColor: theme.glassBackground, borderColor: theme.glassBorder }]}
+        onPress={() => setShowModal(true)}
+      >
+        <Feather name="map-pin" size={16} color={theme.primary} />
+        <ThemedText style={[styles.selectorText, { color: selectedCountry ? theme.text : theme.textSecondary }]} numberOfLines={1}>
+          {getDisplayText()}
+        </ThemedText>
+        <Feather name="chevron-down" size={16} color={theme.textSecondary} />
+      </Pressable>
+
+      <Modal visible={showModal} animationType="slide" transparent onRequestClose={() => { setShowModal(false); resetSelection(); }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
+          <View style={styles.modalOverlay}>
+            <Pressable style={styles.modalDismiss} onPress={() => { setShowModal(false); resetSelection(); }} />
+            <View style={[styles.modalContent, { backgroundColor: theme.backgroundRoot }]}>
+              <View style={styles.modalHeader}>
+              {step !== "country" ? (
+                <Pressable onPress={handleBack} style={styles.backButton}>
+                  <Feather name="arrow-left" size={20} color={theme.text} />
+                </Pressable>
+              ) : null}
+              <ThemedText type="headline" style={styles.modalTitle}>
+                {step === "country" ? "Select Country" : step === "province" ? "Select Province" : step === "city" ? "Select City" : "Select Kasi/Township"}
+              </ThemedText>
+              <Pressable onPress={() => { setShowModal(false); resetSelection(); }}>
+                <Feather name="x" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+
+            {step === "country" ? (
+              <View style={[styles.searchContainer, { backgroundColor: theme.backgroundSecondary }]}>
+                <Feather name="search" size={16} color={theme.textSecondary} />
+                <TextInput
+                  style={[styles.searchInput, { color: theme.text }]}
+                  placeholder="Search countries..."
+                  placeholderTextColor={theme.textTertiary}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+              </View>
+            ) : null}
+
+            {loadingLocations ? (
+              <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+            ) : null}
+
+            {step === "country" ? (
+              <FlatList
+                data={filteredCountries}
+                keyExtractor={(item) => item.code}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[styles.listItem, { borderBottomColor: theme.glassBorder }]}
+                    onPress={() => handleCountrySelect(item.code)}
+                  >
+                    <ThemedText style={styles.flagEmoji}>{getCountryFlag(item.code)}</ThemedText>
+                    <View style={styles.itemContent}>
+                      <ThemedText style={styles.itemName}>{item.name}</ThemedText>
+                      {item.isSouthAfrica ? (
+                        <ThemedText style={[styles.itemMeta, { color: theme.primary }]}>Province/City/Kasi selection</ThemedText>
+                      ) : (
+                        <ThemedText style={[styles.itemMeta, { color: theme.textTertiary }]}>Southern Africa</ThemedText>
+                      )}
+                    </View>
+                    <Feather name="chevron-right" size={18} color={theme.textTertiary} />
+                  </Pressable>
+                )}
+                ListEmptyComponent={<ThemedText style={styles.emptyText}>No countries found</ThemedText>}
+              />
+            ) : step === "province" ? (
+              <FlatList
+                data={getProvinces()}
+                keyExtractor={(item) => item}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[styles.listItem, { borderBottomColor: theme.glassBorder }]}
+                    onPress={() => handleProvinceSelect(item)}
+                  >
+                    <Feather name="map" size={18} color={theme.primary} />
+                    <ThemedText style={styles.itemName}>{item}</ThemedText>
+                    <Feather name="chevron-right" size={18} color={theme.textTertiary} />
+                  </Pressable>
+                )}
+              />
+            ) : step === "city" ? (
+              <FlatList
+                data={getCities()}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[styles.listItem, { borderBottomColor: theme.glassBorder }]}
+                    onPress={() => handleCitySelect(item.city!)}
+                  >
+                    <Feather name="home" size={18} color={theme.primary} />
+                    <ThemedText style={styles.itemName}>{item.city}</ThemedText>
+                    <Feather name="chevron-right" size={18} color={theme.textTertiary} />
+                  </Pressable>
+                )}
+              />
+            ) : (
+              <FlatList
+                data={getKasis()}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[styles.listItem, { borderBottomColor: theme.glassBorder }]}
+                    onPress={() => handleKasiSelect(item)}
+                  >
+                    <Feather name="map-pin" size={18} color={theme.primary} />
+                    <View style={styles.itemContent}>
+                      <ThemedText style={styles.itemName}>{item.kasi}</ThemedText>
+                      {item.population ? (
+                        <ThemedText style={[styles.itemMeta, { color: theme.textTertiary }]}>
+                          Pop: {item.population.toLocaleString()}
+                        </ThemedText>
+                      ) : null}
+                    </View>
+                    <Feather name="check" size={18} color={theme.primary} />
+                  </Pressable>
+                )}
+              />
+            )}
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  selector: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  selectorText: {
+    flex: 1,
+    fontSize: 14,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalDismiss: {
+    flex: 1,
+  },
+  modalContent: {
+    maxHeight: "80%",
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    paddingTop: Spacing.lg,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
+  },
+  backButton: {
+    padding: 4,
+    marginRight: Spacing.sm,
+  },
+  modalTitle: {
+    flex: 1,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+  },
+  loader: {
+    marginVertical: Spacing.xl,
+  },
+  listItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+  },
+  flagEmoji: {
+    fontSize: 24,
+  },
+  itemContent: {
+    flex: 1,
+  },
+  itemName: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  itemMeta: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  emptyText: {
+    textAlign: "center",
+    padding: Spacing.xl,
+    opacity: 0.6,
+  },
+});
