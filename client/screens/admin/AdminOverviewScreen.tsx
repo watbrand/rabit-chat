@@ -29,10 +29,12 @@ const ADMIN_SECTIONS = [
   { key: "AdminMusic", icon: "music", label: "Music", color: "#EC4899" },
   { key: "AdminEconomy", icon: "dollar-sign", label: "Economy", color: "#F59E0B" },
   { key: "AdminReports", icon: "flag", label: "Reports", color: "#EF4444" },
+  { key: "AdminTickets", icon: "headphones", label: "Tickets", color: "#14B8A6" },
   { key: "AdminVerification", icon: "award", label: "Verification", color: "#06B6D4" },
   { key: "AdminRoles", icon: "shield", label: "Roles", color: "#A855F7" },
   { key: "AdminSettings", icon: "settings", label: "Settings", color: "#6366F1" },
-  { key: "AdminAudit", icon: "activity", label: "Audit", color: "#14B8A6" },
+  { key: "AdminAudit", icon: "activity", label: "Audit", color: "#22C55E" },
+  { key: "AdminHelpCenter", icon: "help-circle", label: "Help Center", color: "#8B5CF6" },
 ];
 
 const ANALYTICS_CARDS = [

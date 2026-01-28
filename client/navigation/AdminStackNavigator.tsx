@@ -14,6 +14,8 @@ import AdminAuditScreen from "@/screens/admin/AdminAuditScreen";
 import AdminVerificationScreen from "@/screens/admin/AdminVerificationScreen";
 import AdminMusicScreen from "@/screens/admin/AdminMusicScreen";
 import AdminEconomyScreen from "@/screens/admin/AdminEconomyScreen";
+import AdminTicketsScreen from "@/screens/admin/AdminTicketsScreen";
+import AdminHelpCenterScreen from "@/screens/admin/AdminHelpCenterScreen";
 
 export type AdminStackParamList = {
   AdminOverview: undefined;
@@ -28,6 +30,8 @@ export type AdminStackParamList = {
   AdminVerification: undefined;
   AdminMusic: undefined;
   AdminEconomy: undefined;
+  AdminTickets: undefined;
+  AdminHelpCenter: undefined;
 };
 
 const Stack = createNativeStackNavigator<AdminStackParamList>();
@@ -101,6 +105,16 @@ export default function AdminStackNavigator() {
         name="AdminEconomy"
         component={AdminEconomyScreen}
         options={{ title: "Economy Management" }}
+      />
+      <Stack.Screen
+        name="AdminTickets"
+        component={AdminTicketsScreen}
+        options={{ title: "Support Tickets" }}
+      />
+      <Stack.Screen
+        name="AdminHelpCenter"
+        component={AdminHelpCenterScreen}
+        options={{ title: "Help Center" }}
       />
     </Stack.Navigator>
   );
