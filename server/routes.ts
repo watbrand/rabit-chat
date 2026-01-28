@@ -16,6 +16,7 @@ import { registerLinkPreviewRoutes } from "./routes-link-preview";
 import { registerMessageRoutes } from "./routes-messages";
 import { registerConversationSettingsRoutes } from "./routes-conversation-settings";
 import { registerApiUsageRoutes } from "./routes-api-usage";
+import { registerHelpCenterRoutes } from "./routes-help-center";
 import { adsEngine, type AuctionResult } from "./ads-engine";
 import { pool, db } from "./db";
 import { sql, and, eq, gt, gte, isNull, inArray, desc, or, like, asc, ilike } from "drizzle-orm";
@@ -5739,6 +5740,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Register API usage monitoring routes
   registerApiUsageRoutes(app);
+  
+  // Register Help Center routes (articles, FAQs, support inbox, tickets, AI search)
+  registerHelpCenterRoutes(app);
   
   // Get all reports with enhanced filtering (admin only)
   app.get("/api/admin/reports", requireAdmin, async (req, res) => {
