@@ -57,19 +57,8 @@ export default function SettingsScreen() {
   };
 
   const handleHelpPress = () => {
-    Alert.alert(
-      "Help & Support",
-      "Need assistance? Contact our support team.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Contact Support",
-          onPress: () => {
-            Linking.openURL("mailto:support@rabitchat.com");
-          },
-        },
-      ]
-    );
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.navigate("HelpCenter");
   };
 
   const SettingsRow = ({

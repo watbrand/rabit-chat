@@ -87,6 +87,7 @@ import BankAccountsScreen from "@/screens/BankAccountsScreen";
 import KYCScreen from "@/screens/KYCScreen";
 import WithdrawalScreen from "@/screens/WithdrawalScreen";
 import CoinCheckoutScreen from "@/screens/CoinCheckoutScreen";
+import { HelpCenterScreen, SupportInboxScreen, TicketChatScreen, HelpArticleScreen, FAQScreen, NewTicketScreen, FeatureRequestsScreen, SafetyCenterScreen } from "@/screens/help";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuth } from "@/hooks/useAuth";
 import { useOnboarding } from "@/hooks/useOnboarding";
@@ -207,6 +208,19 @@ export type RootStackParamList = {
       priceRands: number;
     };
   };
+  // Help Center screens
+  HelpCenter: undefined;
+  SupportInbox: undefined;
+  NewTicket: { category?: string; priority?: string } | undefined;
+  TicketChat: { ticketId: string };
+  HelpArticleDetail: { articleId: string };
+  HelpCategory: { categoryId: string; categoryName: string };
+  FAQs: undefined;
+  FeatureRequests: undefined;
+  SafetyCenter: undefined;
+  CommunityQA: undefined;
+  ReportBug: undefined;
+  Appeals: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -905,6 +919,72 @@ export default function RootStackNavigator() {
             options={{
               headerShown: false,
               animation: "slide_from_bottom",
+            }}
+          />
+          {/* Help Center Screens */}
+          <Stack.Screen
+            name="SupportInbox"
+            component={SupportInboxScreen}
+            options={{
+              title: "Support Inbox",
+              animation: "slide_from_right",
+            }}
+          />
+          <Stack.Screen
+            name="TicketChat"
+            component={TicketChatScreen}
+            options={{
+              title: "Support Ticket",
+              animation: "slide_from_right",
+              animationDuration: 200,
+            }}
+          />
+          <Stack.Screen
+            name="NewTicket"
+            component={NewTicketScreen}
+            options={{
+              title: "New Ticket",
+              animation: "slide_from_right",
+            }}
+          />
+          <Stack.Screen
+            name="HelpArticleDetail"
+            component={HelpArticleScreen}
+            options={{
+              title: "Help Article",
+              animation: "slide_from_right",
+            }}
+          />
+          <Stack.Screen
+            name="FAQs"
+            component={FAQScreen}
+            options={{
+              title: "FAQs",
+              animation: "slide_from_right",
+            }}
+          />
+          <Stack.Screen
+            name="FeatureRequests"
+            component={FeatureRequestsScreen}
+            options={{
+              title: "Feature Requests",
+              animation: "slide_from_right",
+            }}
+          />
+          <Stack.Screen
+            name="HelpCenter"
+            component={HelpCenterScreen}
+            options={{
+              title: "Help Center",
+              animation: "slide_from_right",
+            }}
+          />
+          <Stack.Screen
+            name="SafetyCenter"
+            component={SafetyCenterScreen}
+            options={{
+              title: "Safety Center",
+              animation: "slide_from_right",
             }}
           />
         </>
