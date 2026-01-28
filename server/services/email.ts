@@ -358,3 +358,287 @@ export async function sendNewFollowerEmail(
 ) {
   return sendEmail(to, `${followerUsername} is now following you on RabitChat`, getNewFollowerEmailHtml(username, followerUsername, followerNetWorth));
 }
+
+// ========== SUPPORT TICKET EMAIL TEMPLATES ==========
+
+// Support ticket created confirmation
+export function getTicketCreatedEmailHtml(
+  username: string,
+  ticketId: string,
+  subject: string,
+  category: string
+): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Support Ticket Created - RabitChat</title>
+  <style>${emailStyles}</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">RabitChat Support</div>
+    </div>
+    <div class="card">
+      <h1 class="title">We've Received Your Request</h1>
+      <p class="text">
+        Hi ${username}, thank you for contacting RabitChat Support. We've received your support ticket and our team will respond as soon as possible.
+      </p>
+      <div class="divider"></div>
+      <p class="text">
+        <span class="highlight">Ticket ID:</span> #${ticketId.slice(-8).toUpperCase()}<br>
+        <span class="highlight">Subject:</span> ${subject}<br>
+        <span class="highlight">Category:</span> ${category}
+      </p>
+      <div class="divider"></div>
+      <p class="text">
+        Our typical response time is <span class="highlight">within 24 hours</span>. Premium members receive priority support.
+      </p>
+      <a href="#" class="button">View Your Ticket</a>
+    </div>
+    <div class="footer">
+      <p>RabitChat Support Team</p>
+      <p>We're here to help you succeed</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
+// Support reply notification
+export function getTicketReplyEmailHtml(
+  username: string,
+  ticketId: string,
+  subject: string,
+  agentName: string,
+  replyPreview: string
+): string {
+  const truncatedPreview = replyPreview.length > 200 
+    ? replyPreview.substring(0, 200) + '...' 
+    : replyPreview;
+    
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Reply to Your Ticket - RabitChat</title>
+  <style>${emailStyles}</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">RabitChat Support</div>
+    </div>
+    <div class="card">
+      <h1 class="title">You Have a New Reply</h1>
+      <p class="text">
+        Hi ${username}, <span class="highlight">${agentName}</span> from our support team has responded to your ticket.
+      </p>
+      <div class="divider"></div>
+      <p class="text">
+        <span class="highlight">Ticket:</span> #${ticketId.slice(-8).toUpperCase()} - ${subject}
+      </p>
+      <div style="background: rgba(139, 92, 246, 0.1); border-left: 3px solid #8B5CF6; padding: 16px; border-radius: 8px; margin: 16px 0;">
+        <p class="text" style="margin: 0; font-style: italic;">"${truncatedPreview}"</p>
+      </div>
+      <a href="#" class="button">View Full Reply</a>
+    </div>
+    <div class="footer">
+      <p>RabitChat Support Team</p>
+      <p>Please reply directly in the app to continue the conversation</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
+// Ticket status update notification
+export function getTicketStatusUpdateEmailHtml(
+  username: string,
+  ticketId: string,
+  subject: string,
+  newStatus: string,
+  statusMessage: string
+): string {
+  const statusColors: Record<string, string> = {
+    RESOLVED: '#10B981',
+    CLOSED: '#6366F1',
+    IN_PROGRESS: '#F59E0B',
+    PENDING: '#8B5CF6',
+    ESCALATED: '#EF4444',
+  };
+  
+  const statusColor = statusColors[newStatus] || '#8B5CF6';
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ticket Status Update - RabitChat</title>
+  <style>${emailStyles}</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">RabitChat Support</div>
+    </div>
+    <div class="card">
+      <h1 class="title">Ticket Status Update</h1>
+      <p class="text">
+        Hi ${username}, the status of your support ticket has been updated.
+      </p>
+      <div class="divider"></div>
+      <p class="text">
+        <span class="highlight">Ticket:</span> #${ticketId.slice(-8).toUpperCase()} - ${subject}
+      </p>
+      <div style="text-align: center; margin: 24px 0;">
+        <span style="background: ${statusColor}; color: white; padding: 8px 24px; border-radius: 20px; font-weight: 600; font-size: 14px;">
+          ${newStatus.replace('_', ' ')}
+        </span>
+      </div>
+      <p class="text">${statusMessage}</p>
+      <a href="#" class="button">View Ticket</a>
+    </div>
+    <div class="footer">
+      <p>RabitChat Support Team</p>
+      <p>Thank you for your patience</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
+// Ticket resolved satisfaction survey
+export function getTicketSatisfactionEmailHtml(
+  username: string,
+  ticketId: string,
+  subject: string
+): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How Did We Do? - RabitChat</title>
+  <style>${emailStyles}</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">RabitChat Support</div>
+    </div>
+    <div class="card">
+      <h1 class="title">Your Ticket Has Been Resolved</h1>
+      <p class="text">
+        Hi ${username}, great news! Your support ticket <span class="highlight">#${ticketId.slice(-8).toUpperCase()}</span> regarding "${subject}" has been resolved.
+      </p>
+      <div class="divider"></div>
+      <p class="text">
+        We'd love to hear about your experience. How would you rate our support?
+      </p>
+      <table style="width: 100%; margin: 24px 0;">
+        <tr>
+          <td style="text-align: center; padding: 8px;">
+            <a href="#" style="text-decoration: none; font-size: 32px;">1</a>
+          </td>
+          <td style="text-align: center; padding: 8px;">
+            <a href="#" style="text-decoration: none; font-size: 32px;">2</a>
+          </td>
+          <td style="text-align: center; padding: 8px;">
+            <a href="#" style="text-decoration: none; font-size: 32px;">3</a>
+          </td>
+          <td style="text-align: center; padding: 8px;">
+            <a href="#" style="text-decoration: none; font-size: 32px;">4</a>
+          </td>
+          <td style="text-align: center; padding: 8px;">
+            <a href="#" style="text-decoration: none; font-size: 32px;">5</a>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" style="text-align: left; color: #71717a; font-size: 12px;">Poor</td>
+          <td></td>
+          <td colspan="2" style="text-align: right; color: #71717a; font-size: 12px;">Excellent</td>
+        </tr>
+      </table>
+      <p class="text" style="font-size: 14px;">
+        If your issue is not fully resolved, you can reopen this ticket anytime within 7 days.
+      </p>
+    </div>
+    <div class="footer">
+      <p>RabitChat Support Team</p>
+      <p>Your feedback helps us improve</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
+// Support ticket convenience functions
+export async function sendTicketCreatedEmail(
+  to: string,
+  username: string,
+  ticketId: string,
+  subject: string,
+  category: string
+) {
+  return sendEmail(
+    to,
+    `Ticket #${ticketId.slice(-8).toUpperCase()} Created - RabitChat Support`,
+    getTicketCreatedEmailHtml(username, ticketId, subject, category)
+  );
+}
+
+export async function sendTicketReplyEmail(
+  to: string,
+  username: string,
+  ticketId: string,
+  subject: string,
+  agentName: string,
+  replyPreview: string
+) {
+  return sendEmail(
+    to,
+    `New Reply to Ticket #${ticketId.slice(-8).toUpperCase()} - RabitChat Support`,
+    getTicketReplyEmailHtml(username, ticketId, subject, agentName, replyPreview)
+  );
+}
+
+export async function sendTicketStatusUpdateEmail(
+  to: string,
+  username: string,
+  ticketId: string,
+  subject: string,
+  newStatus: string,
+  statusMessage: string
+) {
+  return sendEmail(
+    to,
+    `Ticket #${ticketId.slice(-8).toUpperCase()} ${newStatus} - RabitChat Support`,
+    getTicketStatusUpdateEmailHtml(username, ticketId, subject, newStatus, statusMessage)
+  );
+}
+
+export async function sendTicketSatisfactionEmail(
+  to: string,
+  username: string,
+  ticketId: string,
+  subject: string
+) {
+  return sendEmail(
+    to,
+    `How Was Your Support Experience? - RabitChat`,
+    getTicketSatisfactionEmailHtml(username, ticketId, subject)
+  );
+}

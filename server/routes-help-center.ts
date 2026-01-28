@@ -12,6 +12,12 @@ import {
 } from "./cloudinary";
 import { summarizeContent } from "./services/ai-moderation";
 import type { AuditAction } from "@shared/schema";
+import {
+  sendTicketCreatedEmail,
+  sendTicketReplyEmail,
+  sendTicketStatusUpdateEmail,
+  sendTicketSatisfactionEmail,
+} from "./services/email";
 
 const diskStorage = multer.diskStorage({
   destination: UPLOAD_TEMP_DIR,
@@ -854,6 +860,18 @@ export function registerHelpCenterRoutes(app: Express) {
         WHERE user_id = $1
       `, [userId]);
       
+      // Send confirmation email (async, don't block response)
+      const user = await storage.getUser(userId);
+      if (user && user.email) {
+        sendTicketCreatedEmail(
+          user.email,
+          user.displayName || user.username || 'User',
+          ticket.id,
+          data.subject,
+          data.category
+        ).catch(err => console.error('[Email] Failed to send ticket created email:', err));
+      }
+      
       res.status(201).json(ticket);
     } catch (error: any) {
       console.error("Error creating ticket:", error);
@@ -975,6 +993,21 @@ export function registerHelpCenterRoutes(app: Express) {
       await pool.query(`
         UPDATE support_inboxes SET last_activity_at = NOW() WHERE user_id = $1
       `, [ticket.user_id]);
+      
+      // Send email notification when admin replies to user
+      if (senderType === "ADMIN" && ticket.user_id !== userId) {
+        const ticketOwner = await storage.getUser(ticket.user_id);
+        if (ticketOwner && ticketOwner.email) {
+          sendTicketReplyEmail(
+            ticketOwner.email,
+            ticketOwner.displayName || ticketOwner.username || 'User',
+            ticket.id,
+            ticket.subject,
+            user?.displayName || user?.username || 'Support Team',
+            data.content
+          ).catch(err => console.error('[Email] Failed to send ticket reply email:', err));
+        }
+      }
       
       res.status(201).json(messageResult.rows[0]);
     } catch (error: any) {
@@ -1100,6 +1133,39 @@ export function registerHelpCenterRoutes(app: Express) {
           SET open_tickets = GREATEST(open_tickets - 1, 0)
           WHERE user_id = $1
         `, [ticket.user_id]);
+      }
+      
+      // Send status update email to ticket owner
+      if (isAdmin && ticket.user_id !== userId) {
+        const ticketOwner = await storage.getUser(ticket.user_id);
+        if (ticketOwner && ticketOwner.email) {
+          const statusMessages: Record<string, string> = {
+            RESOLVED: "Your issue has been resolved. If you have any further questions, feel free to reopen this ticket within 7 days.",
+            CLOSED: "This ticket has been closed. Thank you for contacting RabitChat Support.",
+            IN_PROGRESS: "Our team is now actively working on your request. We'll update you as soon as we have more information.",
+            ESCALATED: "Your ticket has been escalated to our senior support team for priority handling.",
+            PENDING: "We're waiting for additional information to proceed. Please respond to this ticket if you have updates."
+          };
+          
+          sendTicketStatusUpdateEmail(
+            ticketOwner.email,
+            ticketOwner.displayName || ticketOwner.username || 'User',
+            ticket.id,
+            ticket.subject,
+            status,
+            statusMessages[status] || "Your ticket status has been updated."
+          ).catch(err => console.error('[Email] Failed to send status update email:', err));
+          
+          // Send satisfaction survey for resolved tickets
+          if (status === "RESOLVED") {
+            sendTicketSatisfactionEmail(
+              ticketOwner.email,
+              ticketOwner.displayName || ticketOwner.username || 'User',
+              ticket.id,
+              ticket.subject
+            ).catch(err => console.error('[Email] Failed to send satisfaction email:', err));
+          }
+        }
       }
       
       res.json({ success: true });
