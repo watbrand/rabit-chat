@@ -233,7 +233,7 @@ export async function seedHelpCenterOnStartup() {
 
     for (const faq of faqData) {
       await client.query(
-        `INSERT INTO help_faqs (id, question, answer, category, sort_order, is_active, view_count, helpful_count, created_at, updated_at)
+        `INSERT INTO help_faqs (id, question, answer, category_id, sort_order, is_active, view_count, helpful_count, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, true, $6, $7, NOW(), NOW())
          ON CONFLICT (id) DO NOTHING`,
         [

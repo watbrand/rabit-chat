@@ -2451,7 +2451,7 @@ export function registerHelpCenterRoutes(app: Express) {
   });
 
   // Shared seed logic
-  async function runHelpCenterSeed(res: Response) {
+  async function runHelpCenterSeed(req: Request, res: Response) {
     try {
       console.log("[Help Center] Public seed endpoint called");
       
@@ -2487,7 +2487,10 @@ export function registerHelpCenterRoutes(app: Express) {
         const articles = parseInt(artCount.rows[0].count);
         const faqs = parseInt(faqCount.rows[0].count);
         
-        if (categories >= 10 && articles >= 50 && faqs >= 20) {
+        // Check force query param
+        const forceReseed = req.query.force === 'true';
+        
+        if (!forceReseed && categories >= 10 && articles >= 50 && faqs >= 20) {
           return res.json({
             success: true,
             message: "Help Center already seeded",
@@ -2529,12 +2532,12 @@ export function registerHelpCenterRoutes(app: Express) {
 
   // GET /api/help/seed - Public seed endpoint (GET for easy browser access)
   app.get("/api/help/seed", async (req: Request, res: Response) => {
-    await runHelpCenterSeed(res);
+    await runHelpCenterSeed(req, res);
   });
 
   // POST /api/help/seed - Public seed endpoint for production initialization
   app.post("/api/help/seed", async (req: Request, res: Response) => {
-    await runHelpCenterSeed(res);
+    await runHelpCenterSeed(req, res);
   });
 
   // GET /api/help/debug - Debug endpoint to check Help Center state (public)
