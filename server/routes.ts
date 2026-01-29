@@ -9,6 +9,7 @@ import multer from "multer";
 import OpenAI from "openai";
 import { storage } from "./storage";
 import { registerGossipRoutes } from "./gossip-routes";
+import gossipV2Router from "./routes-gossip-v2";
 import { registerAdvancedRoutes } from "./routes-advanced";
 import { registerOnboardingRoutes } from "./routes-onboarding";
 import { registerAdsRoutes } from "./routes-ads";
@@ -5719,6 +5720,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register anonymous gossip routes
   registerGossipRoutes(app, requireAdmin);
+  app.use("/api/gossip/v2", gossipV2Router);
+  console.log("Gossip V2 routes registered");
   
   // Register advanced feature routes (wallets, live streaming, groups, events, etc.)
   registerAdvancedRoutes(app);
