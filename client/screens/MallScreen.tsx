@@ -655,7 +655,11 @@ export default function MallScreen() {
           </View>
 
           {selectedItem ? (
-            <ScrollView style={styles.detailScrollView} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+              style={styles.detailScrollView} 
+              contentContainerStyle={styles.detailScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
               {selectedItem.imageUrl ? (
                 <Image 
                   source={{ uri: selectedItem.imageUrl }} 
@@ -1075,18 +1079,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   detailModalContent: {
-    width: "100%",
+    width: "90%",
     maxWidth: 400,
-    maxHeight: "85%",
+    maxHeight: "80%",
+    minHeight: 400,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
     overflow: "hidden",
     ...Shadows.lg,
   },
   detailScrollView: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+  },
+  detailScrollContent: {
     padding: Spacing.xl,
-    paddingTop: 0,
+    paddingTop: Spacing.md,
   },
   detailImage: {
     width: "100%",
