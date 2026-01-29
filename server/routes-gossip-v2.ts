@@ -2558,4 +2558,305 @@ router.post("/moderation/reports/:reportId/review", async (req: Request, res: Re
   }
 });
 
+const TEA_LEVELS = {
+  BRONZE: { minScore: 0, emoji: "🥉", perks: ["Basic posting", "React to posts"] },
+  SILVER: { minScore: 100, emoji: "🥈", perks: ["All Bronze perks", "Create polls", "Start DMs"] },
+  GOLD: { minScore: 500, emoji: "🥇", perks: ["All Silver perks", "Priority trending", "Custom alias"] },
+  PLATINUM: { minScore: 2000, emoji: "💎", perks: ["All Gold perks", "Verified badge eligible", "Weekly spill host"] },
+  DIAMOND: { minScore: 10000, emoji: "👑", perks: ["All Platinum perks", "Hood Legend status", "Featured posts"] },
+};
+
+function calculateTeaLevel(stats: { 
+  totalPosts: number; 
+  totalReactions: number; 
+  totalReposts: number;
+  totalReplies: number;
+  accurateCount: number;
+}): { level: string; score: number; nextLevel: string | null; progress: number } {
+  const score = (stats.totalPosts * 10) + 
+                (stats.totalReactions * 1) + 
+                (stats.totalReposts * 5) + 
+                (stats.totalReplies * 2) +
+                (stats.accurateCount * 15);
+
+  let currentLevel = "BRONZE";
+  let nextLevel: string | null = "SILVER";
+  
+  if (score >= TEA_LEVELS.DIAMOND.minScore) {
+    currentLevel = "DIAMOND";
+    nextLevel = null;
+  } else if (score >= TEA_LEVELS.PLATINUM.minScore) {
+    currentLevel = "PLATINUM";
+    nextLevel = "DIAMOND";
+  } else if (score >= TEA_LEVELS.GOLD.minScore) {
+    currentLevel = "GOLD";
+    nextLevel = "PLATINUM";
+  } else if (score >= TEA_LEVELS.SILVER.minScore) {
+    currentLevel = "SILVER";
+    nextLevel = "GOLD";
+  }
+  let progress = 100;
+  if (nextLevel) {
+    const currentMin = TEA_LEVELS[currentLevel as keyof typeof TEA_LEVELS].minScore;
+    const nextMin = TEA_LEVELS[nextLevel as keyof typeof TEA_LEVELS].minScore;
+    progress = Math.min(100, Math.round(((score - currentMin) / (nextMin - currentMin)) * 100));
+  }
+
+  return { level: currentLevel, score, nextLevel, progress };
+}
+
+router.get("/tea-spiller/stats", async (req: Request, res: Response) => {
+  try {
+    const { deviceHash } = req.query;
+    
+    if (!deviceHash || typeof deviceHash !== 'string') {
+      return res.status(400).json({ error: "Missing deviceHash" });
+    }
+
+    const hashedDevice = hashDevice(deviceHash);
+    let stats = await db
+      .select()
+      .from(teaSpillerStats)
+      .where(eq(teaSpillerStats.deviceHash, hashedDevice))
+      .limit(1);
+    if (stats.length === 0) {
+      const postCount = await db
+        .select({ count: count() })
+        .from(anonGossipPosts)
+        .where(eq(anonGossipPosts.deviceHash, hashedDevice));
+      
+      const replyCount = await db
+        .select({ count: count() })
+        .from(anonGossipReplies)
+        .where(eq(anonGossipReplies.deviceHash, hashedDevice));
+      const newStats = await db.insert(teaSpillerStats).values({
+        deviceHash: hashedDevice,
+        totalPosts: postCount[0]?.count || 0,
+        totalReplies: replyCount[0]?.count || 0,
+      }).returning();
+      
+      stats = newStats;
+    }
+    const levelInfo = calculateTeaLevel({
+      totalPosts: stats[0].totalPosts,
+      totalReactions: stats[0].totalReactions,
+      totalReposts: stats[0].totalReposts,
+      totalReplies: stats[0].totalReplies,
+      accurateCount: stats[0].accurateCount,
+    });
+    const levelDetails = TEA_LEVELS[levelInfo.level as keyof typeof TEA_LEVELS];
+    const nextLevelDetails = levelInfo.nextLevel 
+      ? TEA_LEVELS[levelInfo.nextLevel as keyof typeof TEA_LEVELS] 
+      : null;
+
+    return res.json({
+      level: levelInfo.level,
+      emoji: levelDetails.emoji,
+      score: levelInfo.score,
+      progress: levelInfo.progress,
+      nextLevel: levelInfo.nextLevel,
+      pointsToNextLevel: nextLevelDetails 
+        ? nextLevelDetails.minScore - levelInfo.score 
+        : 0,
+      perks: levelDetails.perks,
+      stats: {
+        totalPosts: stats[0].totalPosts,
+        totalReactions: stats[0].totalReactions,
+        totalReposts: stats[0].totalReposts,
+        totalReplies: stats[0].totalReplies,
+        accurateCount: stats[0].accurateCount,
+        inaccurateCount: stats[0].inaccurateCount,
+        accuracyRate: stats[0].accuracyRate,
+      },
+      isShadowBanned: stats[0].isShadowBanned,
+      cooldownUntil: stats[0].cooldownUntil,
+    });
+  } catch (error) {
+    console.error("Error fetching tea spiller stats:", error);
+    return res.status(500).json({ error: "Failed to fetch tea spiller stats" });
+  }
+});
+
+router.post("/tea-spiller/recalculate", async (req: Request, res: Response) => {
+  try {
+    const { deviceHash } = req.body;
+    
+    if (!deviceHash) {
+      return res.status(400).json({ error: "Missing deviceHash" });
+    }
+
+    const hashedDevice = hashDevice(deviceHash);
+    const postCount = await db
+      .select({ count: count() })
+      .from(anonGossipPosts)
+      .where(eq(anonGossipPosts.deviceHash, hashedDevice));
+    
+    const replyCount = await db
+      .select({ count: count() })
+      .from(anonGossipReplies)
+      .where(eq(anonGossipReplies.deviceHash, hashedDevice));
+    const reactionsReceived = await db
+      .select({ count: count() })
+      .from(anonGossipReactions)
+      .innerJoin(anonGossipPosts, eq(anonGossipReactions.postId, anonGossipPosts.id))
+      .where(eq(anonGossipPosts.deviceHash, hashedDevice));
+
+    const repostsReceived = await db
+      .select({ count: count() })
+      .from(gossipReposts)
+      .innerJoin(anonGossipPosts, eq(gossipReposts.postId, anonGossipPosts.id))
+      .where(eq(anonGossipPosts.deviceHash, hashedDevice));
+    const accuracyVotes = await db
+      .select({
+        accurate: sql<number>`SUM(CASE WHEN vote = 'TRUE' THEN 1 ELSE 0 END)::int`,
+        inaccurate: sql<number>`SUM(CASE WHEN vote = 'FALSE' THEN 1 ELSE 0 END)::int`,
+      })
+      .from(gossipAccuracyVotes)
+      .innerJoin(anonGossipPosts, eq(gossipAccuracyVotes.postId, anonGossipPosts.id))
+      .where(eq(anonGossipPosts.deviceHash, hashedDevice));
+
+    const accurateCount = accuracyVotes[0]?.accurate || 0;
+    const inaccurateCount = accuracyVotes[0]?.inaccurate || 0;
+    const totalVotes = accurateCount + inaccurateCount;
+    const accuracyRate = totalVotes > 0 ? accurateCount / totalVotes : 0;
+
+    const updatedStats = {
+      totalPosts: postCount[0]?.count || 0,
+      totalReplies: replyCount[0]?.count || 0,
+      totalReactions: reactionsReceived[0]?.count || 0,
+      totalReposts: repostsReceived[0]?.count || 0,
+      accurateCount,
+      inaccurateCount,
+      accuracyRate,
+      lastActiveAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const levelInfo = calculateTeaLevel({
+      totalPosts: updatedStats.totalPosts,
+      totalReactions: updatedStats.totalReactions,
+      totalReposts: updatedStats.totalReposts,
+      totalReplies: updatedStats.totalReplies,
+      accurateCount: updatedStats.accurateCount,
+    });
+    await db
+      .insert(teaSpillerStats)
+      .values({
+        deviceHash: hashedDevice,
+        ...updatedStats,
+        level: levelInfo.level as any,
+      })
+      .onConflictDoUpdate({
+        target: teaSpillerStats.deviceHash,
+        set: {
+          ...updatedStats,
+          level: levelInfo.level as any,
+        },
+      });
+
+    return res.json({
+      success: true,
+      level: levelInfo.level,
+      score: levelInfo.score,
+      stats: updatedStats,
+    });
+  } catch (error) {
+    console.error("Error recalculating tea spiller stats:", error);
+    return res.status(500).json({ error: "Failed to recalculate stats" });
+  }
+});
+
+router.get("/tea-spiller/levels", async (req: Request, res: Response) => {
+  try {
+    const levels = Object.entries(TEA_LEVELS).map(([name, details]) => ({
+      name,
+      ...details,
+    }));
+
+    return res.json({ levels });
+  } catch (error) {
+    console.error("Error fetching tea spiller levels:", error);
+    return res.status(500).json({ error: "Failed to fetch levels" });
+  }
+});
+
+router.get("/tea-spiller/leaderboard", async (req: Request, res: Response) => {
+  try {
+    const { locationId, limit = "20" } = req.query;
+    let leaderboard;
+
+    if (locationId) {
+      leaderboard = await db
+        .select({
+          deviceHash: teaSpillerStats.deviceHash,
+          level: teaSpillerStats.level,
+          totalPosts: teaSpillerStats.totalPosts,
+          totalReactions: teaSpillerStats.totalReactions,
+          accuracyRate: teaSpillerStats.accuracyRate,
+        })
+        .from(teaSpillerStats)
+        .innerJoin(anonGossipPosts, eq(teaSpillerStats.deviceHash, anonGossipPosts.deviceHash))
+        .where(eq(anonGossipPosts.hoodId, locationId as string))
+        .orderBy(
+          desc(sql`CASE 
+            WHEN ${teaSpillerStats.level} = 'DIAMOND' THEN 5
+            WHEN ${teaSpillerStats.level} = 'PLATINUM' THEN 4
+            WHEN ${teaSpillerStats.level} = 'GOLD' THEN 3
+            WHEN ${teaSpillerStats.level} = 'SILVER' THEN 2
+            ELSE 1
+          END`),
+          desc(teaSpillerStats.totalPosts)
+        )
+        .limit(parseInt(limit as string));
+    } else {
+      leaderboard = await db
+        .select({
+          deviceHash: teaSpillerStats.deviceHash,
+          level: teaSpillerStats.level,
+          totalPosts: teaSpillerStats.totalPosts,
+          totalReactions: teaSpillerStats.totalReactions,
+          accuracyRate: teaSpillerStats.accuracyRate,
+        })
+        .from(teaSpillerStats)
+        .where(eq(teaSpillerStats.isShadowBanned, false))
+        .orderBy(
+          desc(sql`CASE 
+            WHEN ${teaSpillerStats.level} = 'DIAMOND' THEN 5
+            WHEN ${teaSpillerStats.level} = 'PLATINUM' THEN 4
+            WHEN ${teaSpillerStats.level} = 'GOLD' THEN 3
+            WHEN ${teaSpillerStats.level} = 'SILVER' THEN 2
+            ELSE 1
+          END`),
+          desc(teaSpillerStats.totalPosts)
+        )
+        .limit(parseInt(limit as string));
+    }
+    const leaderboardWithAliases = leaderboard.map((entry, index) => ({
+      rank: index + 1,
+      level: entry.level,
+      emoji: TEA_LEVELS[entry.level as keyof typeof TEA_LEVELS]?.emoji || "🥉",
+      alias: generateAliasFromHash(entry.deviceHash),
+      stats: {
+        posts: entry.totalPosts,
+        reactions: entry.totalReactions,
+        accuracyRate: Math.round((entry.accuracyRate || 0) * 100),
+      },
+    }));
+
+    return res.json({ leaderboard: leaderboardWithAliases });
+  } catch (error) {
+    console.error("Error fetching leaderboard:", error);
+    return res.status(500).json({ error: "Failed to fetch leaderboard" });
+  }
+});
+
+function generateAliasFromHash(hash: string): string {
+  const adjectives = ["Secret", "Shadow", "Hidden", "Masked", "Silent", "Whispered", "Anonymous"];
+  const nouns = ["Spiller", "Insider", "Witness", "Reporter", "Messenger", "Informant"];
+  const hashNum = parseInt(hash.substring(0, 8), 16) || 0;
+  const adj = adjectives[Math.abs(hashNum) % adjectives.length];
+  const noun = nouns[Math.abs(hashNum >> 4) % nouns.length];
+  const num = (Math.abs(hashNum) % 100).toString().padStart(2, '0');
+  return `${adj} ${noun}${num}`;
+}
+
 export default router;
