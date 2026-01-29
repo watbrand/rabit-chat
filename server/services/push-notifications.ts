@@ -349,6 +349,70 @@ export const pushNotificationService = {
       .from(pushTokens)
       .where(eq(pushTokens.userId, userId));
   },
+
+  // Gossip V2 Notifications (for users who opt-in to gossip alerts)
+  async notifyGossipTrending(userIds: string[], locationName: string, postPreview: string) {
+    const preview = postPreview.length > 60 ? postPreview.slice(0, 57) + "..." : postPreview;
+    await this.sendToMultipleUsers(userIds, {
+      title: `Trending in ${locationName}`,
+      body: preview,
+      data: {
+        type: "GOSSIP_TRENDING",
+        screen: "Gossip",
+      },
+      sound: "default",
+      priority: "high",
+    });
+  },
+
+  async notifyGossipBreaking(userIds: string[], locationName: string, postPreview: string) {
+    const preview = postPreview.length > 60 ? postPreview.slice(0, 57) + "..." : postPreview;
+    await this.sendToMultipleUsers(userIds, {
+      title: `BREAKING TEA in ${locationName}`,
+      body: preview,
+      data: {
+        type: "GOSSIP_BREAKING",
+        screen: "Gossip",
+      },
+      sound: "default",
+      priority: "high",
+    });
+  },
+
+  async notifyGossipSpillSession(userIds: string[], locationName: string, sessionTitle: string) {
+    await this.sendToMultipleUsers(userIds, {
+      title: `Weekly Spill Session Starting!`,
+      body: `${sessionTitle} in ${locationName} - Join the tea party now`,
+      data: {
+        type: "GOSSIP_SPILL_SESSION",
+        screen: "Gossip",
+      },
+      sound: "default",
+      priority: "high",
+    });
+  },
+
+  async notifyGossipAward(userId: string, awardType: string, locationName: string) {
+    const awardEmoji = {
+      "WEEKLY_TOP": "🏆",
+      "MONTHLY_TOP": "🥇",
+      "MOST_ACCURATE": "✅",
+      "FUNNIEST": "😂",
+      "MOST_SHOCKING": "😱",
+      "LOCAL_LEGEND": "👑",
+    }[awardType] || "🏆";
+
+    await this.sendToUser(userId, {
+      title: `${awardEmoji} You Won an Award!`,
+      body: `Your anonymous tea in ${locationName} won the ${awardType.replace(/_/g, " ")} award!`,
+      data: {
+        type: "GOSSIP_AWARD",
+        screen: "Gossip",
+        params: { tab: "analytics" },
+      },
+      sound: "default",
+    });
+  },
 };
 
 export default pushNotificationService;
