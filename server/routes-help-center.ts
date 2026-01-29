@@ -2450,6 +2450,91 @@ export function registerHelpCenterRoutes(app: Express) {
     }
   });
 
+  // Shared seed logic
+  async function runHelpCenterSeed(res: Response) {
+    try {
+      console.log("[Help Center] Public seed endpoint called");
+      
+      const client = await pool.connect();
+      try {
+        // Check if tables exist first
+        const tableCheck = await client.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_name = 'help_categories'
+          ) as tables_exist
+        `);
+        
+        if (!tableCheck.rows[0].tables_exist) {
+          return res.status(503).json({
+            success: false,
+            error: "Database tables not ready",
+            message: "Please wait for database setup to complete and try again"
+          });
+        }
+        
+        const [catCount, artCount, faqCount] = await Promise.all([
+          client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`),
+          client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`),
+          client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`)
+        ]);
+        
+        const categories = parseInt(catCount.rows[0].count);
+        const articles = parseInt(artCount.rows[0].count);
+        const faqs = parseInt(faqCount.rows[0].count);
+        
+        if (categories >= 10 && articles >= 50 && faqs >= 20) {
+          return res.json({
+            success: true,
+            message: "Help Center already seeded",
+            counts: { categories, articles, faqs }
+          });
+        }
+        
+        // Need to seed - run the seeder
+        console.log("[Help Center] Starting seed process...");
+        const { seedHelpCenterOnStartup } = await import('./seed-help-center-startup');
+        await seedHelpCenterOnStartup();
+        
+        // Get updated counts
+        const [newCatCount, newArtCount, newFaqCount] = await Promise.all([
+          client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`),
+          client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`),
+          client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`)
+        ]);
+        
+        res.json({
+          success: true,
+          message: "Help Center seeded successfully",
+          counts: {
+            categories: parseInt(newCatCount.rows[0].count),
+            articles: parseInt(newArtCount.rows[0].count),
+            faqs: parseInt(newFaqCount.rows[0].count)
+          }
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error: any) {
+      console.error("[Help Center] Public seed error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Seed failed", 
+        details: error.message 
+      });
+    }
+  }
+
+  // GET /api/help/seed - Public seed endpoint (GET for easy browser access)
+  app.get("/api/help/seed", async (req: Request, res: Response) => {
+    await runHelpCenterSeed(res);
+  });
+
+  // POST /api/help/seed - Public seed endpoint for production initialization
+  app.post("/api/help/seed", async (req: Request, res: Response) => {
+    await runHelpCenterSeed(res);
+  });
+
   // GET /api/help/debug - Debug endpoint to check Help Center state (public)
   app.get("/api/help/debug", async (req: Request, res: Response) => {
     try {
