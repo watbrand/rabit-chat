@@ -527,6 +527,38 @@ export default function HelpCenterScreen() {
           </Pressable>
         </View>
 
+        {/* Debug Panel - Shows API connection status */}
+        {(categoriesError || articlesError || (categories.length === 0 && !categoriesLoading)) ? (
+          <View style={[styles.debugPanel, { backgroundColor: theme.error + "15", borderColor: theme.error + "40" }]}>
+            <View style={styles.debugHeader}>
+              <Feather name="alert-triangle" size={18} color={theme.error} />
+              <ThemedText style={[styles.debugTitle, { color: theme.error }]}>
+                Connection Issue
+              </ThemedText>
+            </View>
+            <ThemedText style={[styles.debugText, { color: theme.text }]}>
+              API: {getApiUrl()}
+            </ThemedText>
+            {categoriesError ? (
+              <ThemedText style={[styles.debugText, { color: theme.error }]}>
+                Categories Error: {(categoriesErrorMsg as Error)?.message || "Unknown error"}
+              </ThemedText>
+            ) : null}
+            {articlesError ? (
+              <ThemedText style={[styles.debugText, { color: theme.error }]}>
+                Articles Error: {(articlesErrorMsg as Error)?.message || "Unknown error"}
+              </ThemedText>
+            ) : null}
+            <Pressable 
+              style={[styles.debugRetryButton, { backgroundColor: theme.primary }]} 
+              onPress={handleRefresh}
+            >
+              <Feather name="refresh-cw" size={16} color="#fff" />
+              <ThemedText style={styles.debugRetryText}>Retry Connection</ThemedText>
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={styles.quickActionsSection}>
           <ThemedText style={[styles.sectionTitle, { color: theme.textSecondary }]}>
             Quick Actions
@@ -1013,5 +1045,42 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     fontWeight: "500",
+  },
+  debugPanel: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  debugHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  debugTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  debugText: {
+    fontSize: 12,
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
+    marginBottom: Spacing.xs,
+  },
+  debugRetryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.sm,
+  },
+  debugRetryText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

@@ -130,16 +130,24 @@ function generateSlug(text: string): string {
 
 export function registerHelpCenterRoutes(app: Express) {
   
+  // Log all help center API requests for debugging
+  app.use("/api/help", (req: Request, res: Response, next) => {
+    console.log(`[Help Center API] ${req.method} ${req.path} from ${req.ip} origin=${req.headers.origin || 'none'}`);
+    next();
+  });
+  
   // ==================== HELP CATEGORIES ====================
   
   // GET /api/help/categories - Get all categories
   app.get("/api/help/categories", async (req: Request, res: Response) => {
     try {
+      console.log("[Help Center] Fetching categories...");
       const result = await pool.query(`
         SELECT * FROM help_categories 
         WHERE is_active = true 
         ORDER BY sort_order ASC, name ASC
       `);
+      console.log(`[Help Center] Found ${result.rows.length} categories`);
       res.json({ categories: result.rows });
     } catch (error: any) {
       console.error("Error fetching help categories:", error);
