@@ -18,6 +18,7 @@ import {
   gossipTrendingHashtags,
   gossipDMConversations,
   gossipDMMessages,
+  anonGossipReports,
 } from "@shared/schema";
 import { eq, and, sql, desc, asc, isNull, like, gte, count } from "drizzle-orm";
 import crypto from "crypto";
@@ -2235,6 +2236,325 @@ router.post("/dm/conversations/:conversationId/block", async (req: Request, res:
   } catch (error) {
     console.error("Error blocking/unblocking conversation:", error);
     return res.status(500).json({ error: "Failed to update block status" });
+  }
+});
+
+const PROFANITY_WORDS = [
+  "fuck", "shit", "ass", "bitch", "dick", "cock", "pussy", "cunt", "nigga", "nigger",
+  "slut", "whore", "fag", "faggot", "retard", "bastard", "motherfucker", "asshole",
+  "poes", "nai", "msunu", "isifebe", "voetsek", "kaffir", "bobbejaan", "hoer"
+];
+
+function containsProfanity(text: string): { hasProfanity: boolean; words: string[] } {
+  const lowerText = text.toLowerCase();
+  const foundWords = PROFANITY_WORDS.filter(word => {
+    const pattern = new RegExp(`\\b${word}\\b|${word.split('').join('[\\s\\*\\-_]*')}`, 'i');
+    return pattern.test(lowerText);
+  });
+  return { hasProfanity: foundWords.length > 0, words: foundWords };
+}
+
+function censorText(text: string): string {
+  let censored = text;
+  PROFANITY_WORDS.forEach(word => {
+    const pattern = new RegExp(`\\b${word}\\b`, 'gi');
+    censored = censored.replace(pattern, match => {
+      if (match.length <= 2) return '*'.repeat(match.length);
+      return match[0] + '*'.repeat(match.length - 2) + match[match.length - 1];
+    });
+  });
+  return censored;
+}
+
+const reportSchema = z.object({
+  deviceHash: z.string(),
+  postId: z.string().optional(),
+  replyId: z.string().optional(),
+  reason: z.enum([
+    "SPAM", "HARASSMENT", "HATE_SPEECH", "MISINFORMATION", 
+    "DOXXING", "ILLEGAL", "INAPPROPRIATE", "OTHER"
+  ]),
+  details: z.string().max(500).optional(),
+}).refine(data => data.postId || data.replyId, {
+  message: "Must provide either postId or replyId",
+});
+
+router.post("/moderation/report", async (req: Request, res: Response) => {
+  try {
+    const { deviceHash, postId, replyId, reason, details } = reportSchema.parse(req.body);
+    const hashedDevice = hashDevice(deviceHash);
+    if (postId) {
+      const existingReport = await db
+        .select()
+        .from(anonGossipReports)
+        .where(
+          and(
+            eq(anonGossipReports.postId, postId),
+            eq(anonGossipReports.deviceHash, hashedDevice)
+          )
+        )
+        .limit(1);
+
+      if (existingReport.length > 0) {
+        return res.status(400).json({ error: "You have already reported this post" });
+      }
+    }
+
+    if (replyId) {
+      const existingReport = await db
+        .select()
+        .from(anonGossipReports)
+        .where(
+          and(
+            eq(anonGossipReports.replyId, replyId),
+            eq(anonGossipReports.deviceHash, hashedDevice)
+          )
+        )
+        .limit(1);
+
+      if (existingReport.length > 0) {
+        return res.status(400).json({ error: "You have already reported this reply" });
+      }
+    }
+    const report = await db.insert(anonGossipReports).values({
+      postId: postId || null,
+      replyId: replyId || null,
+      deviceHash: hashedDevice,
+      reason: `${reason}${details ? ': ' + details : ''}`,
+    }).returning();
+    if (postId) {
+      await db
+        .update(anonGossipPosts)
+        .set({ reportCount: sql`${anonGossipPosts.reportCount} + 1` })
+        .where(eq(anonGossipPosts.id, postId));
+      const post = await db
+        .select({ reportCount: anonGossipPosts.reportCount })
+        .from(anonGossipPosts)
+        .where(eq(anonGossipPosts.id, postId))
+        .limit(1);
+      
+      if (post.length > 0 && post[0].reportCount >= 10) {
+        await db
+          .update(anonGossipPosts)
+          .set({ isHidden: true })
+          .where(eq(anonGossipPosts.id, postId));
+      }
+    }
+
+    if (replyId) {
+      const replyReportCount = await db
+        .select({ count: count() })
+        .from(anonGossipReports)
+        .where(eq(anonGossipReports.replyId, replyId));
+      
+      if (replyReportCount[0]?.count >= 10) {
+        await db
+          .update(anonGossipReplies)
+          .set({ isHidden: true })
+          .where(eq(anonGossipReplies.id, replyId));
+      }
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Report submitted. We'll review this content shortly.",
+      reportId: report[0].id,
+    });
+  } catch (error) {
+    console.error("Error submitting report:", error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid request", details: error.errors });
+    }
+    return res.status(500).json({ error: "Failed to submit report" });
+  }
+});
+
+router.get("/moderation/check-profanity", async (req: Request, res: Response) => {
+  try {
+    const { text } = req.query;
+    
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: "Missing text parameter" });
+    }
+
+    const result = containsProfanity(text);
+    
+    return res.json({
+      hasProfanity: result.hasProfanity,
+      flaggedWords: result.words,
+      censoredText: result.hasProfanity ? censorText(text) : text,
+    });
+  } catch (error) {
+    console.error("Error checking profanity:", error);
+    return res.status(500).json({ error: "Failed to check profanity" });
+  }
+});
+
+router.get("/moderation/user-status", async (req: Request, res: Response) => {
+  try {
+    const { deviceHash } = req.query;
+    
+    if (!deviceHash || typeof deviceHash !== 'string') {
+      return res.status(400).json({ error: "Missing deviceHash" });
+    }
+
+    const hashedDevice = hashDevice(deviceHash);
+    const stats = await db
+      .select()
+      .from(teaSpillerStats)
+      .where(eq(teaSpillerStats.deviceHash, hashedDevice))
+      .limit(1);
+
+    if (stats.length === 0) {
+      return res.json({
+        isShadowBanned: false,
+        isOnCooldown: false,
+        cooldownUntil: null,
+        canPost: true,
+      });
+    }
+
+    const now = new Date();
+    const isOnCooldown = stats[0].cooldownUntil && stats[0].cooldownUntil > now;
+    
+    return res.json({
+      isShadowBanned: stats[0].isShadowBanned,
+      isOnCooldown: isOnCooldown,
+      cooldownUntil: stats[0].cooldownUntil,
+      cooldownMinutesRemaining: isOnCooldown 
+        ? Math.ceil((stats[0].cooldownUntil!.getTime() - now.getTime()) / 60000) 
+        : 0,
+      canPost: !stats[0].isShadowBanned && !isOnCooldown,
+    });
+  } catch (error) {
+    console.error("Error checking user status:", error);
+    return res.status(500).json({ error: "Failed to check user status" });
+  }
+});
+
+router.post("/moderation/apply-cooldown", async (req: Request, res: Response) => {
+  try {
+    const { deviceHash, minutes, reason } = req.body;
+    
+    if (!deviceHash || !minutes) {
+      return res.status(400).json({ error: "Missing deviceHash or minutes" });
+    }
+
+    const hashedDevice = hashDevice(deviceHash);
+    const cooldownUntil = new Date(Date.now() + minutes * 60 * 1000);
+    await db
+      .insert(teaSpillerStats)
+      .values({
+        deviceHash: hashedDevice,
+        cooldownUntil,
+      })
+      .onConflictDoUpdate({
+        target: teaSpillerStats.deviceHash,
+        set: { cooldownUntil, updatedAt: new Date() },
+      });
+
+    return res.json({
+      success: true,
+      cooldownUntil,
+      message: `Cooldown applied for ${minutes} minutes`,
+    });
+  } catch (error) {
+    console.error("Error applying cooldown:", error);
+    return res.status(500).json({ error: "Failed to apply cooldown" });
+  }
+});
+
+router.post("/moderation/shadow-ban", async (req: Request, res: Response) => {
+  try {
+    const { deviceHash, ban } = req.body;
+    
+    if (!deviceHash) {
+      return res.status(400).json({ error: "Missing deviceHash" });
+    }
+
+    const hashedDevice = hashDevice(deviceHash);
+    const isShadowBanned = ban !== false;
+    await db
+      .insert(teaSpillerStats)
+      .values({
+        deviceHash: hashedDevice,
+        isShadowBanned,
+      })
+      .onConflictDoUpdate({
+        target: teaSpillerStats.deviceHash,
+        set: { isShadowBanned, updatedAt: new Date() },
+      });
+
+    return res.json({
+      success: true,
+      isShadowBanned,
+      message: isShadowBanned ? "User shadow banned" : "Shadow ban removed",
+    });
+  } catch (error) {
+    console.error("Error updating shadow ban:", error);
+    return res.status(500).json({ error: "Failed to update shadow ban" });
+  }
+});
+
+router.get("/moderation/reports", async (req: Request, res: Response) => {
+  try {
+    const { status = "PENDING", limit = "50", cursor } = req.query;
+    
+    const conditions = [eq(anonGossipReports.status, status as string)];
+    
+    if (cursor) {
+      conditions.push(sql`${anonGossipReports.createdAt} < ${cursor}`);
+    }
+
+    const reports = await db
+      .select()
+      .from(anonGossipReports)
+      .where(and(...conditions))
+      .orderBy(desc(anonGossipReports.createdAt))
+      .limit(parseInt(limit as string) + 1);
+
+    const hasMore = reports.length > parseInt(limit as string);
+    const reportList = hasMore ? reports.slice(0, parseInt(limit as string)) : reports;
+    const nextCursor = hasMore && reportList.length > 0 
+      ? reportList[reportList.length - 1].createdAt.toISOString() 
+      : null;
+
+    return res.json({
+      reports: reportList,
+      hasMore,
+      nextCursor,
+    });
+  } catch (error) {
+    console.error("Error fetching reports:", error);
+    return res.status(500).json({ error: "Failed to fetch reports" });
+  }
+});
+
+router.post("/moderation/reports/:reportId/review", async (req: Request, res: Response) => {
+  try {
+    const { reportId } = req.params;
+    const { action, reviewNotes, reviewedBy } = req.body;
+    
+    if (!action || !["APPROVED", "REJECTED", "ACTIONED"].includes(action)) {
+      return res.status(400).json({ error: "Invalid action. Must be APPROVED, REJECTED, or ACTIONED" });
+    }
+    await db
+      .update(anonGossipReports)
+      .set({
+        status: action,
+        reviewNotes,
+        reviewedBy,
+        reviewedAt: new Date(),
+      })
+      .where(eq(anonGossipReports.id, reportId));
+
+    return res.json({
+      success: true,
+      message: `Report ${action.toLowerCase()}`,
+    });
+  } catch (error) {
+    console.error("Error reviewing report:", error);
+    return res.status(500).json({ error: "Failed to review report" });
   }
 });
 
