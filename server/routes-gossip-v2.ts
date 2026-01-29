@@ -19,6 +19,7 @@ import {
   gossipDMConversations,
   gossipDMMessages,
   anonGossipReports,
+  gossipPostLinks,
 } from "@shared/schema";
 import { eq, and, sql, desc, asc, isNull, like, gte, count } from "drizzle-orm";
 import crypto from "crypto";
@@ -2858,5 +2859,230 @@ function generateAliasFromHash(hash: string): string {
   const num = (Math.abs(hashNum) % 100).toString().padStart(2, '0');
   return `${adj} ${noun}${num}`;
 }
+
+const linkPostSchema = z.object({
+  deviceHash: z.string(),
+  originalPostId: z.string(),
+  linkedPostId: z.string(),
+  linkType: z.enum(["PART_2", "UPDATE", "CORRECTION", "RELATED"]).default("PART_2"),
+});
+
+router.post("/posts/link", async (req: Request, res: Response) => {
+  try {
+    const { deviceHash, originalPostId, linkedPostId, linkType } = linkPostSchema.parse(req.body);
+    const hashedDevice = hashDevice(deviceHash);
+    const originalPost = await db
+      .select()
+      .from(anonGossipPosts)
+      .where(eq(anonGossipPosts.id, originalPostId))
+      .limit(1);
+
+    if (originalPost.length === 0) {
+      return res.status(404).json({ error: "Original post not found" });
+    }
+    const linkedPost = await db
+      .select()
+      .from(anonGossipPosts)
+      .where(eq(anonGossipPosts.id, linkedPostId))
+      .limit(1);
+
+    if (linkedPost.length === 0) {
+      return res.status(404).json({ error: "Linked post not found" });
+    }
+    if (linkedPost[0].deviceHash !== hashedDevice) {
+      return res.status(403).json({ error: "You can only link your own posts" });
+    }
+    const existingLink = await db
+      .select()
+      .from(gossipPostLinks)
+      .where(
+        and(
+          eq(gossipPostLinks.originalPostId, originalPostId),
+          eq(gossipPostLinks.linkedPostId, linkedPostId)
+        )
+      )
+      .limit(1);
+
+    if (existingLink.length > 0) {
+      return res.status(400).json({ error: "Posts are already linked" });
+    }
+    const link = await db.insert(gossipPostLinks).values({
+      originalPostId,
+      linkedPostId,
+      linkType,
+    }).returning();
+
+    return res.status(201).json({
+      success: true,
+      link: link[0],
+      message: `Post linked as ${linkType.replace("_", " ")}`,
+    });
+  } catch (error) {
+    console.error("Error linking posts:", error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid request", details: error.errors });
+    }
+    return res.status(500).json({ error: "Failed to link posts" });
+  }
+});
+
+router.get("/posts/:postId/links", async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+    const linksFrom = await db
+      .select({
+        id: gossipPostLinks.id,
+        linkedPostId: gossipPostLinks.linkedPostId,
+        linkType: gossipPostLinks.linkType,
+        createdAt: gossipPostLinks.createdAt,
+      })
+      .from(gossipPostLinks)
+      .where(eq(gossipPostLinks.originalPostId, postId))
+      .orderBy(asc(gossipPostLinks.createdAt));
+    const linksTo = await db
+      .select({
+        id: gossipPostLinks.id,
+        originalPostId: gossipPostLinks.originalPostId,
+        linkType: gossipPostLinks.linkType,
+        createdAt: gossipPostLinks.createdAt,
+      })
+      .from(gossipPostLinks)
+      .where(eq(gossipPostLinks.linkedPostId, postId))
+      .orderBy(asc(gossipPostLinks.createdAt));
+    const linkedPostIds = [
+      ...linksFrom.map(l => l.linkedPostId),
+      ...linksTo.map(l => l.originalPostId),
+    ];
+
+    let linkedPosts: any[] = [];
+    if (linkedPostIds.length > 0) {
+      linkedPosts = await db
+        .select({
+          id: anonGossipPosts.id,
+          content: anonGossipPosts.content,
+          createdAt: anonGossipPosts.createdAt,
+          fireCount: anonGossipPosts.fireCount,
+          replyCount: anonGossipPosts.replyCount,
+        })
+        .from(anonGossipPosts)
+        .where(sql`${anonGossipPosts.id} IN (${sql.join(linkedPostIds.map(id => sql`${id}`), sql`, `)})`);
+    }
+
+    return res.json({
+      parts: linksFrom.map(l => ({
+        ...l,
+        direction: "next",
+        post: linkedPosts.find(p => p.id === l.linkedPostId),
+      })),
+      previousParts: linksTo.map(l => ({
+        ...l,
+        direction: "previous",
+        post: linkedPosts.find(p => p.id === l.originalPostId),
+      })),
+      totalParts: linksFrom.length + linksTo.length + 1,
+    });
+  } catch (error) {
+    console.error("Error fetching post links:", error);
+    return res.status(500).json({ error: "Failed to fetch post links" });
+  }
+});
+
+router.get("/posts/:postId/thread", async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+    const allPostIds = new Set<string>([postId]);
+    let currentIds = [postId];
+    while (currentIds.length > 0) {
+      const links = await db
+        .select()
+        .from(gossipPostLinks)
+        .where(
+          sql`${gossipPostLinks.originalPostId} IN (${sql.join(currentIds.map(id => sql`${id}`), sql`, `)}) OR ${gossipPostLinks.linkedPostId} IN (${sql.join(currentIds.map(id => sql`${id}`), sql`, `)})`
+        );
+
+      const newIds: string[] = [];
+      for (const link of links) {
+        if (!allPostIds.has(link.originalPostId)) {
+          allPostIds.add(link.originalPostId);
+          newIds.push(link.originalPostId);
+        }
+        if (!allPostIds.has(link.linkedPostId)) {
+          allPostIds.add(link.linkedPostId);
+          newIds.push(link.linkedPostId);
+        }
+      }
+      currentIds = newIds;
+      if (allPostIds.size > 50) break;
+    }
+    if (allPostIds.size === 0) {
+      return res.json({ thread: [], totalParts: 0 });
+    }
+
+    const threadPosts = await db
+      .select({
+        id: anonGossipPosts.id,
+        content: anonGossipPosts.content,
+        postType: anonGossipPosts.postType,
+        createdAt: anonGossipPosts.createdAt,
+        fireCount: anonGossipPosts.fireCount,
+        replyCount: anonGossipPosts.replyCount,
+        viewCount: anonGossipPosts.viewCount,
+      })
+      .from(anonGossipPosts)
+      .where(sql`${anonGossipPosts.id} IN (${sql.join(Array.from(allPostIds).map(id => sql`${id}`), sql`, `)})`)
+      .orderBy(asc(anonGossipPosts.createdAt));
+
+    return res.json({
+      thread: threadPosts.map((post, index) => ({
+        ...post,
+        partNumber: index + 1,
+        isCurrentPost: post.id === postId,
+      })),
+      totalParts: threadPosts.length,
+    });
+  } catch (error) {
+    console.error("Error fetching post thread:", error);
+    return res.status(500).json({ error: "Failed to fetch post thread" });
+  }
+});
+
+router.delete("/posts/link/:linkId", async (req: Request, res: Response) => {
+  try {
+    const { linkId } = req.params;
+    const { deviceHash } = req.body;
+    
+    if (!deviceHash) {
+      return res.status(400).json({ error: "Missing deviceHash" });
+    }
+
+    const hashedDevice = hashDevice(deviceHash);
+    const link = await db
+      .select()
+      .from(gossipPostLinks)
+      .where(eq(gossipPostLinks.id, linkId))
+      .limit(1);
+
+    if (link.length === 0) {
+      return res.status(404).json({ error: "Link not found" });
+    }
+    const linkedPost = await db
+      .select()
+      .from(anonGossipPosts)
+      .where(eq(anonGossipPosts.id, link[0].linkedPostId))
+      .limit(1);
+
+    if (linkedPost.length === 0 || linkedPost[0].deviceHash !== hashedDevice) {
+      return res.status(403).json({ error: "You can only unlink your own posts" });
+    }
+    await db
+      .delete(gossipPostLinks)
+      .where(eq(gossipPostLinks.id, linkId));
+
+    return res.json({ success: true, message: "Posts unlinked" });
+  } catch (error) {
+    console.error("Error unlinking posts:", error);
+    return res.status(500).json({ error: "Failed to unlink posts" });
+  }
+});
 
 export default router;
