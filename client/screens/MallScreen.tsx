@@ -33,7 +33,10 @@ import { MallGridSkeleton } from "@/components/ShimmerPlaceholder";
 import { GradientBackground } from "@/components/GradientBackground";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const ITEM_CARD_WIDTH = (SCREEN_WIDTH - Spacing.lg * 2 - Spacing.md) / 2;
+// 3-column compact grid for Instagram/TikTok shop style
+const GRID_GAP = 8;
+const ITEM_CARD_WIDTH = (SCREEN_WIDTH - Spacing.md * 2 - GRID_GAP * 2) / 3;
+const ITEM_CARD_HEIGHT = ITEM_CARD_WIDTH * 1.4; // Taller cards for image-first design
 
 type WealthyUser = {
   id: string;
@@ -234,17 +237,17 @@ export default function MallScreen() {
   };
 
   const renderTop50Carousel = () => (
-    <View style={styles.top50Container}>
-      <View style={styles.sectionHeader}>
-        <Feather name="award" size={20} color={theme.gold} />
-        <ThemedText type="headline" style={styles.sectionTitle}>
-          Top 50 Wealthy Users
+    <View style={styles.compactTop50Container}>
+      <View style={styles.compactSectionHeader}>
+        <Feather name="award" size={14} color={theme.gold} />
+        <ThemedText style={[styles.compactSectionTitle, { color: theme.text }]} weight="semiBold">
+          Top Wealthy
         </ThemedText>
       </View>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.top50Scroll}
+        contentContainerStyle={styles.compactTop50Scroll}
       >
         {top50Loading ? (
           <LoadingIndicator size="small" />
@@ -252,11 +255,11 @@ export default function MallScreen() {
           top50.map((wealthyUser, index) => (
             <Pressable 
               key={wealthyUser.id} 
-              style={styles.top50Item}
+              style={styles.compactTop50Item}
               onPress={() => handleUserPress(wealthyUser.id)}
               testID={`wealthy-user-${wealthyUser.id}`}
             >
-              <View style={styles.rankBadge}>
+              <View style={styles.compactRankBadge}>
                 <LinearGradient
                   colors={
                     index === 0
@@ -267,51 +270,51 @@ export default function MallScreen() {
                       ? ["#CD7F32", "#A0522D"]
                       : [theme.primary, theme.primaryLight]
                   }
-                  style={styles.rankGradient}
+                  style={styles.compactRankGradient}
                 >
-                  <ThemedText style={styles.rankText} weight="bold">
+                  <ThemedText style={styles.compactRankText} weight="bold">
                     {index + 1}
                   </ThemedText>
                 </LinearGradient>
               </View>
               <LinearGradient
                 colors={[theme.gold, theme.goldShimmer]}
-                style={styles.top50Ring}
+                style={styles.compactTop50Ring}
               >
-                <View style={[styles.top50AvatarInner, { backgroundColor: theme.backgroundRoot }]}>
-                  <Avatar uri={wealthyUser.avatarUrl} size={52} />
+                <View style={[styles.compactTop50AvatarInner, { backgroundColor: theme.backgroundRoot }]}>
+                  <Avatar uri={wealthyUser.avatarUrl} size={40} />
                 </View>
               </LinearGradient>
               <ThemedText
-                style={[styles.top50Username, { color: theme.textSecondary }]}
+                style={[styles.compactTop50Username, { color: theme.textSecondary }]}
                 numberOfLines={1}
               >
                 {wealthyUser.username}
               </ThemedText>
-              <View style={[styles.netWorthBadge, { backgroundColor: theme.goldLight }]}>
-                <ThemedText style={[styles.netWorthText, { color: theme.gold }]} weight="semiBold">
+              <View style={[styles.compactNetWorthBadge, { backgroundColor: theme.goldLight }]}>
+                <ThemedText style={[styles.compactNetWorthText, { color: theme.gold }]} weight="semiBold">
                   {formatNetWorth(wealthyUser.netWorth)}
                 </ThemedText>
               </View>
             </Pressable>
           ))
         ) : (
-          <ThemedText style={{ color: theme.textSecondary }}>No wealthy users yet</ThemedText>
+          <ThemedText style={{ color: theme.textSecondary, fontSize: 11 }}>No wealthy users yet</ThemedText>
         )}
       </ScrollView>
     </View>
   );
 
   const renderCategoryPills = () => (
-    <View style={styles.categoriesContainer}>
+    <View style={styles.compactCategoriesContainer}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.categoriesScroll}
+        contentContainerStyle={styles.compactCategoriesScroll}
       >
         <Pressable
           style={[
-            styles.categoryPill,
+            styles.compactCategoryPill,
             {
               backgroundColor: selectedCategory === null ? theme.primary : theme.glassBackground,
               borderColor: selectedCategory === null ? theme.primary : theme.glassBorder,
@@ -322,7 +325,7 @@ export default function MallScreen() {
         >
           <ThemedText
             style={[
-              styles.categoryText,
+              styles.compactCategoryText,
               { color: selectedCategory === null ? "#FFFFFF" : theme.text },
             ]}
             weight="medium"
@@ -337,7 +340,7 @@ export default function MallScreen() {
             <Pressable
               key={category.id}
               style={[
-                styles.categoryPill,
+                styles.compactCategoryPill,
                 {
                   backgroundColor:
                     selectedCategory === category.id ? theme.primary : theme.glassBackground,
@@ -350,7 +353,7 @@ export default function MallScreen() {
             >
               <ThemedText
                 style={[
-                  styles.categoryText,
+                  styles.compactCategoryText,
                   { color: selectedCategory === category.id ? "#FFFFFF" : theme.text },
                 ]}
                 weight="medium"
@@ -379,61 +382,94 @@ export default function MallScreen() {
     return "shopping-bag";
   };
 
-  const renderItemCard = ({ item }: { item: MallItem }) => (
-    <Pressable
-      onPress={() => handleItemPress(item)}
-      testID={`item-card-${item.id}`}
-    >
-      <Card
-        style={{ ...styles.itemCard, width: ITEM_CARD_WIDTH }}
-        variant="glass"
-        elevation={2}
+  // Premium badge logic based on item properties
+  const getItemBadge = (item: MallItem): { text: string; color: string } | null => {
+    const price = getItemCoinPrice(item);
+    const name = item.name.toLowerCase();
+    if (name.includes("limited") || name.includes("exclusive")) return { text: "LIMITED", color: theme.error };
+    if (price >= 10000) return { text: "PREMIUM", color: theme.gold };
+    if (name.includes("new") || name.includes("vip")) return { text: "HOT", color: "#FF6B35" };
+    // Random "NEW" badge for variety (based on item id hash)
+    if (item.id.charCodeAt(0) % 5 === 0) return { text: "NEW", color: theme.success };
+    return null;
+  };
+
+  const renderItemCard = ({ item, index }: { item: MallItem; index: number }) => {
+    const badge = getItemBadge(item);
+    const isLastInRow = (index + 1) % 3 === 0;
+    
+    return (
+      <Pressable
+        onPress={() => handleItemPress(item)}
+        testID={`item-card-${item.id}`}
+        style={[
+          styles.compactCard,
+          { 
+            width: ITEM_CARD_WIDTH,
+            marginRight: isLastInRow ? 0 : GRID_GAP,
+          }
+        ]}
       >
-        {item.imageUrl ? (
-          <Image 
-            source={{ uri: item.imageUrl }} 
-            style={styles.itemImage}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={[styles.itemImagePlaceholder, { backgroundColor: theme.backgroundSecondary }]}>
-            <Feather name={getCategoryIcon(item.name)} size={32} color={theme.primary} />
+        {/* Image Container - Takes most of the card */}
+        <View style={[styles.compactImageContainer, { backgroundColor: theme.backgroundSecondary }]}>
+          {item.imageUrl ? (
+            <Image 
+              source={{ uri: item.imageUrl }} 
+              style={styles.compactImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.compactImagePlaceholder}>
+              <Feather name={getCategoryIcon(item.name)} size={28} color={theme.primary} />
+            </View>
+          )}
+          
+          {/* Floating Price Badge */}
+          <View style={[styles.floatingPriceBadge, { backgroundColor: theme.gold }]}>
+            <ThemedText style={styles.floatingPriceText} weight="bold">
+              {getItemCoinPrice(item) >= 1000 
+                ? `${(getItemCoinPrice(item) / 1000).toFixed(getItemCoinPrice(item) >= 10000 ? 0 : 1)}K` 
+                : getItemCoinPrice(item)}
+            </ThemedText>
           </View>
-        )}
-        <ThemedText type="headline" numberOfLines={1} style={styles.itemName}>
-          {item.name}
-        </ThemedText>
-        <ThemedText
-          type="caption1"
-          style={[styles.itemDescription, { color: theme.textSecondary }]}
-          numberOfLines={2}
-        >
-          {item.description}
-        </ThemedText>
-        <View style={[styles.itemValueContainer, { backgroundColor: theme.goldLight }]}>
-          <ThemedText style={[styles.itemValue, { color: theme.gold }]} weight="bold">
-            {getItemCoinPrice(item).toLocaleString()} coins
+          
+          {/* Premium Badge (if applicable) */}
+          {badge ? (
+            <View style={[styles.premiumBadge, { backgroundColor: badge.color }]}>
+              <ThemedText style={styles.premiumBadgeText} weight="bold">
+                {badge.text}
+              </ThemedText>
+            </View>
+          ) : null}
+          
+          {/* Quick Buy Button - floating at bottom right */}
+          <Pressable
+            style={[styles.quickBuyButton, { backgroundColor: theme.primary }]}
+            onPress={(e) => {
+              e.stopPropagation();
+              if (Platform.OS !== "web") {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              }
+              handleBuyPress(item);
+            }}
+            testID={`buy-button-${item.id}`}
+          >
+            <Feather name="plus" size={14} color="#FFFFFF" />
+          </Pressable>
+        </View>
+        
+        {/* Minimal Text Info at Bottom */}
+        <View style={styles.compactCardInfo}>
+          <ThemedText 
+            style={[styles.compactItemName, { color: theme.text }]} 
+            numberOfLines={1}
+          >
+            {item.name}
           </ThemedText>
         </View>
-        <Pressable
-          style={[styles.buyButton, { backgroundColor: theme.primary }]}
-          onPress={(e) => {
-            e.stopPropagation();
-            if (Platform.OS !== "web") {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            }
-            handleBuyPress(item);
-          }}
-          testID={`buy-button-${item.id}`}
-        >
-          <Feather name="shopping-cart" size={14} color="#FFFFFF" />
-          <ThemedText style={styles.buyButtonText} weight="semiBold">
-            Buy
-          </ThemedText>
-        </Pressable>
-      </Card>
-    </Pressable>
-  );
+      </Pressable>
+    );
+  };
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
@@ -684,41 +720,44 @@ export default function MallScreen() {
       <FlatList
         style={styles.list}
         contentContainerStyle={{
-          paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.xl,
-          paddingBottom: tabBarHeight + Spacing.xl,
-          paddingHorizontal: Spacing.lg,
+          paddingTop: Platform.OS === "android" ? Spacing.md : headerHeight + Spacing.md,
+          paddingBottom: tabBarHeight + Spacing.lg,
+          paddingHorizontal: Spacing.md,
           flexGrow: 1,
         }}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
         data={items || []}
         keyExtractor={(item) => item.id}
-        numColumns={2}
-        columnWrapperStyle={styles.columnWrapper}
+        numColumns={3}
+        columnWrapperStyle={styles.compactRow}
         renderItem={renderItemCard}
         ListHeaderComponent={
           <>
-            <View style={[styles.walletHeader, { backgroundColor: theme.backgroundElevated, borderColor: theme.glassBorder }]}>
-              <View style={styles.walletHeaderLeft}>
-                <Feather name="credit-card" size={20} color={theme.gold} />
-                <View>
-                  <ThemedText style={[styles.walletHeaderLabel, { color: theme.textSecondary }]}>Your Balance</ThemedText>
-                  <ThemedText type="title2" style={[styles.walletHeaderBalance, { color: theme.gold }]}>{wallet?.coinBalance?.toLocaleString() || 0}</ThemedText>
-                </View>
+            <View style={[styles.compactWalletHeader, { backgroundColor: theme.glassBackground, borderColor: theme.glassBorder }]}>
+              <View style={styles.compactWalletLeft}>
+                <Feather name="credit-card" size={16} color={theme.gold} />
+                <ThemedText style={[styles.compactWalletLabel, { color: theme.textSecondary }]}>Balance</ThemedText>
+                <ThemedText style={[styles.compactWalletBalance, { color: theme.gold }]} weight="bold">{wallet?.coinBalance?.toLocaleString() || 0}</ThemedText>
               </View>
-              <GlassButton
-                title="Get Coins"
-                icon="plus"
-                variant="primary"
-                size="sm"
+              <Pressable
+                style={[styles.compactGetCoinsBtn, { backgroundColor: theme.primary }]}
                 onPress={() => navigation.navigate("Wallet" as never)}
                 testID="get-coins-mall"
-              />
+              >
+                <Feather name="plus" size={14} color="#FFFFFF" />
+                <ThemedText style={styles.compactGetCoinsBtnText} weight="semiBold">Get Coins</ThemedText>
+              </Pressable>
             </View>
             {renderTop50Carousel()}
             {renderCategoryPills()}
-            <ThemedText type="headline" style={styles.itemsHeader}>
-              Mall Items
-            </ThemedText>
+            <View style={styles.shopSectionHeader}>
+              <ThemedText type="subhead" style={styles.shopSectionTitle}>
+                Shop
+              </ThemedText>
+              <ThemedText style={[styles.shopItemCount, { color: theme.textSecondary }]}>
+                {items?.length || 0} items
+              </ThemedText>
+            </View>
           </>
         }
         ListEmptyComponent={renderEmpty}
@@ -1187,5 +1226,208 @@ const styles = StyleSheet.create({
   },
   walletHeaderBalance: {
     fontSize: 18,
+  },
+  // Compact 3-column grid styles for premium mall look
+  compactRow: {
+    justifyContent: "flex-start",
+    marginBottom: GRID_GAP,
+  },
+  compactCard: {
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
+    backgroundColor: "transparent",
+  },
+  compactImageContainer: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
+    position: "relative",
+  },
+  compactImage: {
+    width: "100%",
+    height: "100%",
+  },
+  compactImagePlaceholder: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  floatingPriceBadge: {
+    position: "absolute",
+    bottom: 6,
+    left: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.xs,
+  },
+  floatingPriceText: {
+    fontSize: 10,
+    color: "#FFFFFF",
+  },
+  premiumBadge: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.xs,
+  },
+  premiumBadgeText: {
+    fontSize: 8,
+    color: "#FFFFFF",
+    letterSpacing: 0.5,
+  },
+  quickBuyButton: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  compactCardInfo: {
+    paddingTop: 6,
+    paddingHorizontal: 2,
+  },
+  compactItemName: {
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  shopSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  shopSectionTitle: {
+    fontWeight: "600",
+  },
+  shopItemCount: {
+    fontSize: 11,
+  },
+  compactWalletHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    marginBottom: Spacing.md,
+  },
+  compactWalletLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+  },
+  compactWalletLabel: {
+    fontSize: 11,
+  },
+  compactWalletBalance: {
+    fontSize: 14,
+  },
+  compactGetCoinsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    gap: 4,
+  },
+  compactGetCoinsBtnText: {
+    fontSize: 11,
+    color: "#FFFFFF",
+  },
+  // Compact Top 50 styles
+  compactTop50Container: {
+    marginBottom: Spacing.md,
+    marginHorizontal: -Spacing.md,
+    paddingHorizontal: Spacing.md,
+  },
+  compactSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+    gap: 6,
+  },
+  compactSectionTitle: {
+    fontSize: 12,
+  },
+  compactTop50Scroll: {
+    paddingRight: Spacing.md,
+    gap: Spacing.sm,
+  },
+  compactTop50Item: {
+    alignItems: "center",
+    width: 60,
+  },
+  compactRankBadge: {
+    position: "absolute",
+    top: -2,
+    right: 4,
+    zIndex: 1,
+  },
+  compactRankGradient: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  compactRankText: {
+    fontSize: 9,
+    color: "#FFFFFF",
+  },
+  compactTop50Ring: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  compactTop50AvatarInner: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  compactTop50Username: {
+    fontSize: 9,
+    textAlign: "center",
+    width: 60,
+    marginBottom: 2,
+  },
+  compactNetWorthBadge: {
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: BorderRadius.xs,
+  },
+  compactNetWorthText: {
+    fontSize: 8,
+  },
+  // Compact category pills
+  compactCategoriesContainer: {
+    marginBottom: Spacing.sm,
+    marginHorizontal: -Spacing.md,
+    paddingHorizontal: Spacing.md,
+  },
+  compactCategoriesScroll: {
+    gap: 6,
+  },
+  compactCategoryPill: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  compactCategoryText: {
+    fontSize: 11,
   },
 });
