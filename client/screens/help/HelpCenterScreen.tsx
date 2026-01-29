@@ -77,13 +77,13 @@ export default function HelpCenterScreen() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
 
-  const { data: categoriesResponse, isLoading: categoriesLoading, refetch: refetchCategories } = useQuery<{ categories: HelpCategory[] }>({
+  const { data: categoriesResponse, isLoading: categoriesLoading, isError: categoriesError, error: categoriesErrorMsg, refetch: refetchCategories } = useQuery<{ categories: HelpCategory[] }>({
     queryKey: ["/api/help/categories"],
   });
   
   const categories = categoriesResponse?.categories || [];
 
-  const { data: featuredArticlesData, isLoading: articlesLoading, refetch: refetchArticles } = useQuery<HelpArticle[]>({
+  const { data: featuredArticlesData, isLoading: articlesLoading, isError: articlesError, error: articlesErrorMsg, refetch: refetchArticles } = useQuery<HelpArticle[]>({
     queryKey: ["/api/help/articles/featured"],
   });
   
@@ -93,10 +93,18 @@ export default function HelpCenterScreen() {
     queryKey: ["/api/help/status"],
   });
 
-  const { data: searchResults, isFetching: isSearching } = useQuery<HelpArticle[]>({
+  const { data: searchResults, isFetching: isSearching, isError: searchError, error: searchErrorMsg } = useQuery<HelpArticle[]>({
     queryKey: ["/api/help/search", { query: searchQuery }],
     enabled: searchQuery.length > 2,
   });
+
+  // Debug logging for API issues
+  React.useEffect(() => {
+    console.log("[HelpCenterScreen] Categories loading:", categoriesLoading, "error:", categoriesError, categoriesErrorMsg);
+    console.log("[HelpCenterScreen] Articles loading:", articlesLoading, "error:", articlesError, articlesErrorMsg);
+    console.log("[HelpCenterScreen] Featured articles count:", featuredArticles.length);
+    console.log("[HelpCenterScreen] Categories count:", categories.length);
+  }, [categoriesLoading, categoriesError, articlesLoading, articlesError, featuredArticles.length, categories.length]);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -559,9 +567,20 @@ export default function HelpCenterScreen() {
             <View style={styles.loadingContainer}>
               <ThemedText style={{ color: theme.textSecondary }}>Loading categories...</ThemedText>
             </View>
+          ) : categoriesError ? (
+            <Pressable style={styles.errorContainer} onPress={() => refetchCategories()}>
+              <Feather name="alert-circle" size={24} color={theme.error} />
+              <ThemedText style={[styles.errorText, { color: theme.error }]}>
+                Failed to load categories. Tap to retry.
+              </ThemedText>
+            </Pressable>
+          ) : categories.length === 0 ? (
+            <View style={styles.loadingContainer}>
+              <ThemedText style={{ color: theme.textSecondary }}>No categories available</ThemedText>
+            </View>
           ) : (
             <View style={styles.categoriesGrid}>
-              {(categories || []).map((category, index) => (
+              {categories.map((category, index) => (
                 <CategoryCard key={category.id} category={category} index={index} />
               ))}
             </View>
@@ -586,6 +605,13 @@ export default function HelpCenterScreen() {
             <View style={styles.loadingContainer}>
               <ThemedText style={{ color: theme.textSecondary }}>Loading articles...</ThemedText>
             </View>
+          ) : articlesError ? (
+            <Pressable style={[styles.errorContainer, { marginLeft: Spacing.lg }]} onPress={() => refetchArticles()}>
+              <Feather name="alert-circle" size={24} color={theme.error} />
+              <ThemedText style={[styles.errorText, { color: theme.error }]}>
+                Failed to load articles. Tap to retry.
+              </ThemedText>
+            </Pressable>
           ) : (
             <FlatList
               data={featuredArticles.slice(0, 5)}
@@ -976,5 +1002,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: Spacing.xs,
     textAlign: "center",
+  },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.xl,
+    gap: Spacing.sm,
+  },
+  errorText: {
+    fontSize: 14,
+    fontWeight: "500",
   },
 });

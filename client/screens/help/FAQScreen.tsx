@@ -106,11 +106,18 @@ export default function FAQScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
-  const { data: faqsResponse, isLoading, refetch } = useQuery<{ faqs: FAQ[] }>({
+  const { data: faqsResponse, isLoading, isError, error: faqsError, refetch } = useQuery<{ faqs: FAQ[] }>({
     queryKey: ["/api/help/faqs"],
   });
   
   const faqs = faqsResponse?.faqs || [];
+  
+  // Debug logging
+  React.useEffect(() => {
+    console.log("[FAQScreen] Loading:", isLoading, "Error:", isError, faqsError);
+    console.log("[FAQScreen] FAQs count:", faqs.length);
+    console.log("[FAQScreen] Raw response:", faqsResponse);
+  }, [isLoading, isError, faqs.length, faqsResponse]);
 
   const filteredFaqs = useMemo(() => {
     if (!faqs) return [];
@@ -170,6 +177,29 @@ export default function FAQScreen() {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
         <ActivityIndicator size="large" color={theme.primary} />
+        <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
+          Loading FAQs...
+        </ThemedText>
+      </View>
+    );
+  }
+
+  if (isError) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
+        <Feather name="alert-circle" size={48} color={theme.error} />
+        <ThemedText style={[styles.errorTitle, { color: theme.text }]}>
+          Failed to Load FAQs
+        </ThemedText>
+        <ThemedText style={[styles.errorMessage, { color: theme.textSecondary }]}>
+          {String(faqsError) || "Please check your connection and try again."}
+        </ThemedText>
+        <Pressable 
+          style={[styles.retryButton, { backgroundColor: theme.primary }]}
+          onPress={() => refetch()}
+        >
+          <ThemedText style={styles.retryButtonText}>Try Again</ThemedText>
+        </Pressable>
       </View>
     );
   }
@@ -342,5 +372,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
     marginTop: Spacing.lg,
+  },
+  loadingText: {
+    marginTop: Spacing.md,
+    fontSize: 15,
+  },
+  errorTitle: {
+    marginTop: Spacing.lg,
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  errorMessage: {
+    marginTop: Spacing.sm,
+    fontSize: 14,
+    textAlign: "center",
+    paddingHorizontal: Spacing.xl,
+  },
+  retryButton: {
+    marginTop: Spacing.xl,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
+  },
+  retryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

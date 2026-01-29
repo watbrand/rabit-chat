@@ -75,45 +75,33 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    try {
-      const baseUrl = getApiUrl();
-      const path = queryKey[0] as string;
-      const url = new URL(path, baseUrl);
-      
-      if (queryKey.length > 1 && typeof queryKey[1] === 'object' && queryKey[1] !== null) {
-        const params = queryKey[1] as Record<string, unknown>;
-        Object.entries(params).forEach(([key, value]) => {
-          if (value !== undefined && value !== null) {
-            url.searchParams.set(key, String(value));
-          }
-        });
-      }
-
-      console.log("[QueryClient] Fetching:", url.toString());
-      
-      const res = await fetch(url, {
-        credentials: "include",
+    const baseUrl = getApiUrl();
+    const path = queryKey[0] as string;
+    const url = new URL(path, baseUrl);
+    
+    if (queryKey.length > 1 && typeof queryKey[1] === 'object' && queryKey[1] !== null) {
+      const params = queryKey[1] as Record<string, unknown>;
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          url.searchParams.set(key, String(value));
+        }
       });
+    }
 
-      console.log("[QueryClient] Response status:", res.status, "for", path);
+    console.log("[QueryClient] Fetching:", url.toString());
+    
+    const res = await fetch(url, {
+      credentials: "include",
+    });
 
-      if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-        return null;
-      }
+    console.log("[QueryClient] Response status:", res.status, "for", path);
 
-      // Handle server errors gracefully - don't crash the app
-      if (res.status >= 500) {
-        console.warn("[QueryClient] Server error:", res.status, "for", path);
-        return null;
-      }
-
-      await throwIfResNotOk(res);
-      return await res.json();
-    } catch (error) {
-      console.error("[QueryClient] Error:", error);
-      // For network/fetch errors, return null instead of crashing
+    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
     }
+
+    await throwIfResNotOk(res);
+    return await res.json();
   };
 
 export const queryClient = new QueryClient({
@@ -123,7 +111,8 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: true,
       staleTime: 1000 * 60 * 5, // 5 minutes
-      retry: false,
+      retry: 2, // Retry failed requests twice
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
     },
     mutations: {
       retry: false,
