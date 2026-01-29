@@ -21,6 +21,9 @@ import {
   anonGossipReports,
   gossipPostLinks,
   hoodRivalries,
+  gossipAwards,
+  gossipLocalLegends,
+  gossipSpillSessions,
 } from "@shared/schema";
 import { eq, and, sql, desc, asc, isNull, like, gte, count } from "drizzle-orm";
 import crypto from "crypto";
@@ -3374,6 +3377,493 @@ router.post("/rivalries/:rivalryId/end", async (req: Request, res: Response) => 
   } catch (error) {
     console.error("Error ending rivalry:", error);
     return res.status(500).json({ error: "Failed to end rivalry" });
+  }
+});
+
+// ============================================================
+// LOCAL LEGENDS BOARD
+// ============================================================
+
+// Get local legends for a location
+router.get("/legends/:locationId", async (req: Request, res: Response) => {
+  try {
+    const { locationId } = req.params;
+    const { limit = "10" } = req.query;
+
+    // First get legends
+    const legends = await db
+      .select()
+      .from(gossipLocalLegends)
+      .where(eq(gossipLocalLegends.zaLocationId, locationId))
+      .orderBy(desc(gossipLocalLegends.totalEngagement))
+      .limit(parseInt(limit as string));
+
+    // Enrich with tea spiller stats
+    const enrichedLegends = await Promise.all(
+      legends.map(async (legend, idx) => {
+        const [stats] = await db
+          .select()
+          .from(teaSpillerStats)
+          .where(eq(teaSpillerStats.deviceHash, legend.deviceHash))
+          .limit(1);
+
+        return {
+          id: legend.id,
+          deviceHash: legend.deviceHash,
+          totalEngagement: legend.totalEngagement,
+          totalVerifiedPosts: legend.totalVerifiedPosts,
+          rank: idx + 1,
+          level: stats?.level || "BRONZE",
+          score: stats?.score || 0,
+          displayName: `${EMOJIS[idx % EMOJIS.length]} Legend #${idx + 1}`,
+        };
+      })
+    );
+
+    return res.json({
+      legends: enrichedLegends,
+      locationId,
+    });
+  } catch (error) {
+    console.error("Error fetching local legends:", error);
+    return res.status(500).json({ error: "Failed to fetch local legends" });
+  }
+});
+
+// Update/recalculate local legends for a location
+router.post("/legends/:locationId/recalculate", async (req: Request, res: Response) => {
+  try {
+    const { locationId } = req.params;
+
+    // Get all posts for this location and calculate engagement per device
+    const deviceEngagement = await db
+      .select({
+        deviceHash: anonGossipPosts.deviceHash,
+        totalPosts: count(),
+        totalEngagement: sql<number>`SUM(${anonGossipPosts.fireCount} + ${anonGossipPosts.mindblownCount} + ${anonGossipPosts.laughCount} + ${anonGossipPosts.skullCount} + ${anonGossipPosts.eyesCount} + ${anonGossipPosts.replyCount})`,
+        totalVerified: sql<number>`SUM(CASE WHEN ${anonGossipPosts.isVerifiedTea} THEN 1 ELSE 0 END)`,
+      })
+      .from(anonGossipPosts)
+      .where(eq(anonGossipPosts.zaLocationId, locationId))
+      .groupBy(anonGossipPosts.deviceHash)
+      .orderBy(desc(sql`SUM(${anonGossipPosts.fireCount} + ${anonGossipPosts.mindblownCount} + ${anonGossipPosts.laughCount} + ${anonGossipPosts.skullCount} + ${anonGossipPosts.eyesCount} + ${anonGossipPosts.replyCount})`))
+      .limit(100);
+
+    // Update or insert legends
+    for (let i = 0; i < deviceEngagement.length; i++) {
+      const device = deviceEngagement[i];
+      const existing = await db
+        .select()
+        .from(gossipLocalLegends)
+        .where(and(
+          eq(gossipLocalLegends.zaLocationId, locationId),
+          eq(gossipLocalLegends.deviceHash, device.deviceHash)
+        ))
+        .limit(1);
+
+      if (existing.length > 0) {
+        await db
+          .update(gossipLocalLegends)
+          .set({
+            totalEngagement: device.totalEngagement || 0,
+            totalVerifiedPosts: device.totalVerified || 0,
+            rank: i + 1,
+            lastUpdated: new Date(),
+          })
+          .where(eq(gossipLocalLegends.id, existing[0].id));
+      } else {
+        await db.insert(gossipLocalLegends).values({
+          zaLocationId: locationId,
+          deviceHash: device.deviceHash,
+          totalEngagement: device.totalEngagement || 0,
+          totalVerifiedPosts: device.totalVerified || 0,
+          rank: i + 1,
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      legendsUpdated: deviceEngagement.length,
+      locationId,
+    });
+  } catch (error) {
+    console.error("Error recalculating local legends:", error);
+    return res.status(500).json({ error: "Failed to recalculate legends" });
+  }
+});
+
+// ============================================================
+// AWARDS SYSTEM
+// ============================================================
+
+// Get awards for a time period
+router.get("/awards", async (req: Request, res: Response) => {
+  try {
+    const { period = "WEEKLY_TOP", locationId, limit = "10" } = req.query;
+
+    let whereConditions = [eq(gossipAwards.awardType, period as string)];
+    if (locationId) {
+      whereConditions.push(eq(gossipAwards.zaLocationId, locationId as string));
+    }
+
+    const awards = await db
+      .select({
+        id: gossipAwards.id,
+        postId: gossipAwards.postId,
+        awardType: gossipAwards.awardType,
+        rank: gossipAwards.rank,
+        periodStart: gossipAwards.periodStart,
+        periodEnd: gossipAwards.periodEnd,
+        post: {
+          content: anonGossipPosts.content,
+          type: anonGossipPosts.type,
+          teaMeter: anonGossipPosts.teaMeter,
+          fireCount: anonGossipPosts.fireCount,
+          isVerifiedTea: anonGossipPosts.isVerifiedTea,
+          createdAt: anonGossipPosts.createdAt,
+        },
+      })
+      .from(gossipAwards)
+      .innerJoin(anonGossipPosts, eq(gossipAwards.postId, anonGossipPosts.id))
+      .where(and(...whereConditions))
+      .orderBy(desc(gossipAwards.periodStart), asc(gossipAwards.rank))
+      .limit(parseInt(limit as string));
+
+    return res.json({ awards, period });
+  } catch (error) {
+    console.error("Error fetching awards:", error);
+    return res.status(500).json({ error: "Failed to fetch awards" });
+  }
+});
+
+// Calculate and assign weekly awards
+router.post("/awards/calculate-weekly", async (req: Request, res: Response) => {
+  try {
+    const { locationId } = req.body;
+    
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - 7);
+    weekStart.setHours(0, 0, 0, 0);
+
+    let whereConditions = [gte(anonGossipPosts.createdAt, weekStart)];
+    if (locationId) {
+      whereConditions.push(eq(anonGossipPosts.zaLocationId, locationId));
+    }
+
+    // Get top posts by total engagement
+    const topPosts = await db
+      .select({
+        id: anonGossipPosts.id,
+        deviceHash: anonGossipPosts.deviceHash,
+        totalEngagement: sql<number>`${anonGossipPosts.fireCount} + ${anonGossipPosts.mindblownCount} + ${anonGossipPosts.laughCount} + ${anonGossipPosts.skullCount} + ${anonGossipPosts.eyesCount}`,
+      })
+      .from(anonGossipPosts)
+      .where(and(...whereConditions))
+      .orderBy(desc(sql`${anonGossipPosts.fireCount} + ${anonGossipPosts.mindblownCount} + ${anonGossipPosts.laughCount} + ${anonGossipPosts.skullCount} + ${anonGossipPosts.eyesCount}`))
+      .limit(5);
+
+    // Get most accurate posts
+    const mostAccurate = await db
+      .select({
+        id: anonGossipPosts.id,
+        deviceHash: anonGossipPosts.deviceHash,
+        accuracyScore: sql<number>`${anonGossipPosts.accuracyTrueVotes} - ${anonGossipPosts.accuracyFalseVotes}`,
+      })
+      .from(anonGossipPosts)
+      .where(and(
+        ...whereConditions,
+        sql`(${anonGossipPosts.accuracyTrueVotes} + ${anonGossipPosts.accuracyFalseVotes}) >= 10`
+      ))
+      .orderBy(desc(sql`${anonGossipPosts.accuracyTrueVotes} - ${anonGossipPosts.accuracyFalseVotes}`))
+      .limit(3);
+
+    // Get funniest (most laugh reactions)
+    const funniest = await db
+      .select({
+        id: anonGossipPosts.id,
+        deviceHash: anonGossipPosts.deviceHash,
+      })
+      .from(anonGossipPosts)
+      .where(and(...whereConditions))
+      .orderBy(desc(anonGossipPosts.laughCount))
+      .limit(3);
+
+    // Get most shocking (most mindblown + skull)
+    const shocking = await db
+      .select({
+        id: anonGossipPosts.id,
+        deviceHash: anonGossipPosts.deviceHash,
+      })
+      .from(anonGossipPosts)
+      .where(and(...whereConditions))
+      .orderBy(desc(sql`${anonGossipPosts.mindblownCount} + ${anonGossipPosts.skullCount}`))
+      .limit(3);
+
+    const awardsToInsert: any[] = [];
+    const periodStart = weekStart;
+    const periodEnd = now;
+
+    // Add weekly top awards
+    topPosts.forEach((post, idx) => {
+      awardsToInsert.push({
+        postId: post.id,
+        deviceHash: post.deviceHash,
+        awardType: "WEEKLY_TOP",
+        zaLocationId: locationId || null,
+        periodStart,
+        periodEnd,
+        rank: idx + 1,
+      });
+    });
+
+    // Add most accurate awards
+    mostAccurate.forEach((post, idx) => {
+      awardsToInsert.push({
+        postId: post.id,
+        deviceHash: post.deviceHash,
+        awardType: "MOST_ACCURATE",
+        zaLocationId: locationId || null,
+        periodStart,
+        periodEnd,
+        rank: idx + 1,
+      });
+    });
+
+    // Add funniest awards
+    funniest.forEach((post, idx) => {
+      awardsToInsert.push({
+        postId: post.id,
+        deviceHash: post.deviceHash,
+        awardType: "FUNNIEST",
+        zaLocationId: locationId || null,
+        periodStart,
+        periodEnd,
+        rank: idx + 1,
+      });
+    });
+
+    // Add shocking awards
+    shocking.forEach((post, idx) => {
+      awardsToInsert.push({
+        postId: post.id,
+        deviceHash: post.deviceHash,
+        awardType: "MOST_SHOCKING",
+        zaLocationId: locationId || null,
+        periodStart,
+        periodEnd,
+        rank: idx + 1,
+      });
+    });
+
+    if (awardsToInsert.length > 0) {
+      await db.insert(gossipAwards).values(awardsToInsert);
+    }
+
+    return res.json({
+      success: true,
+      awardsCreated: awardsToInsert.length,
+      breakdown: {
+        weeklyTop: topPosts.length,
+        mostAccurate: mostAccurate.length,
+        funniest: funniest.length,
+        mostShocking: shocking.length,
+      },
+      period: { start: periodStart, end: periodEnd },
+    });
+  } catch (error) {
+    console.error("Error calculating weekly awards:", error);
+    return res.status(500).json({ error: "Failed to calculate awards" });
+  }
+});
+
+// Get award winners for a device
+router.get("/awards/my-awards", async (req: Request, res: Response) => {
+  try {
+    const deviceId = req.headers["x-device-id"] as string;
+    if (!deviceId) {
+      return res.status(400).json({ error: "Device ID required" });
+    }
+
+    const deviceHash = hashDevice(deviceId);
+
+    const myAwards = await db
+      .select({
+        id: gossipAwards.id,
+        postId: gossipAwards.postId,
+        awardType: gossipAwards.awardType,
+        rank: gossipAwards.rank,
+        periodStart: gossipAwards.periodStart,
+        periodEnd: gossipAwards.periodEnd,
+        createdAt: gossipAwards.createdAt,
+      })
+      .from(gossipAwards)
+      .where(eq(gossipAwards.deviceHash, deviceHash))
+      .orderBy(desc(gossipAwards.createdAt))
+      .limit(50);
+
+    const awardCounts = myAwards.reduce((acc: Record<string, number>, award) => {
+      acc[award.awardType] = (acc[award.awardType] || 0) + 1;
+      return acc;
+    }, {});
+
+    return res.json({
+      awards: myAwards,
+      totalAwards: myAwards.length,
+      breakdown: awardCounts,
+    });
+  } catch (error) {
+    console.error("Error fetching my awards:", error);
+    return res.status(500).json({ error: "Failed to fetch awards" });
+  }
+});
+
+// ============================================================
+// WEEKLY SPILL SESSIONS
+// ============================================================
+
+// Get upcoming/active spill sessions
+router.get("/spill-sessions", async (req: Request, res: Response) => {
+  try {
+    const { locationId, status } = req.query;
+    const now = new Date();
+
+    let whereConditions: any[] = [];
+    
+    if (status) {
+      whereConditions.push(eq(gossipSpillSessions.status, status as string));
+    } else {
+      // Default: show scheduled and active sessions
+      whereConditions.push(sql`${gossipSpillSessions.status} IN ('SCHEDULED', 'ACTIVE')`);
+    }
+
+    if (locationId) {
+      whereConditions.push(eq(gossipSpillSessions.zaLocationId, locationId as string));
+    }
+
+    const sessions = await db
+      .select()
+      .from(gossipSpillSessions)
+      .where(whereConditions.length > 0 ? and(...whereConditions) : undefined)
+      .orderBy(asc(gossipSpillSessions.scheduledStart))
+      .limit(20);
+
+    // Add countdown/time info
+    const sessionsWithTime = sessions.map(session => {
+      const startTime = new Date(session.scheduledStart);
+      const endTime = new Date(session.scheduledEnd);
+      const isActive = now >= startTime && now <= endTime;
+      const isUpcoming = now < startTime;
+      const msUntilStart = startTime.getTime() - now.getTime();
+      const msUntilEnd = endTime.getTime() - now.getTime();
+
+      return {
+        ...session,
+        isActive,
+        isUpcoming,
+        isEnded: now > endTime,
+        countdown: isUpcoming ? {
+          hours: Math.floor(msUntilStart / (1000 * 60 * 60)),
+          minutes: Math.floor((msUntilStart % (1000 * 60 * 60)) / (1000 * 60)),
+        } : null,
+        timeRemaining: isActive ? {
+          hours: Math.floor(msUntilEnd / (1000 * 60 * 60)),
+          minutes: Math.floor((msUntilEnd % (1000 * 60 * 60)) / (1000 * 60)),
+        } : null,
+      };
+    });
+
+    return res.json({ sessions: sessionsWithTime });
+  } catch (error) {
+    console.error("Error fetching spill sessions:", error);
+    return res.status(500).json({ error: "Failed to fetch spill sessions" });
+  }
+});
+
+// Create a new spill session (admin)
+router.post("/spill-sessions", async (req: Request, res: Response) => {
+  try {
+    const { title, description, locationId, scheduledStart, scheduledEnd, engagementBoost } = req.body;
+
+    if (!title || !scheduledStart || !scheduledEnd) {
+      return res.status(400).json({ error: "Title, scheduledStart, and scheduledEnd required" });
+    }
+
+    const [session] = await db.insert(gossipSpillSessions).values({
+      title,
+      description,
+      zaLocationId: locationId || null,
+      scheduledStart: new Date(scheduledStart),
+      scheduledEnd: new Date(scheduledEnd),
+      engagementBoost: engagementBoost || 1.5,
+    }).returning();
+
+    return res.json({ session });
+  } catch (error) {
+    console.error("Error creating spill session:", error);
+    return res.status(500).json({ error: "Failed to create spill session" });
+  }
+});
+
+// Update spill session status
+router.patch("/spill-sessions/:sessionId", async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const { status, totalPosts, totalReactions } = req.body;
+
+    const updates: any = {};
+    if (status) updates.status = status;
+    if (totalPosts !== undefined) updates.totalPosts = totalPosts;
+    if (totalReactions !== undefined) updates.totalReactions = totalReactions;
+
+    const [updated] = await db
+      .update(gossipSpillSessions)
+      .set(updates)
+      .where(eq(gossipSpillSessions.id, sessionId))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    return res.json({ session: updated });
+  } catch (error) {
+    console.error("Error updating spill session:", error);
+    return res.status(500).json({ error: "Failed to update spill session" });
+  }
+});
+
+// Get active spill session for boosted visibility
+router.get("/spill-sessions/active", async (req: Request, res: Response) => {
+  try {
+    const { locationId } = req.query;
+    const now = new Date();
+
+    let whereConditions = [
+      eq(gossipSpillSessions.status, "ACTIVE"),
+      sql`${gossipSpillSessions.scheduledStart} <= ${now}`,
+      sql`${gossipSpillSessions.scheduledEnd} >= ${now}`,
+    ];
+
+    if (locationId) {
+      whereConditions.push(eq(gossipSpillSessions.zaLocationId, locationId as string));
+    }
+
+    const [activeSession] = await db
+      .select()
+      .from(gossipSpillSessions)
+      .where(and(...whereConditions))
+      .limit(1);
+
+    return res.json({
+      active: !!activeSession,
+      session: activeSession || null,
+      engagementBoost: activeSession?.engagementBoost || 1,
+    });
+  } catch (error) {
+    console.error("Error fetching active spill session:", error);
+    return res.status(500).json({ error: "Failed to fetch active session" });
   }
 });
 
