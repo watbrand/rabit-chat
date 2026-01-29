@@ -2767,6 +2767,20 @@ export const anonGossipPosts = pgTable("anon_gossip_posts", {
   replyCount: integer("reply_count").default(0).notNull(),
   viewCount: integer("view_count").default(0).notNull(),
   reportCount: integer("report_count").default(0).notNull(),
+  // V2 Extensions
+  postType: varchar("post_type", { length: 20 }).default("REGULAR"),
+  isInsider: boolean("is_insider").default(false).notNull(),
+  hasUpdate: boolean("has_update").default(false).notNull(),
+  repostCount: integer("repost_count").default(0).notNull(),
+  saveCount: integer("save_count").default(0).notNull(),
+  followCount: integer("follow_count").default(0).notNull(),
+  accuracyTrueVotes: integer("accuracy_true_votes").default(0).notNull(),
+  accuracyFalseVotes: integer("accuracy_false_votes").default(0).notNull(),
+  accuracyUnsureVotes: integer("accuracy_unsure_votes").default(0).notNull(),
+  isVerifiedTea: boolean("is_verified_tea").default(false).notNull(),
+  isBreaking: boolean("is_breaking").default(false).notNull(),
+  trendingScore: real("trending_score").default(0).notNull(),
+  velocityScore: real("velocity_score").default(0).notNull(),
   isHidden: boolean("is_hidden").default(false).notNull(),
   isRemovedByAdmin: boolean("is_removed_by_admin").default(false).notNull(),
   removedReason: text("removed_reason"),
@@ -2783,6 +2797,9 @@ export const anonGossipPosts = pgTable("anon_gossip_posts", {
   index("anon_gossip_posts_is_whisper_idx").on(table.isWhisper),
   index("anon_gossip_posts_whisper_expires_idx").on(table.whisperExpiresAt),
   index("anon_gossip_posts_is_hidden_idx").on(table.isHidden),
+  index("anon_gossip_posts_post_type_idx").on(table.postType),
+  index("anon_gossip_posts_trending_idx").on(table.trendingScore),
+  index("anon_gossip_posts_verified_idx").on(table.isVerifiedTea),
 ]);
 
 // Anonymous Gossip Reactions
@@ -2944,6 +2961,412 @@ export const gossipEngagementVelocity = pgTable("gossip_engagement_velocity", {
   index("gossip_velocity_score_idx").on(table.velocityScore),
 ]);
 
+// ===== GOSSIP V2 EXTENSIONS =====
+
+// Post type enum for gossip v2
+export const gossipPostTypeEnum = pgEnum("gossip_post_type", ["REGULAR", "CONFESSION", "AMA", "I_SAW", "I_HEARD"]);
+
+// Tea spiller level enum
+export const teaSpillerLevelEnum = pgEnum("tea_spiller_level", ["BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND"]);
+
+// Accuracy vote enum
+export const accuracyVoteEnum = pgEnum("accuracy_vote", ["TRUE", "FALSE", "UNSURE"]);
+
+// Award type enum
+export const gossipAwardTypeEnum = pgEnum("gossip_award_type", ["WEEKLY_TOP", "MONTHLY_TOP", "MOST_ACCURATE", "FUNNIEST", "MOST_SHOCKING", "LOCAL_LEGEND"]);
+
+// Spill session status enum
+export const spillSessionStatusEnum = pgEnum("spill_session_status", ["SCHEDULED", "ACTIVE", "ENDED"]);
+
+// Anonymous Gossip Aliases - throwaway names per post
+export const gossipAliases = pgTable("gossip_aliases", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  postId: varchar("post_id")
+    .notNull()
+    .references(() => anonGossipPosts.id, { onDelete: "cascade" }),
+  alias: varchar("alias", { length: 50 }).notNull(),
+  aliasColor: varchar("alias_color", { length: 20 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_aliases_post_unique").on(table.postId),
+  index("gossip_aliases_alias_idx").on(table.alias),
+]);
+
+// Gossip Reposts (regular + quote reposts)
+export const gossipReposts = pgTable("gossip_reposts", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  originalPostId: varchar("original_post_id")
+    .notNull()
+    .references(() => anonGossipPosts.id, { onDelete: "cascade" }),
+  deviceHash: varchar("device_hash", { length: 64 }).notNull(),
+  quoteText: text("quote_text"),
+  isQuoteRepost: boolean("is_quote_repost").default(false).notNull(),
+  zaLocationId: varchar("za_location_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_reposts_unique").on(table.originalPostId, table.deviceHash),
+  index("gossip_reposts_post_idx").on(table.originalPostId),
+  index("gossip_reposts_device_idx").on(table.deviceHash),
+  index("gossip_reposts_location_idx").on(table.zaLocationId),
+]);
+
+// Gossip Saves (bookmarks)
+export const gossipSaves = pgTable("gossip_saves", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  postId: varchar("post_id")
+    .notNull()
+    .references(() => anonGossipPosts.id, { onDelete: "cascade" }),
+  deviceHash: varchar("device_hash", { length: 64 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_saves_unique").on(table.postId, table.deviceHash),
+  index("gossip_saves_post_idx").on(table.postId),
+  index("gossip_saves_device_idx").on(table.deviceHash),
+]);
+
+// Gossip Post Follows (get notified on updates)
+export const gossipPostFollows = pgTable("gossip_post_follows", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  postId: varchar("post_id")
+    .notNull()
+    .references(() => anonGossipPosts.id, { onDelete: "cascade" }),
+  deviceHash: varchar("device_hash", { length: 64 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_post_follows_unique").on(table.postId, table.deviceHash),
+  index("gossip_post_follows_post_idx").on(table.postId),
+  index("gossip_post_follows_device_idx").on(table.deviceHash),
+]);
+
+// Gossip Polls
+export const gossipPolls = pgTable("gossip_polls", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  postId: varchar("post_id")
+    .notNull()
+    .references(() => anonGossipPosts.id, { onDelete: "cascade" }),
+  question: text("question").notNull(),
+  option1: varchar("option_1", { length: 100 }).notNull(),
+  option2: varchar("option_2", { length: 100 }).notNull(),
+  option3: varchar("option_3", { length: 100 }),
+  option4: varchar("option_4", { length: 100 }),
+  option1Votes: integer("option_1_votes").default(0).notNull(),
+  option2Votes: integer("option_2_votes").default(0).notNull(),
+  option3Votes: integer("option_3_votes").default(0).notNull(),
+  option4Votes: integer("option_4_votes").default(0).notNull(),
+  totalVotes: integer("total_votes").default(0).notNull(),
+  endsAt: timestamp("ends_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_polls_post_unique").on(table.postId),
+  index("gossip_polls_ends_idx").on(table.endsAt),
+]);
+
+// Gossip Poll Votes
+export const gossipPollVotes = pgTable("gossip_poll_votes", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  pollId: varchar("poll_id")
+    .notNull()
+    .references(() => gossipPolls.id, { onDelete: "cascade" }),
+  deviceHash: varchar("device_hash", { length: 64 }).notNull(),
+  optionNumber: integer("option_number").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_poll_votes_unique").on(table.pollId, table.deviceHash),
+  index("gossip_poll_votes_poll_idx").on(table.pollId),
+]);
+
+// Anonymous DM Conversations
+export const gossipDMConversations = pgTable("gossip_dm_conversations", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  postId: varchar("post_id")
+    .references(() => anonGossipPosts.id, { onDelete: "set null" }),
+  participant1Hash: varchar("participant_1_hash", { length: 64 }).notNull(),
+  participant2Hash: varchar("participant_2_hash", { length: 64 }).notNull(),
+  participant1Alias: varchar("participant_1_alias", { length: 50 }).notNull(),
+  participant2Alias: varchar("participant_2_alias", { length: 50 }).notNull(),
+  lastMessageAt: timestamp("last_message_at"),
+  isBlocked: boolean("is_blocked").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_dm_participants_unique").on(table.participant1Hash, table.participant2Hash, table.postId),
+  index("gossip_dm_conv_p1_idx").on(table.participant1Hash),
+  index("gossip_dm_conv_p2_idx").on(table.participant2Hash),
+  index("gossip_dm_conv_post_idx").on(table.postId),
+]);
+
+// Anonymous DM Messages
+export const gossipDMMessages = pgTable("gossip_dm_messages", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  conversationId: varchar("conversation_id")
+    .notNull()
+    .references(() => gossipDMConversations.id, { onDelete: "cascade" }),
+  senderHash: varchar("sender_hash", { length: 64 }).notNull(),
+  content: text("content").notNull(),
+  isRead: boolean("is_read").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("gossip_dm_msg_conv_idx").on(table.conversationId),
+  index("gossip_dm_msg_sender_idx").on(table.senderHash),
+  index("gossip_dm_msg_created_idx").on(table.createdAt),
+]);
+
+// Gossip Accuracy Votes
+export const gossipAccuracyVotes = pgTable("gossip_accuracy_votes", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  postId: varchar("post_id")
+    .notNull()
+    .references(() => anonGossipPosts.id, { onDelete: "cascade" }),
+  deviceHash: varchar("device_hash", { length: 64 }).notNull(),
+  vote: accuracyVoteEnum("vote").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_accuracy_votes_unique").on(table.postId, table.deviceHash),
+  index("gossip_accuracy_votes_post_idx").on(table.postId),
+  index("gossip_accuracy_votes_vote_idx").on(table.vote),
+]);
+
+// Tea Spiller Stats (device-based reputation)
+export const teaSpillerStats = pgTable("tea_spiller_stats", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  deviceHash: varchar("device_hash", { length: 64 }).notNull().unique(),
+  level: teaSpillerLevelEnum("level").default("BRONZE").notNull(),
+  totalPosts: integer("total_posts").default(0).notNull(),
+  totalReactions: integer("total_reactions").default(0).notNull(),
+  totalReposts: integer("total_reposts").default(0).notNull(),
+  totalReplies: integer("total_replies").default(0).notNull(),
+  accurateCount: integer("accurate_count").default(0).notNull(),
+  inaccurateCount: integer("inaccurate_count").default(0).notNull(),
+  accuracyRate: real("accuracy_rate").default(0).notNull(),
+  cooldownUntil: timestamp("cooldown_until"),
+  isShadowBanned: boolean("is_shadow_banned").default(false).notNull(),
+  lastActiveAt: timestamp("last_active_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("tea_spiller_stats_level_idx").on(table.level),
+  index("tea_spiller_stats_accuracy_idx").on(table.accuracyRate),
+  index("tea_spiller_stats_cooldown_idx").on(table.cooldownUntil),
+]);
+
+// Gossip Hashtags
+export const gossipHashtags = pgTable("gossip_hashtags", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  tag: varchar("tag", { length: 100 }).notNull().unique(),
+  useCount: integer("use_count").default(0).notNull(),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("gossip_hashtags_tag_idx").on(table.tag),
+  index("gossip_hashtags_count_idx").on(table.useCount),
+]);
+
+// Post-Hashtag Junction
+export const gossipPostHashtags = pgTable("gossip_post_hashtags", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  postId: varchar("post_id")
+    .notNull()
+    .references(() => anonGossipPosts.id, { onDelete: "cascade" }),
+  hashtagId: varchar("hashtag_id")
+    .notNull()
+    .references(() => gossipHashtags.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_post_hashtags_unique").on(table.postId, table.hashtagId),
+  index("gossip_post_hashtags_post_idx").on(table.postId),
+  index("gossip_post_hashtags_tag_idx").on(table.hashtagId),
+]);
+
+// Part 2 Linking (follow-up posts)
+export const gossipPostLinks = pgTable("gossip_post_links", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  originalPostId: varchar("original_post_id")
+    .notNull()
+    .references(() => anonGossipPosts.id, { onDelete: "cascade" }),
+  linkedPostId: varchar("linked_post_id")
+    .notNull()
+    .references(() => anonGossipPosts.id, { onDelete: "cascade" }),
+  linkType: varchar("link_type", { length: 20 }).default("PART_2").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_post_links_unique").on(table.originalPostId, table.linkedPostId),
+  index("gossip_post_links_original_idx").on(table.originalPostId),
+  index("gossip_post_links_linked_idx").on(table.linkedPostId),
+]);
+
+// Hood Rivalries (engagement competition)
+export const hoodRivalries = pgTable("hood_rivalries", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  hood1Id: varchar("hood_1_id").notNull(),
+  hood2Id: varchar("hood_2_id").notNull(),
+  hood1Name: varchar("hood_1_name", { length: 100 }).notNull(),
+  hood2Name: varchar("hood_2_name", { length: 100 }).notNull(),
+  hood1Score: integer("hood_1_score").default(0).notNull(),
+  hood2Score: integer("hood_2_score").default(0).notNull(),
+  weekStart: timestamp("week_start").notNull(),
+  weekEnd: timestamp("week_end").notNull(),
+  winnerId: varchar("winner_id"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("hood_rivalries_active_idx").on(table.isActive),
+  index("hood_rivalries_week_idx").on(table.weekStart),
+]);
+
+// Gossip Awards
+export const gossipAwards = pgTable("gossip_awards", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  postId: varchar("post_id")
+    .notNull()
+    .references(() => anonGossipPosts.id, { onDelete: "cascade" }),
+  deviceHash: varchar("device_hash", { length: 64 }).notNull(),
+  awardType: gossipAwardTypeEnum("award_type").notNull(),
+  zaLocationId: varchar("za_location_id"),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  rank: integer("rank").default(1).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("gossip_awards_post_idx").on(table.postId),
+  index("gossip_awards_type_idx").on(table.awardType),
+  index("gossip_awards_period_idx").on(table.periodStart, table.periodEnd),
+  index("gossip_awards_location_idx").on(table.zaLocationId),
+]);
+
+// Local Legends Board
+export const gossipLocalLegends = pgTable("gossip_local_legends", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  zaLocationId: varchar("za_location_id").notNull(),
+  deviceHash: varchar("device_hash", { length: 64 }).notNull(),
+  totalEngagement: integer("total_engagement").default(0).notNull(),
+  totalVerifiedPosts: integer("total_verified_posts").default(0).notNull(),
+  rank: integer("rank").default(0).notNull(),
+  lastUpdated: timestamp("last_updated").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_local_legends_unique").on(table.zaLocationId, table.deviceHash),
+  index("gossip_local_legends_location_idx").on(table.zaLocationId),
+  index("gossip_local_legends_rank_idx").on(table.rank),
+]);
+
+// Weekly Spill Sessions
+export const gossipSpillSessions = pgTable("gossip_spill_sessions", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description"),
+  zaLocationId: varchar("za_location_id"),
+  scheduledStart: timestamp("scheduled_start").notNull(),
+  scheduledEnd: timestamp("scheduled_end").notNull(),
+  status: spillSessionStatusEnum("status").default("SCHEDULED").notNull(),
+  engagementBoost: real("engagement_boost").default(1.5).notNull(),
+  totalPosts: integer("total_posts").default(0).notNull(),
+  totalReactions: integer("total_reactions").default(0).notNull(),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("gossip_spill_sessions_scheduled_idx").on(table.scheduledStart),
+  index("gossip_spill_sessions_status_idx").on(table.status),
+  index("gossip_spill_sessions_location_idx").on(table.zaLocationId),
+]);
+
+// Gossip Post Views (for analytics)
+export const gossipPostViews = pgTable("gossip_post_views", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  postId: varchar("post_id")
+    .notNull()
+    .references(() => anonGossipPosts.id, { onDelete: "cascade" }),
+  deviceHash: varchar("device_hash", { length: 64 }).notNull(),
+  viewedAt: timestamp("viewed_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_post_views_unique").on(table.postId, table.deviceHash),
+  index("gossip_post_views_post_idx").on(table.postId),
+  index("gossip_post_views_time_idx").on(table.viewedAt),
+]);
+
+// Hood Activity Stats (peak hours tracking)
+export const hoodActivityStats = pgTable("hood_activity_stats", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  zaLocationId: varchar("za_location_id").notNull(),
+  dayOfWeek: integer("day_of_week").notNull(),
+  hourOfDay: integer("hour_of_day").notNull(),
+  avgPosts: real("avg_posts").default(0).notNull(),
+  avgEngagement: real("avg_engagement").default(0).notNull(),
+  lastUpdated: timestamp("last_updated").defaultNow().notNull(),
+}, (table) => [
+  unique("hood_activity_stats_unique").on(table.zaLocationId, table.dayOfWeek, table.hourOfDay),
+  index("hood_activity_stats_location_idx").on(table.zaLocationId),
+]);
+
+// Trending hashtags per location
+export const gossipTrendingHashtags = pgTable("gossip_trending_hashtags", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  hashtagId: varchar("hashtag_id")
+    .notNull()
+    .references(() => gossipHashtags.id, { onDelete: "cascade" }),
+  zaLocationId: varchar("za_location_id"),
+  trendingScore: real("trending_score").default(0).notNull(),
+  useLast24h: integer("use_last_24h").default(0).notNull(),
+  lastCalculated: timestamp("last_calculated").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_trending_hashtags_unique").on(table.hashtagId, table.zaLocationId),
+  index("gossip_trending_hashtags_score_idx").on(table.trendingScore),
+  index("gossip_trending_hashtags_location_idx").on(table.zaLocationId),
+]);
+
+// Device Rate Limiting
+export const gossipRateLimits = pgTable("gossip_rate_limits", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  deviceHash: varchar("device_hash", { length: 64 }).notNull(),
+  actionType: varchar("action_type", { length: 20 }).notNull(),
+  count: integer("count").default(0).notNull(),
+  windowStart: timestamp("window_start").notNull(),
+  windowEnd: timestamp("window_end").notNull(),
+}, (table) => [
+  unique("gossip_rate_limits_unique").on(table.deviceHash, table.actionType, table.windowStart),
+  index("gossip_rate_limits_device_idx").on(table.deviceHash),
+  index("gossip_rate_limits_window_idx").on(table.windowEnd),
+]);
+
 // ===== MALL SYSTEM =====
 
 // Mall Categories
@@ -3096,11 +3519,23 @@ export const netWorthLedgerRelations = relations(netWorthLedger, ({ one }) => ({
 }));
 
 // Anonymous Gossip Relations
-export const anonGossipPostsRelations = relations(anonGossipPosts, ({ many }) => ({
+export const anonGossipPostsRelations = relations(anonGossipPosts, ({ one, many }) => ({
   reactions: many(anonGossipReactions),
   replies: many(anonGossipReplies),
   reports: many(anonGossipReports),
   velocityRecords: many(gossipEngagementVelocity),
+  // V2 Relations
+  alias: one(gossipAliases),
+  reposts: many(gossipReposts),
+  saves: many(gossipSaves),
+  follows: many(gossipPostFollows),
+  poll: one(gossipPolls),
+  accuracyVotes: many(gossipAccuracyVotes),
+  hashtags: many(gossipPostHashtags),
+  linkedFrom: many(gossipPostLinks, { relationName: "linkedPosts" }),
+  linkedTo: many(gossipPostLinks, { relationName: "originalPosts" }),
+  views: many(gossipPostViews),
+  awards: many(gossipAwards),
 }));
 
 export const anonGossipReactionsRelations = relations(anonGossipReactions, ({ one }) => ({
@@ -3146,6 +3581,122 @@ export const gossipEngagementVelocityRelations = relations(gossipEngagementVeloc
   post: one(anonGossipPosts, {
     fields: [gossipEngagementVelocity.postId],
     references: [anonGossipPosts.id],
+  }),
+}));
+
+// Gossip V2 Relations
+export const gossipAliasesRelations = relations(gossipAliases, ({ one }) => ({
+  post: one(anonGossipPosts, {
+    fields: [gossipAliases.postId],
+    references: [anonGossipPosts.id],
+  }),
+}));
+
+export const gossipRepostsRelations = relations(gossipReposts, ({ one }) => ({
+  originalPost: one(anonGossipPosts, {
+    fields: [gossipReposts.originalPostId],
+    references: [anonGossipPosts.id],
+  }),
+}));
+
+export const gossipSavesRelations = relations(gossipSaves, ({ one }) => ({
+  post: one(anonGossipPosts, {
+    fields: [gossipSaves.postId],
+    references: [anonGossipPosts.id],
+  }),
+}));
+
+export const gossipPostFollowsRelations = relations(gossipPostFollows, ({ one }) => ({
+  post: one(anonGossipPosts, {
+    fields: [gossipPostFollows.postId],
+    references: [anonGossipPosts.id],
+  }),
+}));
+
+export const gossipPollsRelations = relations(gossipPolls, ({ one, many }) => ({
+  post: one(anonGossipPosts, {
+    fields: [gossipPolls.postId],
+    references: [anonGossipPosts.id],
+  }),
+  votes: many(gossipPollVotes),
+}));
+
+export const gossipPollVotesRelations = relations(gossipPollVotes, ({ one }) => ({
+  poll: one(gossipPolls, {
+    fields: [gossipPollVotes.pollId],
+    references: [gossipPolls.id],
+  }),
+}));
+
+export const gossipDMConversationsRelations = relations(gossipDMConversations, ({ one, many }) => ({
+  post: one(anonGossipPosts, {
+    fields: [gossipDMConversations.postId],
+    references: [anonGossipPosts.id],
+  }),
+  messages: many(gossipDMMessages),
+}));
+
+export const gossipDMMessagesRelations = relations(gossipDMMessages, ({ one }) => ({
+  conversation: one(gossipDMConversations, {
+    fields: [gossipDMMessages.conversationId],
+    references: [gossipDMConversations.id],
+  }),
+}));
+
+export const gossipAccuracyVotesRelations = relations(gossipAccuracyVotes, ({ one }) => ({
+  post: one(anonGossipPosts, {
+    fields: [gossipAccuracyVotes.postId],
+    references: [anonGossipPosts.id],
+  }),
+}));
+
+export const gossipHashtagsRelations = relations(gossipHashtags, ({ many }) => ({
+  posts: many(gossipPostHashtags),
+  trending: many(gossipTrendingHashtags),
+}));
+
+export const gossipPostHashtagsRelations = relations(gossipPostHashtags, ({ one }) => ({
+  post: one(anonGossipPosts, {
+    fields: [gossipPostHashtags.postId],
+    references: [anonGossipPosts.id],
+  }),
+  hashtag: one(gossipHashtags, {
+    fields: [gossipPostHashtags.hashtagId],
+    references: [gossipHashtags.id],
+  }),
+}));
+
+export const gossipPostLinksRelations = relations(gossipPostLinks, ({ one }) => ({
+  originalPost: one(anonGossipPosts, {
+    fields: [gossipPostLinks.originalPostId],
+    references: [anonGossipPosts.id],
+    relationName: "originalPosts",
+  }),
+  linkedPost: one(anonGossipPosts, {
+    fields: [gossipPostLinks.linkedPostId],
+    references: [anonGossipPosts.id],
+    relationName: "linkedPosts",
+  }),
+}));
+
+export const gossipAwardsRelations = relations(gossipAwards, ({ one }) => ({
+  post: one(anonGossipPosts, {
+    fields: [gossipAwards.postId],
+    references: [anonGossipPosts.id],
+  }),
+}));
+
+export const gossipPostViewsRelations = relations(gossipPostViews, ({ one }) => ({
+  post: one(anonGossipPosts, {
+    fields: [gossipPostViews.postId],
+    references: [anonGossipPosts.id],
+  }),
+}));
+
+export const gossipTrendingHashtagsRelations = relations(gossipTrendingHashtags, ({ one }) => ({
+  hashtag: one(gossipHashtags, {
+    fields: [gossipTrendingHashtags.hashtagId],
+    references: [gossipHashtags.id],
   }),
 }));
 
@@ -3618,6 +4169,35 @@ export type GossipSetting = typeof gossipSettings.$inferSelect;
 export type GossipBlockedWord = typeof gossipBlockedWords.$inferSelect;
 export type GossipLocationStat = typeof gossipLocationStats.$inferSelect;
 export type GossipEngagementVelocity = typeof gossipEngagementVelocity.$inferSelect;
+
+// Gossip V2 Types
+export type GossipAlias = typeof gossipAliases.$inferSelect;
+export type GossipRepost = typeof gossipReposts.$inferSelect;
+export type GossipSave = typeof gossipSaves.$inferSelect;
+export type GossipPostFollow = typeof gossipPostFollows.$inferSelect;
+export type GossipPoll = typeof gossipPolls.$inferSelect;
+export type GossipPollVote = typeof gossipPollVotes.$inferSelect;
+export type GossipDMConversation = typeof gossipDMConversations.$inferSelect;
+export type GossipDMMessage = typeof gossipDMMessages.$inferSelect;
+export type GossipAccuracyVote = typeof gossipAccuracyVotes.$inferSelect;
+export type TeaSpillerStat = typeof teaSpillerStats.$inferSelect;
+export type GossipHashtag = typeof gossipHashtags.$inferSelect;
+export type GossipPostHashtag = typeof gossipPostHashtags.$inferSelect;
+export type GossipPostLink = typeof gossipPostLinks.$inferSelect;
+export type HoodRivalry = typeof hoodRivalries.$inferSelect;
+export type GossipAward = typeof gossipAwards.$inferSelect;
+export type GossipLocalLegend = typeof gossipLocalLegends.$inferSelect;
+export type GossipSpillSession = typeof gossipSpillSessions.$inferSelect;
+export type GossipPostView = typeof gossipPostViews.$inferSelect;
+export type HoodActivityStat = typeof hoodActivityStats.$inferSelect;
+export type GossipTrendingHashtag = typeof gossipTrendingHashtags.$inferSelect;
+export type GossipRateLimit = typeof gossipRateLimits.$inferSelect;
+
+export type GossipPostType = "REGULAR" | "CONFESSION" | "AMA" | "I_SAW" | "I_HEARD";
+export type TeaSpillerLevel = "BRONZE" | "SILVER" | "GOLD" | "PLATINUM" | "DIAMOND";
+export type AccuracyVote = "TRUE" | "FALSE" | "UNSURE";
+export type GossipAwardType = "WEEKLY_TOP" | "MONTHLY_TOP" | "MOST_ACCURATE" | "FUNNIEST" | "MOST_SHOCKING" | "LOCAL_LEGEND";
+export type SpillSessionStatus = "SCHEDULED" | "ACTIVE" | "ENDED";
 
 // Discovery Algorithm Types
 export type ContentInteraction = typeof contentInteractions.$inferSelect;

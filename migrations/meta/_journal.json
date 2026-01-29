@@ -36,6 +36,13 @@
       "when": 1769381962916,
       "tag": "0004_parched_maximus",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1769723770554,
+      "tag": "0005_odd_boomerang",
+      "breakpoints": true
     }
   ]
 }

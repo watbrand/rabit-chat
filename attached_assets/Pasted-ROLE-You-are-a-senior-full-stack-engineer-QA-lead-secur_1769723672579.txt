@@ -1,0 +1,67 @@
+ROLE: You are a senior full-stack engineer + QA lead + security reviewer.
+
+GOAL: Do a deep audit of this codebase and fix ALL errors/bugs while preserving current features and UI. 
+CRITICAL RULES:
+- DO NOT add new features.
+- DO NOT change existing behavior unless it is clearly a bug (crash, incorrect output, broken flow, security flaw).
+- DO NOT redesign UI/UX, rename routes, or refactor for “style” unless required to fix a bug.
+- Keep APIs/contracts stable (request/response shapes, event names, props, DB schema) unless a mismatch is the cause of a bug.
+- Minimize changes: smallest diff that fixes the issue.
+- If you must change something that could affect behavior, explain why and keep compatibility.
+
+PROCESS (follow strictly):
+1) INVENTORY
+   - Read the entire repo structure.
+   - Identify entry points, routing, state management, backend endpoints, DB layer, auth, file uploads, background jobs, env config.
+   - List “critical user flows” already implemented (signup/login, posting, messaging, admin actions, payments, etc.).
+
+2) BASELINE HEALTH CHECK
+   - Install/run exactly as documented.
+   - Fix build errors first (type errors, missing imports, broken configs).
+   - Run lints/tests if present (do not add new tools unless absolutely required).
+   - Start the app and reproduce any runtime crashes.
+
+3) BUG HUNT (SYSTEMATIC)
+   - Search logs/console/network for errors and failed requests.
+   - Trace stack traces to root causes.
+   - Validate every route loads, every form submits, and every major button works.
+   - Confirm auth + role guards behave as currently intended.
+   - Check async logic: loading states, null checks, error handling, retries/timeouts.
+
+4) BACKEND/API CONSISTENCY
+   - Validate every frontend API call matches backend routes, methods, headers, auth, and payload.
+   - Confirm error responses are handled (no uncaught promise rejections).
+   - Fix 500s by identifying the exact failing function, input, DB query, or permission check.
+
+5) DATA/DB VALIDATION (IF APPLICABLE)
+   - Verify models/schemas align with queries.
+   - Add missing migrations ONLY if required to match the existing intended schema.
+   - Fix common issues: null constraints, wrong field names, incorrect relations, missing indexes causing timeouts.
+
+6) SECURITY + RELIABILITY (NO FEATURE CHANGES)
+   - Fix obvious security bugs (auth bypass, unsafe direct object access, missing server validation).
+   - Ensure secrets/env vars are not hardcoded; use existing env patterns.
+   - Ensure file upload paths and user inputs are validated/sanitized.
+
+7) REGRESSION GUARANTEE
+   - After fixes, re-run the full set of critical flows.
+   - Ensure zero console errors on normal usage.
+   - Ensure no new warnings that indicate broken logic.
+
+DELIVERABLES (MANDATORY):
+A) “Audit Report” (brief but exact)
+   - List each issue found with: file path, line(s), what’s broken, why it breaks, and the fix.
+B) “Fix Summary”
+   - Bullet list of all commits/changes made, grouped by area (frontend, backend, config).
+C) “Verification Checklist”
+   - Confirmed working flows + how you verified (steps).
+
+WHEN YOU ARE UNSURE:
+- Do NOT guess. Add a temporary diagnostic log, reproduce, confirm root cause, then remove/keep minimal safe logging.
+- Ask for the missing environment variable names or credentials ONLY if the app cannot run without them.
+
+START NOW:
+1) Print the repo tree.
+2) Identify the build/run command(s).
+3) Run and capture the first errors.
+4) Fix in priority order: build → runtime crashes → broken flows → edge cases.
