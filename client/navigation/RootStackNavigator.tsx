@@ -94,6 +94,9 @@ import { useOnboarding } from "@/hooks/useOnboarding";
 import { View, StyleSheet } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
+// Gossip V2 screens
+import GossipDMListScreen from "@/screens/GossipDMListScreen";
+import GossipDMChatScreen from "@/screens/GossipDMChatScreen";
 
 interface UserWithStories {
   userId: string;
@@ -222,6 +225,9 @@ export type RootStackParamList = {
   CommunityQA: undefined;
   ReportBug: undefined;
   Appeals: undefined;
+  // Gossip V2 screens
+  GossipDMList: undefined;
+  GossipDMChat: { conversationId: string; theirAlias?: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -995,6 +1001,23 @@ export default function RootStackNavigator() {
               title: "Safety Center",
               animation: "slide_from_right",
             }}
+          />
+          {/* Gossip V2 screens */}
+          <Stack.Screen
+            name="GossipDMList"
+            component={GossipDMListScreen}
+            options={{
+              title: "Anonymous DMs",
+              animation: "slide_from_right",
+            }}
+          />
+          <Stack.Screen
+            name="GossipDMChat"
+            component={GossipDMChatScreen}
+            options={({ route }) => ({
+              title: route.params?.theirAlias || "Anonymous Chat",
+              animation: "slide_from_right",
+            })}
           />
         </>
       )}

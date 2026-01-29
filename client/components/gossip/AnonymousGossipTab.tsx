@@ -5,10 +5,12 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
+  Alert,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -38,6 +40,7 @@ async function getOrCreateDeviceId(): Promise<string> {
 export function AnonymousGossipTab() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const navigation = useNavigation<any>();
   
   const [activeTab, setActiveTab] = useState<FeedTab>("community");
   const [selectedCountry, setSelectedCountry] = useState<string | null>("ZA");
@@ -143,6 +146,53 @@ export function AnonymousGossipTab() {
     reportMutation.mutate(postId);
   }, [reportMutation]);
 
+  const startDMMutation = useMutation({
+    mutationFn: async ({ postId, message }: { postId: string; message: string }) => {
+      if (!deviceId) throw new Error("No device ID");
+      const response = await fetch(`${getApiUrl()}/api/gossip/v2/dm/start`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-device-id": deviceId,
+        },
+        body: JSON.stringify({ postId, message }),
+      });
+      if (!response.ok) throw new Error("Failed to start DM");
+      return response.json();
+    },
+    onSuccess: (data) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      navigation.navigate("GossipDMChat", {
+        conversationId: data.conversation.id,
+        theirAlias: data.conversation.posterAlias,
+      });
+    },
+    onError: () => {
+      Alert.alert("Error", "Could not start anonymous DM. Try again.");
+    },
+  });
+
+  const handleDM = useCallback((postId: string) => {
+    Alert.prompt(
+      "Send Anonymous DM",
+      "Start a private conversation with this poster. Your identity stays hidden.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Send",
+          onPress: (message) => {
+            if (message?.trim()) {
+              startDMMutation.mutate({ postId, message: message.trim() });
+            }
+          },
+        },
+      ],
+      "plain-text",
+      "",
+      "default"
+    );
+  }, [startDMMutation]);
+
   const handleLocationSelect = useCallback((country: string | null, location: ZaLocation | null, displayText: string) => {
     setSelectedCountry(country);
     setSelectedLocation(location);
@@ -167,16 +217,18 @@ export function AnonymousGossipTab() {
     };
   }, [selectedCountry, selectedLocation, locationDisplayText]);
 
-  const renderPost = useCallback(({ item }: { item: AnonGossipPost }) => (
+  const renderPost = useCallback(({ item, index }: { item: AnonGossipPost; index: number }) => (
     <GossipCard
       post={item}
+      index={index}
       onReact={handleReact}
       onReply={handleReply}
       onReport={handleReport}
       onViewReplies={handleReply}
+      onDM={handleDM}
       myReactions={getMyReactions(item.id)}
     />
-  ), [handleReact, handleReply, handleReport, getMyReactions]);
+  ), [handleReact, handleReply, handleReport, handleDM, getMyReactions]);
 
   const renderEmptyState = useCallback(() => (
     <View style={styles.emptyContainer}>
@@ -194,7 +246,15 @@ export function AnonymousGossipTab() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <ThemedText style={styles.title}>Local Gossip</ThemedText>
+        <View style={styles.headerTop}>
+          <ThemedText style={styles.title}>Local Gossip</ThemedText>
+          <Pressable
+            style={styles.dmButton}
+            onPress={() => navigation.navigate("GossipDMList")}
+          >
+            <Feather name="inbox" size={20} color={Colors.dark.primary} />
+          </Pressable>
+        </View>
         <LocationSelector
           selectedCountry={selectedCountry}
           selectedLocation={selectedLocation}
@@ -311,11 +371,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.sm,
   },
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   title: {
     fontSize: 28,
     fontWeight: "700",
     color: Colors.dark.text,
     marginBottom: Spacing.xs,
+  },
+  dmButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   tabBar: {
     flexDirection: "row",
