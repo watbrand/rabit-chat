@@ -3867,4 +3867,379 @@ router.get("/spill-sessions/active", async (req: Request, res: Response) => {
   }
 });
 
+// ============================================================
+// ANALYTICS DASHBOARD
+// ============================================================
+
+// Get tea stats dashboard for a device
+router.get("/analytics/my-stats", async (req: Request, res: Response) => {
+  try {
+    const deviceId = req.headers["x-device-id"] as string;
+    if (!deviceId) {
+      return res.status(400).json({ error: "Device ID required" });
+    }
+
+    const deviceHash = hashDevice(deviceId);
+
+    // Get tea spiller stats
+    const [stats] = await db
+      .select()
+      .from(teaSpillerStats)
+      .where(eq(teaSpillerStats.deviceHash, deviceHash))
+      .limit(1);
+
+    // Get post statistics
+    const postStats = await db
+      .select({
+        totalPosts: count(),
+        totalReactions: sql<number>`SUM(${anonGossipPosts.fireCount} + ${anonGossipPosts.mindblownCount} + ${anonGossipPosts.laughCount} + ${anonGossipPosts.skullCount} + ${anonGossipPosts.eyesCount})`,
+        totalReplies: sql<number>`SUM(${anonGossipPosts.replyCount})`,
+        totalViews: sql<number>`SUM(${anonGossipPosts.viewCount})`,
+        totalReposts: sql<number>`SUM(${anonGossipPosts.repostCount})`,
+        totalSaves: sql<number>`SUM(${anonGossipPosts.saveCount})`,
+        verifiedCount: sql<number>`SUM(CASE WHEN ${anonGossipPosts.isVerifiedTea} THEN 1 ELSE 0 END)`,
+        breakingCount: sql<number>`SUM(CASE WHEN ${anonGossipPosts.isBreaking} THEN 1 ELSE 0 END)`,
+      })
+      .from(anonGossipPosts)
+      .where(eq(anonGossipPosts.deviceHash, deviceHash));
+
+    // Get accuracy rate
+    const accuracyStats = await db
+      .select({
+        totalTrue: sql<number>`SUM(${anonGossipPosts.accuracyTrueVotes})`,
+        totalFalse: sql<number>`SUM(${anonGossipPosts.accuracyFalseVotes})`,
+        totalUnsure: sql<number>`SUM(${anonGossipPosts.accuracyUnsureVotes})`,
+      })
+      .from(anonGossipPosts)
+      .where(eq(anonGossipPosts.deviceHash, deviceHash));
+
+    const totalVotes = (accuracyStats[0]?.totalTrue || 0) + (accuracyStats[0]?.totalFalse || 0);
+    const accuracyRate = totalVotes > 0 
+      ? ((accuracyStats[0]?.totalTrue || 0) / totalVotes * 100).toFixed(1)
+      : "N/A";
+
+    // Get awards count
+    const awards = await db
+      .select({ cnt: count() })
+      .from(gossipAwards)
+      .where(eq(gossipAwards.deviceHash, deviceHash));
+
+    return res.json({
+      teaSpiller: stats || { level: "BRONZE", score: 0 },
+      posts: {
+        total: postStats[0]?.totalPosts || 0,
+        totalReactions: postStats[0]?.totalReactions || 0,
+        totalReplies: postStats[0]?.totalReplies || 0,
+        totalViews: postStats[0]?.totalViews || 0,
+        totalReposts: postStats[0]?.totalReposts || 0,
+        totalSaves: postStats[0]?.totalSaves || 0,
+        verified: postStats[0]?.verifiedCount || 0,
+        breaking: postStats[0]?.breakingCount || 0,
+      },
+      accuracy: {
+        rate: accuracyRate,
+        trueVotes: accuracyStats[0]?.totalTrue || 0,
+        falseVotes: accuracyStats[0]?.totalFalse || 0,
+        unsureVotes: accuracyStats[0]?.totalUnsure || 0,
+      },
+      awardsEarned: awards[0]?.cnt || 0,
+    });
+  } catch (error) {
+    console.error("Error fetching my stats:", error);
+    return res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
+// Get hood pulse - activity metrics for a location
+router.get("/analytics/hood-pulse/:locationId", async (req: Request, res: Response) => {
+  try {
+    const { locationId } = req.params;
+
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(now);
+    weekAgo.setDate(now.getDate() - 7);
+
+    // Today's stats
+    const todayStats = await db
+      .select({
+        posts: count(),
+        reactions: sql<number>`SUM(${anonGossipPosts.fireCount} + ${anonGossipPosts.mindblownCount} + ${anonGossipPosts.laughCount} + ${anonGossipPosts.skullCount} + ${anonGossipPosts.eyesCount})`,
+        replies: sql<number>`SUM(${anonGossipPosts.replyCount})`,
+      })
+      .from(anonGossipPosts)
+      .where(and(
+        eq(anonGossipPosts.zaLocationId, locationId),
+        gte(anonGossipPosts.createdAt, today)
+      ));
+
+    // This week's stats
+    const weekStats = await db
+      .select({
+        posts: count(),
+        reactions: sql<number>`SUM(${anonGossipPosts.fireCount} + ${anonGossipPosts.mindblownCount} + ${anonGossipPosts.laughCount} + ${anonGossipPosts.skullCount} + ${anonGossipPosts.eyesCount})`,
+        replies: sql<number>`SUM(${anonGossipPosts.replyCount})`,
+        uniquePosters: sql<number>`COUNT(DISTINCT ${anonGossipPosts.deviceHash})`,
+      })
+      .from(anonGossipPosts)
+      .where(and(
+        eq(anonGossipPosts.zaLocationId, locationId),
+        gte(anonGossipPosts.createdAt, weekAgo)
+      ));
+
+    // All-time stats
+    const allTimeStats = await db
+      .select({
+        totalPosts: count(),
+        totalReactions: sql<number>`SUM(${anonGossipPosts.fireCount} + ${anonGossipPosts.mindblownCount} + ${anonGossipPosts.laughCount} + ${anonGossipPosts.skullCount} + ${anonGossipPosts.eyesCount})`,
+        verifiedPosts: sql<number>`SUM(CASE WHEN ${anonGossipPosts.isVerifiedTea} THEN 1 ELSE 0 END)`,
+        breakingPosts: sql<number>`SUM(CASE WHEN ${anonGossipPosts.isBreaking} THEN 1 ELSE 0 END)`,
+      })
+      .from(anonGossipPosts)
+      .where(eq(anonGossipPosts.zaLocationId, locationId));
+
+    // Get location name
+    const [location] = await db
+      .select()
+      .from(gossipLocations)
+      .where(eq(gossipLocations.id, locationId))
+      .limit(1);
+
+    return res.json({
+      location: location ? { id: location.id, name: location.name, type: location.type } : null,
+      today: {
+        posts: todayStats[0]?.posts || 0,
+        reactions: todayStats[0]?.reactions || 0,
+        replies: todayStats[0]?.replies || 0,
+      },
+      thisWeek: {
+        posts: weekStats[0]?.posts || 0,
+        reactions: weekStats[0]?.reactions || 0,
+        replies: weekStats[0]?.replies || 0,
+        uniquePosters: weekStats[0]?.uniquePosters || 0,
+        avgPostsPerDay: ((weekStats[0]?.posts || 0) / 7).toFixed(1),
+      },
+      allTime: {
+        totalPosts: allTimeStats[0]?.totalPosts || 0,
+        totalReactions: allTimeStats[0]?.totalReactions || 0,
+        verifiedPosts: allTimeStats[0]?.verifiedPosts || 0,
+        breakingPosts: allTimeStats[0]?.breakingPosts || 0,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching hood pulse:", error);
+    return res.status(500).json({ error: "Failed to fetch hood pulse" });
+  }
+});
+
+// Get peak hours for a location
+router.get("/analytics/peak-hours/:locationId", async (req: Request, res: Response) => {
+  try {
+    const { locationId } = req.params;
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    // Get hourly distribution
+    const hourlyData = await db
+      .select({
+        hour: sql<number>`EXTRACT(HOUR FROM ${anonGossipPosts.createdAt})`,
+        postCount: count(),
+      })
+      .from(anonGossipPosts)
+      .where(and(
+        eq(anonGossipPosts.zaLocationId, locationId),
+        gte(anonGossipPosts.createdAt, weekAgo)
+      ))
+      .groupBy(sql`EXTRACT(HOUR FROM ${anonGossipPosts.createdAt})`)
+      .orderBy(sql`EXTRACT(HOUR FROM ${anonGossipPosts.createdAt})`);
+
+    // Fill in missing hours with 0
+    const hourlyMap: Record<number, number> = {};
+    for (let i = 0; i < 24; i++) {
+      hourlyMap[i] = 0;
+    }
+    hourlyData.forEach(h => {
+      hourlyMap[h.hour] = h.postCount;
+    });
+
+    // Find peak hour
+    let peakHour = 0;
+    let peakCount = 0;
+    for (const [hour, count] of Object.entries(hourlyMap)) {
+      if (count > peakCount) {
+        peakHour = parseInt(hour);
+        peakCount = count;
+      }
+    }
+
+    // Get daily distribution
+    const dailyData = await db
+      .select({
+        dayOfWeek: sql<number>`EXTRACT(DOW FROM ${anonGossipPosts.createdAt})`,
+        postCount: count(),
+      })
+      .from(anonGossipPosts)
+      .where(and(
+        eq(anonGossipPosts.zaLocationId, locationId),
+        gte(anonGossipPosts.createdAt, weekAgo)
+      ))
+      .groupBy(sql`EXTRACT(DOW FROM ${anonGossipPosts.createdAt})`)
+      .orderBy(sql`EXTRACT(DOW FROM ${anonGossipPosts.createdAt})`);
+
+    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const dailyDistribution = dayNames.map((name, idx) => ({
+      day: name,
+      posts: dailyData.find(d => d.dayOfWeek === idx)?.postCount || 0,
+    }));
+
+    return res.json({
+      hourlyDistribution: Object.entries(hourlyMap).map(([hour, count]) => ({
+        hour: parseInt(hour),
+        label: `${parseInt(hour).toString().padStart(2, "0")}:00`,
+        posts: count,
+      })),
+      peakHour: {
+        hour: peakHour,
+        label: `${peakHour.toString().padStart(2, "0")}:00 - ${((peakHour + 1) % 24).toString().padStart(2, "0")}:00`,
+        posts: peakCount,
+      },
+      dailyDistribution,
+      busiestDay: dailyDistribution.reduce((max, day) => day.posts > max.posts ? day : max, dailyDistribution[0]),
+    });
+  } catch (error) {
+    console.error("Error fetching peak hours:", error);
+    return res.status(500).json({ error: "Failed to fetch peak hours" });
+  }
+});
+
+// Get accuracy history for a device
+router.get("/analytics/accuracy-history", async (req: Request, res: Response) => {
+  try {
+    const deviceId = req.headers["x-device-id"] as string;
+    if (!deviceId) {
+      return res.status(400).json({ error: "Device ID required" });
+    }
+
+    const deviceHash = hashDevice(deviceId);
+    const { limit = "20" } = req.query;
+
+    // Get posts with accuracy data
+    const postsWithAccuracy = await db
+      .select({
+        id: anonGossipPosts.id,
+        content: sql<string>`LEFT(${anonGossipPosts.content}, 100)`,
+        trueVotes: anonGossipPosts.accuracyTrueVotes,
+        falseVotes: anonGossipPosts.accuracyFalseVotes,
+        unsureVotes: anonGossipPosts.accuracyUnsureVotes,
+        isVerified: anonGossipPosts.isVerifiedTea,
+        createdAt: anonGossipPosts.createdAt,
+      })
+      .from(anonGossipPosts)
+      .where(and(
+        eq(anonGossipPosts.deviceHash, deviceHash),
+        sql`(${anonGossipPosts.accuracyTrueVotes} + ${anonGossipPosts.accuracyFalseVotes} + ${anonGossipPosts.accuracyUnsureVotes}) > 0`
+      ))
+      .orderBy(desc(anonGossipPosts.createdAt))
+      .limit(parseInt(limit as string));
+
+    const history = postsWithAccuracy.map(post => {
+      const total = post.trueVotes + post.falseVotes;
+      const rate = total > 0 ? (post.trueVotes / total * 100) : 0;
+      return {
+        postId: post.id,
+        contentPreview: post.content + (post.content && post.content.length >= 100 ? "..." : ""),
+        votes: {
+          true: post.trueVotes,
+          false: post.falseVotes,
+          unsure: post.unsureVotes,
+          total: post.trueVotes + post.falseVotes + post.unsureVotes,
+        },
+        accuracyRate: rate.toFixed(1) + "%",
+        isVerified: post.isVerified,
+        status: rate >= 70 ? "TRUSTED" : rate >= 50 ? "MIXED" : total >= 5 ? "DISPUTED" : "PENDING",
+        createdAt: post.createdAt,
+      };
+    });
+
+    // Calculate overall trends
+    const totalTrue = history.reduce((sum, h) => sum + h.votes.true, 0);
+    const totalFalse = history.reduce((sum, h) => sum + h.votes.false, 0);
+    const overallRate = (totalTrue + totalFalse) > 0 
+      ? (totalTrue / (totalTrue + totalFalse) * 100).toFixed(1)
+      : "N/A";
+
+    return res.json({
+      history,
+      summary: {
+        totalPostsVoted: history.length,
+        verifiedCount: history.filter(h => h.isVerified).length,
+        overallAccuracy: overallRate + (overallRate !== "N/A" ? "%" : ""),
+        trustedCount: history.filter(h => h.status === "TRUSTED").length,
+        disputedCount: history.filter(h => h.status === "DISPUTED").length,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching accuracy history:", error);
+    return res.status(500).json({ error: "Failed to fetch accuracy history" });
+  }
+});
+
+// Get global gossip stats (public)
+router.get("/analytics/global", async (req: Request, res: Response) => {
+  try {
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+
+    // Total counts
+    const totals = await db
+      .select({
+        posts: count(),
+        totalReactions: sql<number>`SUM(${anonGossipPosts.fireCount} + ${anonGossipPosts.mindblownCount} + ${anonGossipPosts.laughCount} + ${anonGossipPosts.skullCount} + ${anonGossipPosts.eyesCount})`,
+        verified: sql<number>`SUM(CASE WHEN ${anonGossipPosts.isVerifiedTea} THEN 1 ELSE 0 END)`,
+      })
+      .from(anonGossipPosts);
+
+    // Today's activity
+    const todayActivity = await db
+      .select({
+        posts: count(),
+        uniquePosters: sql<number>`COUNT(DISTINCT ${anonGossipPosts.deviceHash})`,
+      })
+      .from(anonGossipPosts)
+      .where(gte(anonGossipPosts.createdAt, today));
+
+    // Active locations
+    const activeLocations = await db
+      .select({
+        cnt: sql<number>`COUNT(DISTINCT ${anonGossipPosts.zaLocationId})`,
+      })
+      .from(anonGossipPosts)
+      .where(gte(anonGossipPosts.createdAt, today));
+
+    // Tea spillers count
+    const spillers = await db
+      .select({ cnt: count() })
+      .from(teaSpillerStats);
+
+    return res.json({
+      totals: {
+        posts: totals[0]?.posts || 0,
+        reactions: totals[0]?.totalReactions || 0,
+        verified: totals[0]?.verified || 0,
+        teaSpillers: spillers[0]?.cnt || 0,
+      },
+      today: {
+        posts: todayActivity[0]?.posts || 0,
+        uniquePosters: todayActivity[0]?.uniquePosters || 0,
+        activeLocations: activeLocations[0]?.cnt || 0,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching global stats:", error);
+    return res.status(500).json({ error: "Failed to fetch global stats" });
+  }
+});
+
 export default router;
