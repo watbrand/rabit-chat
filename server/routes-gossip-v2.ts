@@ -20,6 +20,7 @@ import {
   gossipDMMessages,
   anonGossipReports,
   gossipPostLinks,
+  hoodRivalries,
 } from "@shared/schema";
 import { eq, and, sql, desc, asc, isNull, like, gte, count } from "drizzle-orm";
 import crypto from "crypto";
@@ -2796,7 +2797,7 @@ router.get("/tea-spiller/leaderboard", async (req: Request, res: Response) => {
         })
         .from(teaSpillerStats)
         .innerJoin(anonGossipPosts, eq(teaSpillerStats.deviceHash, anonGossipPosts.deviceHash))
-        .where(eq(anonGossipPosts.hoodId, locationId as string))
+        .where(eq(anonGossipPosts.zaLocationId, locationId as string))
         .orderBy(
           desc(sql`CASE 
             WHEN ${teaSpillerStats.level} = 'DIAMOND' THEN 5
@@ -3082,6 +3083,297 @@ router.delete("/posts/link/:linkId", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error unlinking posts:", error);
     return res.status(500).json({ error: "Failed to unlink posts" });
+  }
+});
+
+router.get("/rivalries/active", async (req: Request, res: Response) => {
+  try {
+    const activeRivalries = await db
+      .select()
+      .from(hoodRivalries)
+      .where(eq(hoodRivalries.isActive, true))
+      .orderBy(desc(hoodRivalries.createdAt));
+
+    return res.json({ rivalries: activeRivalries });
+  } catch (error) {
+    console.error("Error fetching active rivalries:", error);
+    return res.status(500).json({ error: "Failed to fetch rivalries" });
+  }
+});
+
+router.get("/rivalries/hood/:hoodId", async (req: Request, res: Response) => {
+  try {
+    const { hoodId } = req.params;
+    const rivalries = await db
+      .select()
+      .from(hoodRivalries)
+      .where(
+        sql`${hoodRivalries.hood1Id} = ${hoodId} OR ${hoodRivalries.hood2Id} = ${hoodId}`
+      )
+      .orderBy(desc(hoodRivalries.createdAt))
+      .limit(10);
+
+    const rivalriesWithPerspective = rivalries.map(r => ({
+      ...r,
+      isHood1: r.hood1Id === hoodId,
+      myHoodName: r.hood1Id === hoodId ? r.hood1Name : r.hood2Name,
+      opponentName: r.hood1Id === hoodId ? r.hood2Name : r.hood1Name,
+      myScore: r.hood1Id === hoodId ? r.hood1Score : r.hood2Score,
+      opponentScore: r.hood1Id === hoodId ? r.hood2Score : r.hood1Score,
+      won: r.winnerId === hoodId,
+      lost: r.winnerId !== null && r.winnerId !== hoodId,
+    }));
+
+    return res.json({ rivalries: rivalriesWithPerspective });
+  } catch (error) {
+    console.error("Error fetching hood rivalries:", error);
+    return res.status(500).json({ error: "Failed to fetch rivalries" });
+  }
+});
+
+router.post("/rivalries/create", async (req: Request, res: Response) => {
+  try {
+    const { hood1Id, hood2Id } = req.body;
+    
+    if (!hood1Id || !hood2Id) {
+      return res.status(400).json({ error: "Missing hood IDs" });
+    }
+
+    if (hood1Id === hood2Id) {
+      return res.status(400).json({ error: "Cannot create rivalry between same hood" });
+    }
+    const hood1 = await db
+      .select()
+      .from(gossipLocations)
+      .where(eq(gossipLocations.id, hood1Id))
+      .limit(1);
+
+    const hood2 = await db
+      .select()
+      .from(gossipLocations)
+      .where(eq(gossipLocations.id, hood2Id))
+      .limit(1);
+
+    if (hood1.length === 0 || hood2.length === 0) {
+      return res.status(404).json({ error: "One or both hoods not found" });
+    }
+    const existingRivalry = await db
+      .select()
+      .from(hoodRivalries)
+      .where(
+        and(
+          eq(hoodRivalries.isActive, true),
+          sql`(${hoodRivalries.hood1Id} = ${hood1Id} AND ${hoodRivalries.hood2Id} = ${hood2Id}) OR (${hoodRivalries.hood1Id} = ${hood2Id} AND ${hoodRivalries.hood2Id} = ${hood1Id})`
+        )
+      )
+      .limit(1);
+
+    if (existingRivalry.length > 0) {
+      return res.status(400).json({ error: "Active rivalry already exists between these hoods" });
+    }
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(now.getDate() - now.getDay());
+    
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 7);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    const rivalry = await db.insert(hoodRivalries).values({
+      hood1Id,
+      hood2Id,
+      hood1Name: hood1[0].name,
+      hood2Name: hood2[0].name,
+      hood1Score: 0,
+      hood2Score: 0,
+      weekStart,
+      weekEnd,
+      isActive: true,
+    }).returning();
+
+    return res.status(201).json({
+      success: true,
+      rivalry: rivalry[0],
+    });
+  } catch (error) {
+    console.error("Error creating rivalry:", error);
+    return res.status(500).json({ error: "Failed to create rivalry" });
+  }
+});
+
+router.get("/rivalries/:rivalryId/leaderboard", async (req: Request, res: Response) => {
+  try {
+    const { rivalryId } = req.params;
+    const rivalry = await db
+      .select()
+      .from(hoodRivalries)
+      .where(eq(hoodRivalries.id, rivalryId))
+      .limit(1);
+
+    if (rivalry.length === 0) {
+      return res.status(404).json({ error: "Rivalry not found" });
+    }
+
+    const r = rivalry[0];
+    const hood1Stats = await db
+      .select({
+        totalPosts: count(),
+        totalReactions: sql<number>`COALESCE(SUM(${anonGossipPosts.fireCount}), 0)::int`,
+      })
+      .from(anonGossipPosts)
+      .where(
+        and(
+          eq(anonGossipPosts.zaLocationId, r.hood1Id),
+          gte(anonGossipPosts.createdAt, r.weekStart),
+          sql`${anonGossipPosts.createdAt} <= ${r.weekEnd}`
+        )
+      );
+
+    const hood2Stats = await db
+      .select({
+        totalPosts: count(),
+        totalReactions: sql<number>`COALESCE(SUM(${anonGossipPosts.fireCount}), 0)::int`,
+      })
+      .from(anonGossipPosts)
+      .where(
+        and(
+          eq(anonGossipPosts.zaLocationId, r.hood2Id),
+          gte(anonGossipPosts.createdAt, r.weekStart),
+          sql`${anonGossipPosts.createdAt} <= ${r.weekEnd}`
+        )
+      );
+    const hood1Score = (hood1Stats[0]?.totalPosts || 0) * 10 + (hood1Stats[0]?.totalReactions || 0);
+    const hood2Score = (hood2Stats[0]?.totalPosts || 0) * 10 + (hood2Stats[0]?.totalReactions || 0);
+    await db
+      .update(hoodRivalries)
+      .set({ hood1Score, hood2Score })
+      .where(eq(hoodRivalries.id, rivalryId));
+
+    return res.json({
+      rivalry: {
+        ...r,
+        hood1Score,
+        hood2Score,
+      },
+      hood1: {
+        id: r.hood1Id,
+        name: r.hood1Name,
+        score: hood1Score,
+        posts: hood1Stats[0]?.totalPosts || 0,
+        reactions: hood1Stats[0]?.totalReactions || 0,
+        isWinning: hood1Score > hood2Score,
+      },
+      hood2: {
+        id: r.hood2Id,
+        name: r.hood2Name,
+        score: hood2Score,
+        posts: hood2Stats[0]?.totalPosts || 0,
+        reactions: hood2Stats[0]?.totalReactions || 0,
+        isWinning: hood2Score > hood1Score,
+      },
+      scoreDifference: Math.abs(hood1Score - hood2Score),
+      isTied: hood1Score === hood2Score,
+    });
+  } catch (error) {
+    console.error("Error fetching rivalry leaderboard:", error);
+    return res.status(500).json({ error: "Failed to fetch leaderboard" });
+  }
+});
+
+router.get("/hoods/leaderboard", async (req: Request, res: Response) => {
+  try {
+    const { parentId, limit = "20" } = req.query;
+    const hoods = await db
+      .select()
+      .from(gossipLocations)
+      .where(
+        parentId
+          ? and(eq(gossipLocations.type, "HOOD"), eq(gossipLocations.parentId, parentId as string))
+          : eq(gossipLocations.type, "HOOD")
+      )
+      .limit(50);
+
+    const hoodScores = await Promise.all(
+      hoods.map(async (hood) => {
+        const postStats = await db
+          .select({ cnt: count() })
+          .from(anonGossipPosts)
+          .where(eq(anonGossipPosts.zaLocationId, hood.id));
+        
+        const postCount = postStats[0]?.cnt || 0;
+        const engagementScore = postCount * 10;
+
+        return {
+          id: hood.id,
+          name: hood.name,
+          postCount,
+          totalEngagement: engagementScore,
+          score: engagementScore,
+        };
+      })
+    );
+
+    const sortedHoods = hoodScores
+      .sort((a, b) => b.score - a.score)
+      .slice(0, parseInt(limit as string))
+      .map((hood, index) => ({
+        rank: index + 1,
+        ...hood,
+      }));
+
+    return res.json({ 
+      leaderboard: sortedHoods,
+      period: "last 7 days",
+    });
+  } catch (error) {
+    console.error("Error fetching hoods leaderboard:", error);
+    return res.status(500).json({ error: "Failed to fetch leaderboard" });
+  }
+});
+
+router.post("/rivalries/:rivalryId/end", async (req: Request, res: Response) => {
+  try {
+    const { rivalryId } = req.params;
+    const rivalry = await db
+      .select()
+      .from(hoodRivalries)
+      .where(eq(hoodRivalries.id, rivalryId))
+      .limit(1);
+
+    if (rivalry.length === 0) {
+      return res.status(404).json({ error: "Rivalry not found" });
+    }
+
+    const r = rivalry[0];
+    let winnerId: string | null = null;
+    
+    if (r.hood1Score > r.hood2Score) {
+      winnerId = r.hood1Id;
+    } else if (r.hood2Score > r.hood1Score) {
+      winnerId = r.hood2Id;
+    }
+    await db
+      .update(hoodRivalries)
+      .set({ 
+        isActive: false,
+        winnerId,
+      })
+      .where(eq(hoodRivalries.id, rivalryId));
+
+    return res.json({
+      success: true,
+      winnerId,
+      winnerName: winnerId === r.hood1Id ? r.hood1Name : (winnerId === r.hood2Id ? r.hood2Name : null),
+      isTied: winnerId === null,
+      finalScore: {
+        [r.hood1Name]: r.hood1Score,
+        [r.hood2Name]: r.hood2Score,
+      },
+    });
+  } catch (error) {
+    console.error("Error ending rivalry:", error);
+    return res.status(500).json({ error: "Failed to end rivalry" });
   }
 });
 
