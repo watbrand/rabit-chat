@@ -1700,4 +1700,195 @@ router.get("/trending/stats", async (req: Request, res: Response) => {
   }
 });
 
+const searchSchema = z.object({
+  q: z.string().optional(),
+  hashtag: z.string().optional(),
+  locationId: z.string().optional(),
+  timeFilter: z.enum(["24h", "7d", "30d", "all"]).optional().default("all"),
+  postType: z.enum(["REGULAR", "CONFESSION", "AMA", "I_SAW", "I_HEARD"]).optional(),
+  sortBy: z.enum(["recent", "trending", "engagement"]).optional().default("recent"),
+  limit: z.string().optional().default("20"),
+  cursor: z.string().optional(),
+});
+
+router.get("/search", async (req: Request, res: Response) => {
+  try {
+    const params = searchSchema.parse(req.query);
+    const { q, hashtag, locationId, timeFilter, postType, sortBy, cursor } = params;
+    const limit = parseInt(params.limit) || 20;
+    
+    const conditions: any[] = [eq(anonGossipPosts.isHidden, false)];
+    if (q) {
+      conditions.push(sql`${anonGossipPosts.content} ILIKE ${'%' + q + '%'}`);
+    }
+    if (locationId) {
+      conditions.push(eq(anonGossipPosts.zaLocationId, locationId));
+    }
+    if (postType) {
+      conditions.push(eq(anonGossipPosts.postType, postType));
+    }
+    if (timeFilter && timeFilter !== "all") {
+      const now = new Date();
+      let cutoff: Date;
+      switch (timeFilter) {
+        case "24h":
+          cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          break;
+        case "7d":
+          cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case "30d":
+          cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+        default:
+          cutoff = new Date(0);
+      }
+      conditions.push(gte(anonGossipPosts.createdAt, cutoff));
+    }
+    
+    if (cursor) {
+      conditions.push(sql`${anonGossipPosts.createdAt} < ${cursor}`);
+    }
+    let posts;
+    if (hashtag) {
+      const cleanHashtag = hashtag.replace(/^#/, "").toLowerCase();
+      posts = await db
+        .select({
+          post: anonGossipPosts,
+        })
+        .from(anonGossipPosts)
+        .innerJoin(gossipPostHashtags, eq(gossipPostHashtags.postId, anonGossipPosts.id))
+        .innerJoin(gossipHashtags, eq(gossipHashtags.id, gossipPostHashtags.hashtagId))
+        .where(
+          and(
+            eq(gossipHashtags.tag, cleanHashtag),
+            ...conditions
+          )
+        )
+        .orderBy(
+          sortBy === "trending" ? desc(anonGossipPosts.trendingScore) :
+          sortBy === "engagement" ? desc(sql`${anonGossipPosts.fireCount} + ${anonGossipPosts.replyCount} + ${anonGossipPosts.repostCount}`) :
+          desc(anonGossipPosts.createdAt)
+        )
+        .limit(limit + 1);
+      
+      posts = posts.map(p => p.post);
+    } else {
+      posts = await db
+        .select()
+        .from(anonGossipPosts)
+        .where(and(...conditions))
+        .orderBy(
+          sortBy === "trending" ? desc(anonGossipPosts.trendingScore) :
+          sortBy === "engagement" ? desc(sql`${anonGossipPosts.fireCount} + ${anonGossipPosts.replyCount} + ${anonGossipPosts.repostCount}`) :
+          desc(anonGossipPosts.createdAt)
+        )
+        .limit(limit + 1);
+    }
+
+    const hasMore = posts.length > limit;
+    if (hasMore) {
+      posts = posts.slice(0, limit);
+    }
+    
+    const nextCursor = hasMore && posts.length > 0 
+      ? posts[posts.length - 1].createdAt.toISOString() 
+      : null;
+    const highlightedPosts = q 
+      ? posts.map(post => ({
+          ...post,
+          highlightedContent: post.content?.replace(
+            new RegExp(`(${q})`, 'gi'),
+            '<mark>$1</mark>'
+          )
+        }))
+      : posts;
+
+    return res.json({
+      posts: highlightedPosts,
+      query: q || null,
+      hashtag: hashtag || null,
+      filters: { locationId, timeFilter, postType, sortBy },
+      hasMore,
+      nextCursor,
+      count: posts.length,
+    });
+  } catch (error) {
+    console.error("Error searching posts:", error);
+    return res.status(500).json({ error: "Failed to search posts" });
+  }
+});
+
+router.get("/search/suggestions", async (req: Request, res: Response) => {
+  try {
+    const { q } = req.query;
+    
+    if (!q || typeof q !== 'string' || q.length < 2) {
+      return res.json({ suggestions: [] });
+    }
+    const hashtagSuggestions = await db
+      .select({
+        tag: gossipHashtags.tag,
+        useCount: gossipHashtags.useCount,
+      })
+      .from(gossipHashtags)
+      .where(like(gossipHashtags.tag, `${q.toLowerCase()}%`))
+      .orderBy(desc(gossipHashtags.useCount))
+      .limit(5);
+    const locationSuggestions = await db
+      .select({
+        id: gossipLocations.id,
+        name: gossipLocations.name,
+        type: gossipLocations.type,
+        emoji: gossipLocations.emoji,
+      })
+      .from(gossipLocations)
+      .where(
+        and(
+          sql`LOWER(${gossipLocations.name}) LIKE ${q.toLowerCase() + '%'}`,
+          eq(gossipLocations.isActive, true)
+        )
+      )
+      .limit(5);
+
+    return res.json({
+      suggestions: {
+        hashtags: hashtagSuggestions.map(h => ({
+          type: 'hashtag',
+          value: `#${h.tag}`,
+          count: h.useCount,
+        })),
+        locations: locationSuggestions.map(l => ({
+          type: 'location',
+          id: l.id,
+          value: l.name,
+          locationType: l.type,
+          emoji: l.emoji,
+        })),
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching search suggestions:", error);
+    return res.status(500).json({ error: "Failed to fetch suggestions" });
+  }
+});
+
+router.get("/search/history", async (req: Request, res: Response) => {
+  try {
+    const { deviceHash } = req.query;
+    
+    if (!deviceHash) {
+      return res.json({ searches: [] });
+    }
+
+    return res.json({ 
+      searches: [],
+      message: "Search history not yet implemented"
+    });
+  } catch (error) {
+    console.error("Error fetching search history:", error);
+    return res.status(500).json({ error: "Failed to fetch search history" });
+  }
+});
+
 export default router;
