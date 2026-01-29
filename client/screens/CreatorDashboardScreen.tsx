@@ -30,6 +30,7 @@ interface CreatorEarnings {
   pendingWithdrawalCoins: number;
   withdrawnCoins: number;
   platformFeePaid: number;
+  platformFeePercent?: number;
 }
 
 interface EarningEntry {

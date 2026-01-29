@@ -250,9 +250,8 @@ function LeaderboardEntry({
       </View>
 
       <Avatar
-        url={participant.avatarUrl}
+        uri={participant.avatarUrl}
         size={40}
-        username={participant.username}
       />
 
       <View style={styles.participantInfo}>

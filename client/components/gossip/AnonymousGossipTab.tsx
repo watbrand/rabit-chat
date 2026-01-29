@@ -182,7 +182,7 @@ export function AnonymousGossipTab() {
         { text: "Cancel", style: "cancel" },
         {
           text: "Send",
-          onPress: (message) => {
+          onPress: (message: string | undefined) => {
             if (message?.trim()) {
               startDMMutation.mutate({ postId, message: message.trim() });
             }
@@ -196,7 +196,7 @@ export function AnonymousGossipTab() {
   }, [startDMMutation]);
 
   const handleShare = useCallback((postId: string) => {
-    const post = data?.posts.find((p: AnonGossipPost) => p.id === postId);
+    const post = postsData?.posts.find((p: AnonGossipPost) => p.id === postId);
     if (post) {
       sharePost({
         id: post.id,
@@ -216,7 +216,7 @@ export function AnonymousGossipTab() {
         createdAt: post.createdAt,
       });
     }
-  }, [data?.posts, sharePost, locationDisplayText]);
+  }, [postsData?.posts, sharePost, locationDisplayText]);
 
   const handleLocationSelect = useCallback((country: string | null, location: ZaLocation | null, displayText: string) => {
     setSelectedCountry(country);

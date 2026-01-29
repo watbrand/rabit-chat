@@ -269,7 +269,7 @@ export default function WithdrawalScreen({ navigation }: any) {
         </Card>
 
         {!isKycApproved ? (
-          <Card variant="glass" style={[styles.warningCard, { borderColor: theme.warning }]}>
+          <Card variant="glass" style={StyleSheet.flatten([styles.warningCard, { borderColor: theme.warning }])}>
             <View style={styles.warningHeader}>
               <Feather name="alert-triangle" size={24} color={theme.warning} />
               <ThemedText type="headline" style={{ marginLeft: Spacing.md }}>KYC Verification Required</ThemedText>
@@ -286,7 +286,7 @@ export default function WithdrawalScreen({ navigation }: any) {
             />
           </Card>
         ) : accounts.length === 0 ? (
-          <Card variant="glass" style={[styles.warningCard, { borderColor: theme.warning }]}>
+          <Card variant="glass" style={StyleSheet.flatten([styles.warningCard, { borderColor: theme.warning }])}>
             <View style={styles.warningHeader}>
               <Feather name="credit-card" size={24} color={theme.warning} />
               <ThemedText type="headline" style={{ marginLeft: Spacing.md }}>No Bank Account</ThemedText>

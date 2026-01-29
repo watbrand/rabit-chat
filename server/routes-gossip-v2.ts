@@ -2620,7 +2620,7 @@ router.get("/moderation/reports", async (req: Request, res: Response) => {
   try {
     const { status = "PENDING", limit = "50", cursor } = req.query;
     
-    const conditions = [eq(anonGossipReports.status, status as string)];
+    const conditions = [eq(anonGossipReports.status, status as "PENDING" | "REVIEWED" | "DISMISSED" | "REMOVED")];
     
     if (cursor) {
       conditions.push(sql`${anonGossipReports.createdAt} < ${cursor}`);
@@ -2824,7 +2824,7 @@ router.post("/tea-spiller/recalculate", async (req: Request, res: Response) => {
     const repostsReceived = await db
       .select({ count: count() })
       .from(gossipReposts)
-      .innerJoin(anonGossipPosts, eq(gossipReposts.postId, anonGossipPosts.id))
+      .innerJoin(anonGossipPosts, eq(gossipReposts.originalPostId, anonGossipPosts.id))
       .where(eq(anonGossipPosts.deviceHash, hashedDevice));
     const accuracyVotes = await db
       .select({
@@ -3522,6 +3522,10 @@ router.get("/legends/:locationId", async (req: Request, res: Response) => {
           .where(eq(teaSpillerStats.deviceHash, legend.deviceHash))
           .limit(1);
 
+        // Calculate score from stats: posts*10 + reactions*2 + reposts*5 + replies*3
+        const calculatedScore = stats 
+          ? (stats.totalPosts * 10) + (stats.totalReactions * 2) + (stats.totalReposts * 5) + (stats.totalReplies * 3)
+          : 0;
         return {
           id: legend.id,
           deviceHash: legend.deviceHash,
@@ -3529,7 +3533,7 @@ router.get("/legends/:locationId", async (req: Request, res: Response) => {
           totalVerifiedPosts: legend.totalVerifiedPosts,
           rank: idx + 1,
           level: stats?.level || "BRONZE",
-          score: stats?.score || 0,
+          score: calculatedScore,
           displayName: `${EMOJIS[idx % EMOJIS.length]} Legend #${idx + 1}`,
         };
       })
@@ -3617,7 +3621,7 @@ router.get("/awards", async (req: Request, res: Response) => {
   try {
     const { period = "WEEKLY_TOP", locationId, limit = "10" } = req.query;
 
-    let whereConditions = [eq(gossipAwards.awardType, period as string)];
+    let whereConditions = [eq(gossipAwards.awardType, period as "WEEKLY_TOP" | "MONTHLY_TOP" | "MOST_ACCURATE" | "FUNNIEST" | "MOST_SHOCKING" | "LOCAL_LEGEND")];
     if (locationId) {
       whereConditions.push(eq(gossipAwards.zaLocationId, locationId as string));
     }
@@ -3847,7 +3851,7 @@ router.get("/spill-sessions", async (req: Request, res: Response) => {
     let whereConditions: any[] = [];
     
     if (status) {
-      whereConditions.push(eq(gossipSpillSessions.status, status as string));
+      whereConditions.push(eq(gossipSpillSessions.status, status as "ACTIVE" | "SCHEDULED" | "ENDED"));
     } else {
       // Default: show scheduled and active sessions
       whereConditions.push(sql`${gossipSpillSessions.status} IN ('SCHEDULED', 'ACTIVE')`);

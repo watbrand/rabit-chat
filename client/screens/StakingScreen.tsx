@@ -191,10 +191,10 @@ function ActiveStakeCard({
   return (
     <Card
       variant="glass"
-      style={[
+      style={StyleSheet.flatten([
         styles.stakeCard,
-        stake.matured && { borderColor: theme.gold, borderWidth: 2 },
-      ]}
+        stake.matured ? { borderColor: theme.gold, borderWidth: 2 } : {},
+      ])}
     >
       <View style={styles.stakeHeader}>
         <View style={styles.stakeAmount}>
