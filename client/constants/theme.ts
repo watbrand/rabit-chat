@@ -190,99 +190,100 @@ export const BorderRadius = {
 };
 
 export const Typography = {
+  // Instagram-inspired compact typography (reduced ~2-3pt from original)
   largeTitle: {
-    fontSize: 34,
-    fontWeight: "700" as const,
-    letterSpacing: 0.37,
-    lineHeight: 41,
-  },
-  title1: {
     fontSize: 28,
     fontWeight: "700" as const,
-    letterSpacing: 0.36,
+    letterSpacing: 0.37,
     lineHeight: 34,
   },
+  title1: {
+    fontSize: 24,
+    fontWeight: "700" as const,
+    letterSpacing: 0.36,
+    lineHeight: 30,
+  },
   title2: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: "600" as const,
     letterSpacing: 0.35,
-    lineHeight: 28,
+    lineHeight: 24,
   },
   title3: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: "600" as const,
     letterSpacing: 0.38,
-    lineHeight: 25,
-  },
-  headline: {
-    fontSize: 17,
-    fontWeight: "600" as const,
-    letterSpacing: -0.41,
-    lineHeight: 22,
-  },
-  body: {
-    fontSize: 17,
-    fontWeight: "400" as const,
-    letterSpacing: -0.41,
-    lineHeight: 22,
-  },
-  callout: {
-    fontSize: 16,
-    fontWeight: "400" as const,
-    letterSpacing: -0.32,
     lineHeight: 21,
   },
-  subhead: {
+  headline: {
     fontSize: 15,
-    fontWeight: "400" as const,
-    letterSpacing: -0.24,
+    fontWeight: "600" as const,
+    letterSpacing: -0.41,
     lineHeight: 20,
   },
-  footnote: {
-    fontSize: 13,
+  body: {
+    fontSize: 14,
     fontWeight: "400" as const,
-    letterSpacing: -0.08,
+    letterSpacing: -0.41,
+    lineHeight: 19,
+  },
+  callout: {
+    fontSize: 14,
+    fontWeight: "400" as const,
+    letterSpacing: -0.32,
     lineHeight: 18,
   },
-  caption1: {
+  subhead: {
+    fontSize: 13,
+    fontWeight: "400" as const,
+    letterSpacing: -0.24,
+    lineHeight: 17,
+  },
+  footnote: {
     fontSize: 12,
     fontWeight: "400" as const,
-    letterSpacing: 0,
+    letterSpacing: -0.08,
     lineHeight: 16,
   },
-  caption2: {
+  caption1: {
     fontSize: 11,
     fontWeight: "400" as const,
-    letterSpacing: 0.07,
-    lineHeight: 13,
+    letterSpacing: 0,
+    lineHeight: 14,
   },
-  // Legacy typography (for backward compatibility)
+  caption2: {
+    fontSize: 10,
+    fontWeight: "400" as const,
+    letterSpacing: 0.07,
+    lineHeight: 12,
+  },
+  // Legacy typography (for backward compatibility) - also reduced
   h1: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: "700" as const,
   },
   h2: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "700" as const,
   },
   h3: {
-    fontSize: 24,
-    fontWeight: "600" as const,
-  },
-  h4: {
     fontSize: 20,
     fontWeight: "600" as const,
   },
+  h4: {
+    fontSize: 16,
+    fontWeight: "600" as const,
+  },
   small: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "400" as const,
   },
   caption: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600" as const,
   },
   link: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "400" as const,
   },
 };
