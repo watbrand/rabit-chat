@@ -87,18 +87,20 @@ export default function SupportInboxScreen() {
 
   const statusParam = activeFilter === "ALL" ? undefined : activeFilter;
   
-  const { data: tickets, isLoading, refetch } = useQuery<SupportTicket[]>({
-    queryKey: ["/api/help/inbox", { status: statusParam }],
+  const { data: inboxData, isLoading, refetch } = useQuery<{ inbox: any; tickets: SupportTicket[] }>({
+    queryKey: ["/api/support/inbox", { status: statusParam }],
   });
+  
+  const tickets = inboxData?.tickets || [];
 
   const filteredTickets = useMemo(() => {
-    if (!tickets) return [];
+    if (tickets.length === 0) return [];
     if (activeFilter === "ALL") return tickets;
     return tickets.filter((t) => t.status === activeFilter);
   }, [tickets, activeFilter]);
 
   const unreadCount = useMemo(() => {
-    return tickets?.filter((t) => !t.is_read).length || 0;
+    return tickets.filter((t) => !t.is_read).length || 0;
   }, [tickets]);
 
   const handleRefresh = useCallback(async () => {

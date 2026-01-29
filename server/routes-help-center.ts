@@ -950,6 +950,71 @@ export function registerHelpCenterRoutes(app: Express) {
     }
   });
   
+  // GET /api/support/tickets/:id/messages - Get ticket messages (for polling)
+  app.get("/api/support/tickets/:id/messages", async (req: Request, res: Response) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      
+      const { id } = req.params;
+      
+      // Verify ticket access
+      const ticketResult = await pool.query(`
+        SELECT user_id FROM support_tickets WHERE id = $1
+      `, [id]);
+      
+      if (ticketResult.rows.length === 0) {
+        return res.status(404).json({ error: "Ticket not found" });
+      }
+      
+      const user = await storage.getUser(userId);
+      const isAdmin = user && user.isAdmin;
+      
+      if (ticketResult.rows[0].user_id !== userId && !isAdmin) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Get messages with attachments
+      const messagesResult = await pool.query(`
+        SELECT m.*, u.username, u.display_name, u.avatar_url
+        FROM support_ticket_messages m
+        LEFT JOIN users u ON m.sender_id = u.id
+        WHERE m.ticket_id = $1
+        ORDER BY m.created_at ASC
+      `, [id]);
+      
+      // Get attachments
+      const messageIds = messagesResult.rows.map(m => m.id);
+      let attachments: any[] = [];
+      if (messageIds.length > 0) {
+        const attachmentsResult = await pool.query(`
+          SELECT * FROM ticket_attachments WHERE message_id = ANY($1)
+        `, [messageIds]);
+        attachments = attachmentsResult.rows;
+      }
+      
+      const messageAttachments: { [key: string]: any[] } = {};
+      for (const att of attachments) {
+        if (!messageAttachments[att.message_id]) {
+          messageAttachments[att.message_id] = [];
+        }
+        messageAttachments[att.message_id].push(att);
+      }
+      
+      const messagesWithAttachments = messagesResult.rows.map(m => ({
+        ...m,
+        attachments: messageAttachments[m.id] || [],
+      }));
+      
+      res.json(messagesWithAttachments);
+    } catch (error: any) {
+      console.error("Error fetching messages:", error);
+      res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+  
   // POST /api/support/tickets/:id/messages - Send message in ticket
   app.post("/api/support/tickets/:id/messages", async (req: Request, res: Response) => {
     try {
@@ -1089,6 +1154,102 @@ export function registerHelpCenterRoutes(app: Express) {
       }
     }
   );
+  
+  // POST /api/support/tickets/:id/read - Mark messages as read
+  app.post("/api/support/tickets/:id/read", async (req: Request, res: Response) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      
+      const { id } = req.params;
+      
+      // Verify access
+      const ticketResult = await pool.query(`SELECT user_id FROM support_tickets WHERE id = $1`, [id]);
+      if (ticketResult.rows.length === 0) {
+        return res.status(404).json({ error: "Ticket not found" });
+      }
+      
+      const user = await storage.getUser(userId);
+      const isAdmin = user && user.isAdmin;
+      
+      if (ticketResult.rows[0].user_id !== userId && !isAdmin) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Mark all messages from the other party as read
+      const senderType = isAdmin ? "USER" : "ADMIN";
+      await pool.query(`
+        UPDATE support_ticket_messages 
+        SET read_at = NOW() 
+        WHERE ticket_id = $1 AND sender_type = $2 AND read_at IS NULL
+      `, [id, senderType]);
+      
+      // Update unread count in inbox if user
+      if (!isAdmin) {
+        await pool.query(`
+          UPDATE support_inboxes 
+          SET unread_messages = GREATEST(unread_messages - 1, 0)
+          WHERE user_id = $1
+        `, [userId]);
+      }
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error marking messages as read:", error);
+      res.status(500).json({ error: "Failed to mark as read" });
+    }
+  });
+  
+  // PATCH /api/support/tickets/:id - Update ticket (supports status changes)
+  app.patch("/api/support/tickets/:id", async (req: Request, res: Response) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      
+      const { id } = req.params;
+      const { status } = req.body;
+      
+      const ticketResult = await pool.query(`SELECT * FROM support_tickets WHERE id = $1`, [id]);
+      if (ticketResult.rows.length === 0) {
+        return res.status(404).json({ error: "Ticket not found" });
+      }
+      
+      const ticket = ticketResult.rows[0];
+      const user = await storage.getUser(userId);
+      const isAdmin = user && user.isAdmin;
+      
+      // Users can only close their own tickets
+      if (!isAdmin && (ticket.user_id !== userId || status !== "CLOSED")) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      await pool.query(`
+        UPDATE support_tickets 
+        SET status = $1, updated_at = NOW(), 
+            resolved_at = CASE WHEN $1 IN ('CLOSED', 'RESOLVED') THEN NOW() ELSE resolved_at END,
+            closed_at = CASE WHEN $1 = 'CLOSED' THEN NOW() ELSE closed_at END
+        WHERE id = $2
+      `, [status, id]);
+      
+      // Update inbox stats
+      if (status === "CLOSED" || status === "RESOLVED") {
+        await pool.query(`
+          UPDATE support_inboxes 
+          SET open_tickets = GREATEST(open_tickets - 1, 0)
+          WHERE user_id = $1
+        `, [ticket.user_id]);
+      }
+      
+      res.json({ success: true, status });
+    } catch (error: any) {
+      console.error("Error updating ticket:", error);
+      res.status(500).json({ error: "Failed to update ticket" });
+    }
+  });
   
   // PUT /api/support/tickets/:id/status - Update ticket status (user can close)
   app.put("/api/support/tickets/:id/status", async (req: Request, res: Response) => {

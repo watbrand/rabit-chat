@@ -81,9 +81,11 @@ export default function HelpCenterScreen() {
     queryKey: ["/api/help/categories"],
   });
 
-  const { data: featuredArticles, isLoading: articlesLoading, refetch: refetchArticles } = useQuery<HelpArticle[]>({
+  const { data: articlesResponse, isLoading: articlesLoading, refetch: refetchArticles } = useQuery<{ articles: HelpArticle[]; total: number }>({
     queryKey: ["/api/help/articles", { featured: true }],
   });
+  
+  const featuredArticles = articlesResponse?.articles || [];
 
   const { data: systemStatus, refetch: refetchStatus } = useQuery<SystemStatus>({
     queryKey: ["/api/help/status"],
@@ -532,7 +534,7 @@ export default function HelpCenterScreen() {
             </View>
           ) : (
             <FlatList
-              data={featuredArticles?.slice(0, 5) || []}
+              data={featuredArticles.slice(0, 5)}
               keyExtractor={(item) => item.id}
               horizontal
               showsHorizontalScrollIndicator={false}

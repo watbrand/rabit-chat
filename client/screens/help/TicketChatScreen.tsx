@@ -328,22 +328,27 @@ export default function TicketChatScreen() {
   const [supportTyping, setSupportTyping] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { data: ticket, isLoading: ticketLoading } = useQuery<Ticket>({
-    queryKey: [`/api/help/tickets/${ticketId}`],
+  const { data: ticketData, isLoading: ticketLoading } = useQuery<{ ticket: Ticket; messages: TicketMessage[] }>({
+    queryKey: [`/api/support/tickets/${ticketId}`],
     enabled: !!ticketId,
   });
+  
+  const ticket = ticketData?.ticket;
+  const ticketMessages = ticketData?.messages || [];
 
-  const { data: messages, isLoading: messagesLoading, refetch: refetchMessages } = useQuery<TicketMessage[]>({
-    queryKey: [`/api/help/tickets/${ticketId}/messages`],
+  const { data: messagesData, isLoading: messagesLoading, refetch: refetchMessages } = useQuery<TicketMessage[]>({
+    queryKey: [`/api/support/tickets/${ticketId}/messages`],
     enabled: !!ticketId,
     refetchInterval: 5000,
   });
+  
+  const messages = messagesData || ticketMessages;
 
   useEffect(() => {
     if (messages && messages.length > 0) {
       const hasUnread = messages.some(m => m.sender_type !== "USER" && !m.read_at);
       if (hasUnread) {
-        apiRequest("POST", `/api/help/tickets/${ticketId}/read`, {}).catch(console.error);
+        apiRequest("POST", `/api/support/tickets/${ticketId}/read`, {}).catch(console.error);
       }
     }
   }, [messages, ticketId]);
@@ -439,9 +444,9 @@ export default function TicketChatScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await apiRequest("PATCH", `/api/help/tickets/${ticketId}`, { status: "CLOSED" });
-              queryClient.invalidateQueries({ queryKey: [`/api/help/tickets/${ticketId}`] });
-              queryClient.invalidateQueries({ queryKey: ["/api/help/inbox"] });
+              await apiRequest("PATCH", `/api/support/tickets/${ticketId}`, { status: "CLOSED" });
+              queryClient.invalidateQueries({ queryKey: [`/api/support/tickets/${ticketId}`] });
+              queryClient.invalidateQueries({ queryKey: ["/api/support/inbox"] });
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (error) {
               console.error("Failed to close ticket:", error);
@@ -461,7 +466,7 @@ export default function TicketChatScreen() {
       attachmentSize?: number;
       attachmentType?: string;
     }) => {
-      const res = await apiRequest("POST", `/api/help/tickets/${ticketId}/messages`, {
+      const res = await apiRequest("POST", `/api/support/tickets/${ticketId}/messages`, {
         content,
         attachmentUrl,
         attachmentName,
@@ -473,13 +478,13 @@ export default function TicketChatScreen() {
     onSuccess: (newMessage) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       queryClient.setQueryData<TicketMessage[]>(
-        [`/api/help/tickets/${ticketId}/messages`],
+        [`/api/support/tickets/${ticketId}/messages`],
         (oldMessages) => {
           if (!oldMessages) return [newMessage];
           return [newMessage, ...oldMessages];
         }
       );
-      queryClient.invalidateQueries({ queryKey: ["/api/help/inbox"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/support/inbox"] });
     },
     onError: (error) => {
       console.error("Failed to send message:", error);

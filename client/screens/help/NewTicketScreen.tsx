@@ -24,7 +24,7 @@ import { Spacing, BorderRadius } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
 import { uploadFileWithProgress } from "@/lib/upload";
 
-type TicketCategory = "ACCOUNT" | "BILLING" | "TECHNICAL" | "CONTENT" | "SAFETY" | "PRIVACY" | "VERIFICATION" | "COINS" | "WITHDRAWAL" | "OTHER";
+type TicketCategory = "ACCOUNT" | "PAYMENT" | "WITHDRAWAL" | "COINS" | "GIFTS" | "MALL" | "TECHNICAL" | "REPORT" | "OTHER";
 type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 
 interface SelectedFile {
@@ -36,14 +36,13 @@ interface SelectedFile {
 
 const CATEGORIES: { value: TicketCategory; label: string; icon: keyof typeof Feather.glyphMap }[] = [
   { value: "ACCOUNT", label: "Account", icon: "user" },
-  { value: "BILLING", label: "Billing", icon: "credit-card" },
-  { value: "TECHNICAL", label: "Technical", icon: "settings" },
-  { value: "CONTENT", label: "Content", icon: "image" },
-  { value: "SAFETY", label: "Safety", icon: "shield" },
-  { value: "PRIVACY", label: "Privacy", icon: "lock" },
-  { value: "VERIFICATION", label: "Verification", icon: "check-circle" },
-  { value: "COINS", label: "Coins & Payments", icon: "dollar-sign" },
+  { value: "PAYMENT", label: "Payment", icon: "credit-card" },
   { value: "WITHDRAWAL", label: "Withdrawal", icon: "arrow-up-right" },
+  { value: "COINS", label: "Rabit Coins", icon: "dollar-sign" },
+  { value: "GIFTS", label: "Gifts", icon: "gift" },
+  { value: "MALL", label: "Luxury Mall", icon: "shopping-bag" },
+  { value: "TECHNICAL", label: "Technical", icon: "settings" },
+  { value: "REPORT", label: "Report Issue", icon: "flag" },
   { value: "OTHER", label: "Other", icon: "help-circle" },
 ];
 
@@ -71,12 +70,12 @@ export default function NewTicketScreen() {
 
   const createTicketMutation = useMutation({
     mutationFn: async (data: { category: TicketCategory; priority: TicketPriority; subject: string; description: string; attachmentUrls?: string[] }) => {
-      const res = await apiRequest("POST", "/api/help/tickets", data);
+      const res = await apiRequest("POST", "/api/support/tickets", data);
       return res.json();
     },
     onSuccess: (ticket) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      queryClient.invalidateQueries({ queryKey: ["/api/help/inbox"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/support/inbox"] });
       navigation.replace("TicketChat", { ticketId: ticket.id });
     },
     onError: (error: any) => {
