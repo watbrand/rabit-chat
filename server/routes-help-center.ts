@@ -85,8 +85,8 @@ const createFaqSchema = z.object({
 
 const createTicketSchema = z.object({
   category: z.enum([
-    "ACCOUNT", "BILLING", "TECHNICAL", "CONTENT", "SAFETY",
-    "PRIVACY", "VERIFICATION", "COINS", "WITHDRAWAL", "OTHER"
+    "ACCOUNT", "PAYMENT", "WITHDRAWAL", "COINS", "GIFTS", 
+    "MALL", "TECHNICAL", "REPORT", "OTHER"
   ]),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
   subject: z.string().min(1).max(200),
