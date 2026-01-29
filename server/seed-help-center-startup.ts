@@ -6,7 +6,12 @@ export async function seedHelpCenterOnStartup() {
   
   const client = await pool.connect();
   try {
-    // First, check if help_categories table exists
+    // First, clean up any stuck transactions
+    try {
+      await client.query('ROLLBACK');
+    } catch (e) { /* no transaction to rollback is fine */ }
+    
+    // Check if help_categories table exists
     const tableCheck = await client.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -20,11 +25,9 @@ export async function seedHelpCenterOnStartup() {
     }
     
     // Check current content state
-    const [catCount, artCount, faqCount] = await Promise.all([
-      client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`),
-      client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`),
-      client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`)
-    ]);
+    const catCount = await client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`);
+    const artCount = await client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`);
+    const faqCount = await client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`);
     
     const categories = parseInt(catCount.rows[0].count);
     const articles = parseInt(artCount.rows[0].count);
@@ -40,24 +43,17 @@ export async function seedHelpCenterOnStartup() {
     
     console.log('[Help Center] Content incomplete - starting comprehensive seed...');
     
-    await client.query('BEGIN');
+    // NO transaction - use individual inserts with ON CONFLICT for safety
+    // This is more resilient to partial failures
     
-    // Clear existing partial data
-    try {
-      await client.query(`DELETE FROM help_article_feedback WHERE true`);
-    } catch (e) { /* table may not exist */ }
-    try {
-      await client.query(`DELETE FROM help_search_history WHERE true`);
-    } catch (e) { /* table may not exist */ }
-    await client.query(`DELETE FROM help_articles WHERE true`);
-    await client.query(`DELETE FROM help_categories WHERE true`);
-    await client.query(`DELETE FROM help_faqs WHERE true`);
-    try {
-      await client.query(`DELETE FROM help_changelogs WHERE true`);
-    } catch (e) { /* table may not exist */ }
-    try {
-      await client.query(`DELETE FROM help_featured_articles WHERE true`);
-    } catch (e) { /* table may not exist */ }
+    // Clear existing partial data (one by one, ignore errors)
+    try { await client.query(`DELETE FROM help_article_feedback`); } catch (e) { console.log('[Help Center] Skipping help_article_feedback clear'); }
+    try { await client.query(`DELETE FROM help_search_history`); } catch (e) { console.log('[Help Center] Skipping help_search_history clear'); }
+    try { await client.query(`DELETE FROM help_articles`); } catch (e) { console.log('[Help Center] Skipping help_articles clear'); }
+    try { await client.query(`DELETE FROM help_categories`); } catch (e) { console.log('[Help Center] Skipping help_categories clear'); }
+    try { await client.query(`DELETE FROM help_faqs`); } catch (e) { console.log('[Help Center] Skipping help_faqs clear'); }
+    try { await client.query(`DELETE FROM help_changelogs`); } catch (e) { console.log('[Help Center] Skipping help_changelogs clear'); }
+    try { await client.query(`DELETE FROM help_featured_articles`); } catch (e) { console.log('[Help Center] Skipping help_featured_articles clear'); }
     
     console.log('[Help Center] Cleared existing content, inserting new...');
     
@@ -253,23 +249,16 @@ export async function seedHelpCenterOnStartup() {
     }
     console.log(`[Help Center] Inserted ${faqData.length} FAQs`);
 
-    await client.query('COMMIT');
-    
-    // Verify final counts
-    const [finalCats, finalArts, finalFaqs] = await Promise.all([
-      client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`),
-      client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`),
-      client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`)
-    ]);
+    // Verify final counts (no transaction needed)
+    const finalCats = await client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`);
+    const finalArts = await client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`);
+    const finalFaqs = await client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`);
     
     console.log(`[Help Center] Seed complete! Final counts: ${finalCats.rows[0].count} categories, ${finalArts.rows[0].count} articles, ${finalFaqs.rows[0].count} FAQs`);
     
   } catch (error) {
     console.error('[Help Center] SEED ERROR:', error);
-    try {
-      await client.query('ROLLBACK');
-    } catch (e) { /* ignore rollback error */ }
-    throw error; // Re-throw so startup knows it failed
+    throw error; // Re-throw so caller knows it failed
   } finally {
     client.release();
   }

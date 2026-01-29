@@ -2457,6 +2457,11 @@ export function registerHelpCenterRoutes(app: Express) {
       
       const client = await pool.connect();
       try {
+        // First, clean up any stuck transactions
+        try {
+          await client.query('ROLLBACK');
+        } catch (e) { /* no transaction to rollback is fine */ }
+        
         // Check if tables exist first
         const tableCheck = await client.query(`
           SELECT EXISTS (
@@ -2473,11 +2478,10 @@ export function registerHelpCenterRoutes(app: Express) {
           });
         }
         
-        const [catCount, artCount, faqCount] = await Promise.all([
-          client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`),
-          client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`),
-          client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`)
-        ]);
+        // Sequential queries to avoid parallel issues
+        const catCount = await client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`);
+        const artCount = await client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`);
+        const faqCount = await client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`);
         
         const categories = parseInt(catCount.rows[0].count);
         const articles = parseInt(artCount.rows[0].count);
@@ -2496,12 +2500,10 @@ export function registerHelpCenterRoutes(app: Express) {
         const { seedHelpCenterOnStartup } = await import('./seed-help-center-startup');
         await seedHelpCenterOnStartup();
         
-        // Get updated counts
-        const [newCatCount, newArtCount, newFaqCount] = await Promise.all([
-          client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`),
-          client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`),
-          client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`)
-        ]);
+        // Get updated counts (sequential to avoid any issues)
+        const newCatCount = await client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`);
+        const newArtCount = await client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`);
+        const newFaqCount = await client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`);
         
         res.json({
           success: true,
