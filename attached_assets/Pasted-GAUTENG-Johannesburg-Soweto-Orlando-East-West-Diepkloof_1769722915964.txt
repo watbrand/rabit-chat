@@ -1,0 +1,359 @@
+GAUTENG
+Johannesburg
+
+Soweto
+
+Orlando East / West
+
+Diepkloof
+
+Meadowlands
+
+Pimville
+
+Naledi
+
+Jabulani
+
+Alexandra
+
+Diepsloot
+
+Orange Farm
+
+Cosmo City
+
+Ivory Park
+
+Hillbrow
+
+Yeoville
+
+Berea
+
+Newtown
+
+Pretoria (Tshwane)
+
+Mamelodi (East & West)
+
+Soshanguve (Blocks A–M)
+
+Atteridgeville
+
+Ga-Rankuwa
+
+Hammanskraal
+
+Lotus Gardens
+
+Saulsville
+
+Ekurhuleni
+Tembisa
+
+Phomolong
+
+Igqagqa
+
+Ethafeni
+
+Katlehong
+
+Thokoza
+
+Palm Ridge
+
+Vosloorus
+
+Vosloorus Exts
+
+Daveyton
+
+Etwatwa
+
+Kwa-Thema
+
+Kwa-Thema Exts
+
+Vaal
+
+Sebokeng
+
+Sharpeville
+
+Boipatong
+
+Evaton
+
+Bophelong
+
+🇿🇦 WESTERN CAPE
+Cape Town
+
+Khayelitsha
+
+Site B
+
+Site C
+
+Makhaza
+
+Gugulethu
+
+Nyanga
+
+Langa
+
+Philippi
+
+Delft
+
+Mitchells Plain
+
+Bonteheuwel
+
+Bishop Lavis
+
+Manenberg
+
+Paarl
+
+Mbekweni
+
+Stellenbosch
+
+Kayamandi
+
+George
+
+Thembalethu
+
+Pacaltsdorp
+
+Mossel Bay
+
+KwaNonqaba
+
+🇿🇦 KWAZULU-NATAL
+Durban (eThekwini)
+
+Umlazi
+
+KwaMashu
+
+Inanda
+
+Ntuzuma
+
+Clermont
+
+Chatsworth
+
+Lamontville
+
+Newlands East
+
+Phoenix
+
+Pietermaritzburg
+
+Edendale
+
+Imbali
+
+Sobantu
+
+Richards Bay
+
+Esikhaleni
+
+Newcastle
+
+Madadeni
+
+Osizweni
+
+Empangeni
+
+Nseleni
+
+🇿🇦 EASTERN CAPE
+Gqeberha (Port Elizabeth)
+
+New Brighton
+
+KwaZakhele
+
+Zwide
+
+Motherwell
+
+Wells Estate
+
+East London
+
+Mdantsane
+
+Duncan Village
+
+Mthatha
+
+Mandela Park
+
+Ikwezi
+
+Fort Gale
+
+Queenstown (Komani)
+
+Ezibeleni
+
+Mlungisi
+
+Grahamstown (Makhanda)
+
+Joza
+
+Fingo Village
+
+🇿🇦 FREE STATE
+Bloemfontein
+
+Mangaung
+
+Batho
+
+Rocklands
+
+Phahameng
+
+Welkom
+
+Thabong
+
+Bronville
+
+Sasolburg
+
+Zamdela
+
+Bethlehem
+
+Phomolong
+
+Kroonstad
+
+Maokeng
+
+🇿🇦 LIMPOPO
+Polokwane
+
+Seshego
+
+Mankweng
+
+Nobody
+
+Ga-Chuene
+
+Tzaneen
+
+Nkowankowa
+
+Lenyenye
+
+Thohoyandou
+
+Shayandima
+
+Makwarela
+
+Mokopane
+
+Mahwelereng
+
+Musina
+
+Nancefield
+
+🇿🇦 MPUMALANGA
+Mbombela (Nelspruit)
+
+Kanyamazane
+
+Matsulu
+
+Kabokweni
+
+Witbank (eMalahleni)
+
+Kwa-Guqa
+
+Vosman
+
+Middelburg
+
+Mhluzi
+
+Nasaret
+
+Secunda
+
+Embalenhle
+
+Ermelo
+
+Wesselton
+
+🇿🇦 NORTH WEST
+Rustenburg
+
+Boitekong
+
+Phokeng
+
+Luka
+
+Mahikeng
+
+Montshiwa
+
+Unit 14
+
+Brits
+
+Oukasie
+
+Letlhabile
+
+Klerksdorp
+
+Jouberton
+
+Vryburg
+
+Huhudi
+
+🇿🇦 NORTHERN CAPE
+Kimberley
+
+Galeshewe
+
+Roodepan
+
+Upington
+
+Paballelo
+
+Kuruman
+
+Seoding
+
+Springbok
+
+Concordia
+
+De Aar
+
+Nonzwakazi
