@@ -142,10 +142,16 @@ export function registerHelpCenterRoutes(app: Express) {
   app.get("/api/help/categories", async (req: Request, res: Response) => {
     try {
       console.log("[Help Center] Fetching categories...");
+      // Calculate article counts dynamically with a subquery
       let result = await pool.query(`
-        SELECT * FROM help_categories 
-        WHERE is_active = true 
-        ORDER BY sort_order ASC, name ASC
+        SELECT c.*, 
+          COALESCE((
+            SELECT COUNT(*) FROM help_articles a 
+            WHERE a.category_id = c.id AND a.status = 'PUBLISHED'
+          ), 0)::integer as article_count
+        FROM help_categories c
+        WHERE c.is_active = true 
+        ORDER BY c.sort_order ASC, c.name ASC
       `);
       
       // Auto-seed if empty (production first request)
@@ -154,11 +160,16 @@ export function registerHelpCenterRoutes(app: Express) {
         try {
           const { seedHelpCenterOnStartup } = await import('./seed-help-center-startup');
           await seedHelpCenterOnStartup();
-          // Re-fetch after seeding
+          // Re-fetch after seeding with dynamic count
           result = await pool.query(`
-            SELECT * FROM help_categories 
-            WHERE is_active = true 
-            ORDER BY sort_order ASC, name ASC
+            SELECT c.*, 
+              COALESCE((
+                SELECT COUNT(*) FROM help_articles a 
+                WHERE a.category_id = c.id AND a.status = 'PUBLISHED'
+              ), 0)::integer as article_count
+            FROM help_categories c
+            WHERE c.is_active = true 
+            ORDER BY c.sort_order ASC, c.name ASC
           `);
           console.log(`[Help Center] Auto-seeded, now have ${result.rows.length} categories`);
         } catch (seedError: any) {
