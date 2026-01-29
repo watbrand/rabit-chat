@@ -331,6 +331,42 @@ export function registerHelpCenterRoutes(app: Express) {
     }
   });
   
+  // GET /api/help/search - Search articles
+  app.get("/api/help/search", async (req: Request, res: Response) => {
+    try {
+      const { query } = req.query;
+      
+      if (!query || String(query).length < 2) {
+        return res.json([]);
+      }
+      
+      const searchTerm = `%${String(query).toLowerCase()}%`;
+      
+      const result = await pool.query(`
+        SELECT a.id, a.title, a.slug, a.summary, a.difficulty, a.has_walkthrough, a.has_video,
+               a.estimated_read_time, a.view_count, a.helpful_count, a.thumbnail_url,
+               a.category_id, c.name as category_name, c.slug as category_slug
+        FROM help_articles a
+        LEFT JOIN help_categories c ON a.category_id = c.id
+        WHERE a.status = 'PUBLISHED' AND (
+          LOWER(a.title) LIKE $1 OR 
+          LOWER(a.summary) LIKE $1 OR 
+          LOWER(a.content) LIKE $1 OR
+          LOWER(a.tags::text) LIKE $1
+        )
+        ORDER BY 
+          CASE WHEN LOWER(a.title) LIKE $1 THEN 1 ELSE 2 END,
+          a.view_count DESC
+        LIMIT 20
+      `, [searchTerm]);
+      
+      res.json(result.rows);
+    } catch (error: any) {
+      console.error("Error searching articles:", error);
+      res.status(500).json({ error: "Search failed" });
+    }
+  });
+  
   // GET /api/help/articles/featured - Get featured articles
   app.get("/api/help/articles/featured", async (req: Request, res: Response) => {
     try {
@@ -349,6 +385,66 @@ export function registerHelpCenterRoutes(app: Express) {
     } catch (error: any) {
       console.error("Error fetching featured articles:", error);
       res.status(500).json({ error: "Failed to fetch featured articles" });
+    }
+  });
+  
+  // GET /api/help/articles/id/:id - Get article by ID (MUST be before :slug to avoid catch-all)
+  app.get("/api/help/articles/id/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req.session as any)?.userId;
+      
+      const result = await pool.query(`
+        SELECT a.*, c.name as category_name, c.slug as category_slug,
+               u.username as author_username, u.display_name as author_name
+        FROM help_articles a
+        LEFT JOIN help_categories c ON a.category_id = c.id
+        LEFT JOIN users u ON a.author_id = u.id
+        WHERE a.id = $1
+      `, [id]);
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Article not found" });
+      }
+      
+      const article = result.rows[0];
+      
+      if (article.status !== "PUBLISHED") {
+        if (!userId) {
+          return res.status(404).json({ error: "Article not found" });
+        }
+        const user = await storage.getUser(userId);
+        if (!user || !user.isAdmin) {
+          return res.status(404).json({ error: "Article not found" });
+        }
+      }
+      
+      await pool.query(
+        `UPDATE help_articles SET view_count = view_count + 1 WHERE id = $1`,
+        [article.id]
+      );
+      
+      let steps: any[] = [];
+      if (article.has_walkthrough) {
+        const stepsResult = await pool.query(`
+          SELECT * FROM help_article_steps WHERE article_id = $1 ORDER BY step_number ASC
+        `, [article.id]);
+        steps = stepsResult.rows;
+      }
+      
+      let relatedArticles: any[] = [];
+      if (article.related_article_ids && article.related_article_ids.length > 0) {
+        const relatedResult = await pool.query(`
+          SELECT id, title, slug, summary, thumbnail_url FROM help_articles
+          WHERE id = ANY($1) AND status = 'PUBLISHED'
+        `, [article.related_article_ids]);
+        relatedArticles = relatedResult.rows;
+      }
+      
+      res.json({ article: { ...article, steps, relatedArticles } });
+    } catch (error: any) {
+      console.error("Error fetching article by ID:", error);
+      res.status(500).json({ error: "Failed to fetch article" });
     }
   });
   
@@ -419,65 +515,6 @@ export function registerHelpCenterRoutes(app: Express) {
     }
   });
   
-  // GET /api/help/articles/id/:id - Get article by ID (alternative endpoint)
-  app.get("/api/help/articles/id/:id", async (req: Request, res: Response) => {
-    try {
-      const { id } = req.params;
-      const userId = (req.session as any)?.userId;
-      
-      const result = await pool.query(`
-        SELECT a.*, c.name as category_name, c.slug as category_slug,
-               u.username as author_username, u.display_name as author_name
-        FROM help_articles a
-        LEFT JOIN help_categories c ON a.category_id = c.id
-        LEFT JOIN users u ON a.author_id = u.id
-        WHERE a.id = $1
-      `, [id]);
-      
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: "Article not found" });
-      }
-      
-      const article = result.rows[0];
-      
-      if (article.status !== "PUBLISHED") {
-        if (!userId) {
-          return res.status(404).json({ error: "Article not found" });
-        }
-        const user = await storage.getUser(userId);
-        if (!user || !user.isAdmin) {
-          return res.status(404).json({ error: "Article not found" });
-        }
-      }
-      
-      await pool.query(
-        `UPDATE help_articles SET view_count = view_count + 1 WHERE id = $1`,
-        [article.id]
-      );
-      
-      let steps: any[] = [];
-      if (article.has_walkthrough) {
-        const stepsResult = await pool.query(`
-          SELECT * FROM help_article_steps WHERE article_id = $1 ORDER BY step_number ASC
-        `, [article.id]);
-        steps = stepsResult.rows;
-      }
-      
-      let relatedArticles: any[] = [];
-      if (article.related_article_ids && article.related_article_ids.length > 0) {
-        const relatedResult = await pool.query(`
-          SELECT id, title, slug, summary, thumbnail_url FROM help_articles
-          WHERE id = ANY($1) AND status = 'PUBLISHED'
-        `, [article.related_article_ids]);
-        relatedArticles = relatedResult.rows;
-      }
-      
-      res.json({ article: { ...article, steps, relatedArticles } });
-    } catch (error: any) {
-      console.error("Error fetching article by ID:", error);
-      res.status(500).json({ error: "Failed to fetch article" });
-    }
-  });
   
   // POST /api/help/articles/:id/feedback - Submit article feedback
   app.post("/api/help/articles/:id/feedback", async (req: Request, res: Response) => {

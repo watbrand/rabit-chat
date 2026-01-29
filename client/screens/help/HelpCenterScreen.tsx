@@ -77,9 +77,11 @@ export default function HelpCenterScreen() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
 
-  const { data: categories, isLoading: categoriesLoading, refetch: refetchCategories } = useQuery<HelpCategory[]>({
+  const { data: categoriesResponse, isLoading: categoriesLoading, refetch: refetchCategories } = useQuery<{ categories: HelpCategory[] }>({
     queryKey: ["/api/help/categories"],
   });
+  
+  const categories = categoriesResponse?.categories || [];
 
   const { data: articlesResponse, isLoading: articlesLoading, refetch: refetchArticles } = useQuery<{ articles: HelpArticle[]; total: number }>({
     queryKey: ["/api/help/articles", { featured: true }],

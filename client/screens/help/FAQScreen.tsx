@@ -106,9 +106,11 @@ export default function FAQScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
-  const { data: faqs, isLoading, refetch } = useQuery<FAQ[]>({
+  const { data: faqsResponse, isLoading, refetch } = useQuery<{ faqs: FAQ[] }>({
     queryKey: ["/api/help/faqs"],
   });
+  
+  const faqs = faqsResponse?.faqs || [];
 
   const filteredFaqs = useMemo(() => {
     if (!faqs) return [];
