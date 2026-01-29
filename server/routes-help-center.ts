@@ -142,11 +142,30 @@ export function registerHelpCenterRoutes(app: Express) {
   app.get("/api/help/categories", async (req: Request, res: Response) => {
     try {
       console.log("[Help Center] Fetching categories...");
-      const result = await pool.query(`
+      let result = await pool.query(`
         SELECT * FROM help_categories 
         WHERE is_active = true 
         ORDER BY sort_order ASC, name ASC
       `);
+      
+      // Auto-seed if empty (production first request)
+      if (result.rows.length === 0) {
+        console.log("[Help Center] Categories empty, attempting auto-seed...");
+        try {
+          const { seedHelpCenterOnStartup } = await import('./seed-help-center-startup');
+          await seedHelpCenterOnStartup();
+          // Re-fetch after seeding
+          result = await pool.query(`
+            SELECT * FROM help_categories 
+            WHERE is_active = true 
+            ORDER BY sort_order ASC, name ASC
+          `);
+          console.log(`[Help Center] Auto-seeded, now have ${result.rows.length} categories`);
+        } catch (seedError: any) {
+          console.error("[Help Center] Auto-seed failed:", seedError.message);
+        }
+      }
+      
       console.log(`[Help Center] Found ${result.rows.length} categories`);
       res.json({ categories: result.rows });
     } catch (error: any) {
@@ -2380,5 +2399,110 @@ export function registerHelpCenterRoutes(app: Express) {
     }
   });
   
+  // POST /api/admin/help-center/force-seed - Force re-seed Help Center content (for production)
+  app.post("/api/admin/help-center/force-seed", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      console.log("[Help Center] Force seed requested by admin");
+      
+      const client = await pool.connect();
+      try {
+        // Check if tables exist
+        const tableCheck = await client.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_name = 'help_categories'
+          )
+        `);
+        
+        if (!tableCheck.rows[0].exists) {
+          return res.status(503).json({ 
+            error: "Help Center tables don't exist. Please run database migration first.",
+            details: "Tables not found" 
+          });
+        }
+        
+        // Import and run the seed function
+        const { seedHelpCenterOnStartup } = await import('./seed-help-center-startup');
+        await seedHelpCenterOnStartup();
+        
+        // Get counts after seeding
+        const [catCount, artCount, faqCount] = await Promise.all([
+          client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`),
+          client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`),
+          client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`)
+        ]);
+        
+        res.json({ 
+          success: true, 
+          message: "Help Center content seeded successfully",
+          counts: {
+            categories: parseInt(catCount.rows[0].count),
+            articles: parseInt(artCount.rows[0].count),
+            faqs: parseInt(faqCount.rows[0].count)
+          }
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error: any) {
+      console.error("[Help Center] Force seed error:", error);
+      res.status(500).json({ error: "Failed to seed Help Center", details: error.message });
+    }
+  });
+
+  // GET /api/help/debug - Debug endpoint to check Help Center state (public)
+  app.get("/api/help/debug", async (req: Request, res: Response) => {
+    try {
+      const client = await pool.connect();
+      try {
+        // Check if tables exist
+        const tableCheck = await client.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_name = 'help_categories'
+          ) as categories_exist,
+          EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_name = 'help_articles'
+          ) as articles_exist,
+          EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_name = 'help_faqs'
+          ) as faqs_exist
+        `);
+        
+        const tablesExist = tableCheck.rows[0];
+        
+        let counts = { categories: 0, articles: 0, faqs: 0 };
+        
+        if (tablesExist.categories_exist) {
+          const [catCount, artCount, faqCount] = await Promise.all([
+            client.query(`SELECT COUNT(*) FROM help_categories WHERE is_active = true`),
+            client.query(`SELECT COUNT(*) FROM help_articles WHERE status = 'PUBLISHED'`),
+            client.query(`SELECT COUNT(*) FROM help_faqs WHERE is_active = true`)
+          ]);
+          
+          counts = {
+            categories: parseInt(catCount.rows[0].count),
+            articles: parseInt(artCount.rows[0].count),
+            faqs: parseInt(faqCount.rows[0].count)
+          };
+        }
+        
+        res.json({
+          tablesExist,
+          counts,
+          isSeeded: counts.categories >= 10 && counts.articles >= 50 && counts.faqs >= 20,
+          nodeEnv: process.env.NODE_ENV
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error: any) {
+      console.error("[Help Center] Debug error:", error);
+      res.status(500).json({ error: "Debug failed", details: error.message });
+    }
+  });
+
   console.log("Help Center routes registered");
 }
