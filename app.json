@@ -63,6 +63,11 @@
     ],
     "experiments": {
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "rabitchat"
+      }
     }
   }
 }

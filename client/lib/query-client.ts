@@ -9,15 +9,28 @@ export function getApiUrl(): string {
   // Try multiple sources for the domain
   let host = process.env.EXPO_PUBLIC_DOMAIN;
   
-  // Fallback to Expo Constants if available
+  // Fallback to Expo Constants if available (for published static builds)
   if (!host && Constants.expoConfig?.extra?.apiDomain) {
     host = Constants.expoConfig.extra.apiDomain;
   }
   
-  // Fallback to hostUri for development
+  // Fallback to hostUri for Expo Go development mode
+  // This is set by Metro bundler when running in Expo Go
   if (!host && Constants.expoConfig?.hostUri) {
-    // Extract domain from hostUri (e.g., "domain.replit.dev:8081")
+    // hostUri format: "domain.replit.dev:8081" or just "domain.replit.dev"
     const hostUri = Constants.expoConfig.hostUri;
+    host = hostUri.split(':')[0];
+  }
+  
+  // Try expoGo debuggerHost as another fallback
+  if (!host && (Constants as any).manifest2?.extra?.expoGo?.debuggerHost) {
+    const debuggerHost = (Constants as any).manifest2.extra.expoGo.debuggerHost;
+    host = debuggerHost.split(':')[0];
+  }
+  
+  // Try manifest hostUri (legacy Expo Go)
+  if (!host && (Constants as any).manifest?.hostUri) {
+    const hostUri = (Constants as any).manifest.hostUri;
     host = hostUri.split(':')[0];
   }
   
@@ -30,6 +43,7 @@ export function getApiUrl(): string {
 
   console.log("[getApiUrl] EXPO_PUBLIC_DOMAIN:", process.env.EXPO_PUBLIC_DOMAIN);
   console.log("[getApiUrl] Constants.expoConfig.hostUri:", Constants.expoConfig?.hostUri);
+  console.log("[getApiUrl] Constants.manifest2:", JSON.stringify((Constants as any).manifest2?.extra?.expoGo, null, 2));
   console.log("[getApiUrl] Resolved host:", host);
 
   // Remove port suffix if present - Replit's HTTPS proxy handles routing

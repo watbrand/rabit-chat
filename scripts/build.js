@@ -495,6 +495,12 @@ function updateManifests(manifests, timestamp, baseUrl, assetsByHash) {
     manifest.extra.expoGo.debuggerHost =
       baseUrl.replace("https://", "") + "/" + platform;
     manifest.extra.expoGo.packagerOpts.dev = false;
+    
+    // Add API domain for the frontend query client
+    if (!manifest.extra.expoClient.extra) {
+      manifest.extra.expoClient.extra = {};
+    }
+    manifest.extra.expoClient.extra.apiDomain = baseUrl.replace("https://", "");
 
     if (manifest.assets && manifest.assets.length > 0) {
       manifest.assets.forEach((asset) => {
