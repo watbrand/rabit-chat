@@ -140,7 +140,7 @@ export function registerHelpCenterRoutes(app: Express) {
         WHERE is_active = true 
         ORDER BY sort_order ASC, name ASC
       `);
-      res.json(result.rows);
+      res.json({ categories: result.rows });
     } catch (error: any) {
       console.error("Error fetching help categories:", error);
       res.status(500).json({ error: "Failed to fetch categories" });
@@ -412,9 +412,69 @@ export function registerHelpCenterRoutes(app: Express) {
         relatedArticles = relatedResult.rows;
       }
       
-      res.json({ ...article, steps, relatedArticles });
+      res.json({ article: { ...article, steps, relatedArticles } });
     } catch (error: any) {
       console.error("Error fetching article:", error);
+      res.status(500).json({ error: "Failed to fetch article" });
+    }
+  });
+  
+  // GET /api/help/articles/id/:id - Get article by ID (alternative endpoint)
+  app.get("/api/help/articles/id/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req.session as any)?.userId;
+      
+      const result = await pool.query(`
+        SELECT a.*, c.name as category_name, c.slug as category_slug,
+               u.username as author_username, u.display_name as author_name
+        FROM help_articles a
+        LEFT JOIN help_categories c ON a.category_id = c.id
+        LEFT JOIN users u ON a.author_id = u.id
+        WHERE a.id = $1
+      `, [id]);
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Article not found" });
+      }
+      
+      const article = result.rows[0];
+      
+      if (article.status !== "PUBLISHED") {
+        if (!userId) {
+          return res.status(404).json({ error: "Article not found" });
+        }
+        const user = await storage.getUser(userId);
+        if (!user || !user.isAdmin) {
+          return res.status(404).json({ error: "Article not found" });
+        }
+      }
+      
+      await pool.query(
+        `UPDATE help_articles SET view_count = view_count + 1 WHERE id = $1`,
+        [article.id]
+      );
+      
+      let steps: any[] = [];
+      if (article.has_walkthrough) {
+        const stepsResult = await pool.query(`
+          SELECT * FROM help_article_steps WHERE article_id = $1 ORDER BY step_number ASC
+        `, [article.id]);
+        steps = stepsResult.rows;
+      }
+      
+      let relatedArticles: any[] = [];
+      if (article.related_article_ids && article.related_article_ids.length > 0) {
+        const relatedResult = await pool.query(`
+          SELECT id, title, slug, summary, thumbnail_url FROM help_articles
+          WHERE id = ANY($1) AND status = 'PUBLISHED'
+        `, [article.related_article_ids]);
+        relatedArticles = relatedResult.rows;
+      }
+      
+      res.json({ article: { ...article, steps, relatedArticles } });
+    } catch (error: any) {
+      console.error("Error fetching article by ID:", error);
       res.status(500).json({ error: "Failed to fetch article" });
     }
   });
@@ -666,7 +726,7 @@ export function registerHelpCenterRoutes(app: Express) {
         ORDER BY f.is_featured DESC, f.sort_order ASC, f.helpful_count DESC
       `, values);
       
-      res.json(result.rows);
+      res.json({ faqs: result.rows });
     } catch (error: any) {
       console.error("Error fetching FAQs:", error);
       res.status(500).json({ error: "Failed to fetch FAQs" });
@@ -1993,7 +2053,7 @@ export function registerHelpCenterRoutes(app: Express) {
         ORDER BY published_at DESC
         LIMIT 20
       `);
-      res.json(result.rows);
+      res.json({ entries: result.rows });
     } catch (error: any) {
       console.error("Error fetching changelog:", error);
       res.status(500).json({ error: "Failed to fetch changelog" });
@@ -2116,6 +2176,64 @@ export function registerHelpCenterRoutes(app: Express) {
         articles: articlesResult.rows,
         faqs: faqsResult.rows,
         aiSummary,
+        totalResults: articlesResult.rows.length + faqsResult.rows.length,
+      });
+    } catch (error: any) {
+      console.error("Error in AI search:", error);
+      res.status(500).json({ error: "Search failed" });
+    }
+  });
+  
+  // POST /api/help/ai-search - AI-powered search (alias)
+  app.post("/api/help/ai-search", async (req: Request, res: Response) => {
+    try {
+      const { query } = req.body;
+      const userId = (req.session as any)?.userId;
+      
+      if (!query || query.length < 3) {
+        return res.status(400).json({ error: "Query too short" });
+      }
+      
+      const articlesResult = await pool.query(`
+        SELECT id, title, slug, summary, difficulty, has_walkthrough
+        FROM help_articles
+        WHERE status = 'PUBLISHED' AND (
+          title ILIKE $1 OR summary ILIKE $1 OR content ILIKE $1 OR tags::text ILIKE $1
+        )
+        ORDER BY CASE WHEN title ILIKE $1 THEN 1 ELSE 2 END, view_count DESC
+        LIMIT 5
+      `, [`%${query}%`]);
+      
+      const faqsResult = await pool.query(`
+        SELECT id, question, answer FROM help_faqs
+        WHERE is_active = true AND (question ILIKE $1 OR answer ILIKE $1)
+        ORDER BY helpful_count DESC LIMIT 3
+      `, [`%${query}%`]);
+      
+      await pool.query(`
+        INSERT INTO help_search_history (user_id, query, results_count) VALUES ($1, $2, $3)
+      `, [userId, query, articlesResult.rows.length + faqsResult.rows.length]);
+      
+      let aiAnswer = null;
+      try {
+        if (articlesResult.rows.length > 0 || faqsResult.rows.length > 0) {
+          const context = [
+            ...articlesResult.rows.map((a: any) => `Article: ${a.title} - ${a.summary}`),
+            ...faqsResult.rows.map((f: any) => `FAQ: ${f.question} - ${f.answer}`),
+          ].join("\n");
+          aiAnswer = await summarizeContent([
+            `User query: "${query}"`, `Relevant help content:\n${context}`,
+            `Provide a brief, helpful answer to the user's query based on this content. Keep it under 100 words.`
+          ]);
+        }
+      } catch (e) {
+        console.log("AI summary not available");
+      }
+      
+      res.json({
+        results: articlesResult.rows,
+        faqs: faqsResult.rows,
+        aiAnswer,
         totalResults: articlesResult.rows.length + faqsResult.rows.length,
       });
     } catch (error: any) {
