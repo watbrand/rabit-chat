@@ -16,6 +16,18 @@ Preferred communication style: Simple, everyday language.
     - **Light Mode**: Purple/pink/blue gradient background with animated floating orbs, white frosted glass cards with blur effects (70% opacity), and soft shadows.
     - **Dark Mode**: Deep dark backgrounds (rgba(26, 26, 36)) with purple accent glows and subtle glass effects.
     - **GradientBackground Component**: Renders animated gradient orbs in light mode, solid dark in dark mode.
+-   **Custom Animation System**: Complete brand-consistent animation system using Reanimated (no Lottie - Expo Go compatible):
+    - **RabitLogo**: SVG logo component with 3 variants (full, simple, minimal) and brand colors (purple/gold rabbit + chat bubble)
+    - **AnimatedLogo**: Base animation component with 6 presets: pulse, bounce, spin, shake, loading, glow
+    - **LoadingIndicator**: Replaces all ActivityIndicator with branded pulsing logo (sizes: small/medium/large/fullScreen)
+    - **InlineLoader**: Compact spinning logo for inline button states
+    - **ErrorState**: Shaking logo with red glow, contextual error messages, and retry button
+    - **SuccessState**: Checkmark celebration with confetti-like animation
+    - **EmptyState**: Floating logo with 14+ contextual messages (posts, messages, followers, notifications, etc.)
+    - **BrandShimmer**: Purple-gradient skeleton loader for loading content placeholders
+    - **SkeletonCard/SkeletonAvatar/SkeletonText**: Pre-built skeleton components for common patterns
+    - **Accessibility**: All animations respect reduced-motion preferences
+    - **Usage**: Import from `@/components/animations` (e.g., `import { LoadingIndicator, EmptyState } from "@/components/animations"`)
 
 ### Backend
 -   **Server**: Express.js with TypeScript, running on port 5000.
