@@ -342,13 +342,16 @@ export function registerHelpCenterRoutes(app: Express) {
   // GET /api/help/search - Search articles
   app.get("/api/help/search", async (req: Request, res: Response) => {
     try {
-      const { query } = req.query;
+      // Accept both 'query' and 'q' parameters for flexibility
+      const queryParam = req.query.query ? String(req.query.query).trim() : '';
+      const qParam = req.query.q ? String(req.query.q).trim() : '';
+      const searchInput = queryParam || qParam;
       
-      if (!query || String(query).length < 2) {
+      if (!searchInput || searchInput.length < 2) {
         return res.json([]);
       }
       
-      const searchTerm = `%${String(query).toLowerCase()}%`;
+      const searchTerm = `%${String(searchInput).toLowerCase()}%`;
       
       const result = await pool.query(`
         SELECT a.id, a.title, a.slug, a.summary, a.difficulty, a.has_walkthrough, a.has_video,
