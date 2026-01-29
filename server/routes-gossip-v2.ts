@@ -16,6 +16,8 @@ import {
   gossipPostHashtags,
   gossipPostViews,
   gossipTrendingHashtags,
+  gossipDMConversations,
+  gossipDMMessages,
 } from "@shared/schema";
 import { eq, and, sql, desc, asc, isNull, like, gte, count } from "drizzle-orm";
 import crypto from "crypto";
@@ -1888,6 +1890,351 @@ router.get("/search/history", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error fetching search history:", error);
     return res.status(500).json({ error: "Failed to fetch search history" });
+  }
+});
+
+const startDMSchema = z.object({
+  deviceHash: z.string(),
+  postId: z.string(),
+  message: z.string().min(1).max(1000),
+});
+
+router.post("/dm/start", async (req: Request, res: Response) => {
+  try {
+    const { deviceHash, postId, message } = startDMSchema.parse(req.body);
+    const hashedDevice = hashDevice(deviceHash);
+    const post = await db
+      .select()
+      .from(anonGossipPosts)
+      .where(eq(anonGossipPosts.id, postId))
+      .limit(1);
+
+    if (post.length === 0) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+    
+    const posterHash = post[0].deviceHash;
+    if (posterHash === hashedDevice) {
+      return res.status(400).json({ error: "Cannot DM yourself" });
+    }
+    const existingConv = await db
+      .select()
+      .from(gossipDMConversations)
+      .where(
+        and(
+          eq(gossipDMConversations.postId, postId),
+          sql`(
+            (${gossipDMConversations.participant1Hash} = ${hashedDevice} AND ${gossipDMConversations.participant2Hash} = ${posterHash})
+            OR
+            (${gossipDMConversations.participant1Hash} = ${posterHash} AND ${gossipDMConversations.participant2Hash} = ${hashedDevice})
+          )`
+        )
+      )
+      .limit(1);
+
+    let conversationId: string;
+    let isNew = false;
+
+    if (existingConv.length > 0) {
+      conversationId = existingConv[0].id;
+    } else {
+      const initiatorAlias = generateAlias();
+      const responderAlias = generateAlias();
+      
+      const newConv = await db.insert(gossipDMConversations).values({
+        postId,
+        participant1Hash: hashedDevice,
+        participant2Hash: posterHash,
+        participant1Alias: `${initiatorAlias.emoji} ${initiatorAlias.name}`,
+        participant2Alias: `${responderAlias.emoji} ${responderAlias.name}`,
+        lastMessageAt: new Date(),
+      }).returning();
+      
+      conversationId = newConv[0].id;
+      isNew = true;
+    }
+    const newMessage = await db.insert(gossipDMMessages).values({
+      conversationId,
+      senderHash: hashedDevice,
+      content: message,
+    }).returning();
+    await db
+      .update(gossipDMConversations)
+      .set({ lastMessageAt: new Date() })
+      .where(eq(gossipDMConversations.id, conversationId));
+
+    return res.status(201).json({
+      success: true,
+      isNewConversation: isNew,
+      conversationId,
+      message: newMessage[0],
+    });
+  } catch (error) {
+    console.error("Error starting DM:", error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid request", details: error.errors });
+    }
+    return res.status(500).json({ error: "Failed to start DM" });
+  }
+});
+
+router.get("/dm/conversations", async (req: Request, res: Response) => {
+  try {
+    const { deviceHash } = req.query;
+    
+    if (!deviceHash || typeof deviceHash !== 'string') {
+      return res.status(400).json({ error: "Missing deviceHash" });
+    }
+
+    const hashedDevice = hashDevice(deviceHash);
+    const conversations = await db
+      .select()
+      .from(gossipDMConversations)
+      .where(
+        sql`${gossipDMConversations.participant1Hash} = ${hashedDevice} OR ${gossipDMConversations.participant2Hash} = ${hashedDevice}`
+      )
+      .orderBy(desc(gossipDMConversations.lastMessageAt));
+    const conversationsWithDetails = await Promise.all(
+      conversations.map(async (conv) => {
+        const isParticipant1 = conv.participant1Hash === hashedDevice;
+        const lastMessage = await db
+          .select()
+          .from(gossipDMMessages)
+          .where(eq(gossipDMMessages.conversationId, conv.id))
+          .orderBy(desc(gossipDMMessages.createdAt))
+          .limit(1);
+        const unreadCount = await db
+          .select({ count: count() })
+          .from(gossipDMMessages)
+          .where(
+            and(
+              eq(gossipDMMessages.conversationId, conv.id),
+              eq(gossipDMMessages.isRead, false),
+              sql`${gossipDMMessages.senderHash} != ${hashedDevice}`
+            )
+          );
+        
+        return {
+          id: conv.id,
+          postId: conv.postId,
+          myAlias: isParticipant1 ? conv.participant1Alias : conv.participant2Alias,
+          theirAlias: isParticipant1 ? conv.participant2Alias : conv.participant1Alias,
+          lastMessage: lastMessage[0] || null,
+          unreadCount: unreadCount[0]?.count || 0,
+          isBlocked: conv.isBlocked,
+          lastMessageAt: conv.lastMessageAt,
+          createdAt: conv.createdAt,
+        };
+      })
+    );
+
+    return res.json({ conversations: conversationsWithDetails });
+  } catch (error) {
+    console.error("Error fetching DM conversations:", error);
+    return res.status(500).json({ error: "Failed to fetch conversations" });
+  }
+});
+
+router.get("/dm/conversations/:conversationId/messages", async (req: Request, res: Response) => {
+  try {
+    const { conversationId } = req.params;
+    const { deviceHash, cursor, limit = "50" } = req.query;
+    
+    if (!deviceHash || typeof deviceHash !== 'string') {
+      return res.status(400).json({ error: "Missing deviceHash" });
+    }
+
+    const hashedDevice = hashDevice(deviceHash);
+    const conv = await db
+      .select()
+      .from(gossipDMConversations)
+      .where(eq(gossipDMConversations.id, conversationId))
+      .limit(1);
+
+    if (conv.length === 0) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+    
+    const isParticipant = conv[0].participant1Hash === hashedDevice || conv[0].participant2Hash === hashedDevice;
+    if (!isParticipant) {
+      return res.status(403).json({ error: "Not a participant in this conversation" });
+    }
+
+    const conditions = [eq(gossipDMMessages.conversationId, conversationId)];
+    
+    if (cursor) {
+      conditions.push(sql`${gossipDMMessages.createdAt} < ${cursor}`);
+    }
+
+    const messages = await db
+      .select()
+      .from(gossipDMMessages)
+      .where(and(...conditions))
+      .orderBy(desc(gossipDMMessages.createdAt))
+      .limit(parseInt(limit as string) + 1);
+
+    const hasMore = messages.length > parseInt(limit as string);
+    const messageList = hasMore ? messages.slice(0, parseInt(limit as string)) : messages;
+    const nextCursor = hasMore && messageList.length > 0 
+      ? messageList[messageList.length - 1].createdAt.toISOString() 
+      : null;
+    const isParticipant1 = conv[0].participant1Hash === hashedDevice;
+    
+    const messagesWithSenderInfo = messageList.map(msg => ({
+      ...msg,
+      isMe: msg.senderHash === hashedDevice,
+      senderAlias: msg.senderHash === conv[0].participant1Hash 
+        ? conv[0].participant1Alias 
+        : conv[0].participant2Alias,
+    }));
+
+    return res.json({
+      messages: messagesWithSenderInfo.reverse(),
+      myAlias: isParticipant1 ? conv[0].participant1Alias : conv[0].participant2Alias,
+      theirAlias: isParticipant1 ? conv[0].participant2Alias : conv[0].participant1Alias,
+      hasMore,
+      nextCursor,
+    });
+  } catch (error) {
+    console.error("Error fetching DM messages:", error);
+    return res.status(500).json({ error: "Failed to fetch messages" });
+  }
+});
+
+const sendDMSchema = z.object({
+  deviceHash: z.string(),
+  content: z.string().min(1).max(1000),
+});
+
+router.post("/dm/conversations/:conversationId/messages", async (req: Request, res: Response) => {
+  try {
+    const { conversationId } = req.params;
+    const { deviceHash, content } = sendDMSchema.parse(req.body);
+    const hashedDevice = hashDevice(deviceHash);
+    const conv = await db
+      .select()
+      .from(gossipDMConversations)
+      .where(eq(gossipDMConversations.id, conversationId))
+      .limit(1);
+
+    if (conv.length === 0) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+    
+    const isParticipant = conv[0].participant1Hash === hashedDevice || conv[0].participant2Hash === hashedDevice;
+    if (!isParticipant) {
+      return res.status(403).json({ error: "Not a participant in this conversation" });
+    }
+
+    if (conv[0].isBlocked) {
+      return res.status(403).json({ error: "This conversation is blocked" });
+    }
+    const newMessage = await db.insert(gossipDMMessages).values({
+      conversationId,
+      senderHash: hashedDevice,
+      content,
+    }).returning();
+    await db
+      .update(gossipDMConversations)
+      .set({ lastMessageAt: new Date() })
+      .where(eq(gossipDMConversations.id, conversationId));
+
+    return res.status(201).json({
+      success: true,
+      message: {
+        ...newMessage[0],
+        isMe: true,
+        senderAlias: conv[0].participant1Hash === hashedDevice 
+          ? conv[0].participant1Alias 
+          : conv[0].participant2Alias,
+      },
+    });
+  } catch (error) {
+    console.error("Error sending DM:", error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid request", details: error.errors });
+    }
+    return res.status(500).json({ error: "Failed to send message" });
+  }
+});
+
+router.post("/dm/conversations/:conversationId/read", async (req: Request, res: Response) => {
+  try {
+    const { conversationId } = req.params;
+    const { deviceHash } = req.body;
+    
+    if (!deviceHash) {
+      return res.status(400).json({ error: "Missing deviceHash" });
+    }
+
+    const hashedDevice = hashDevice(deviceHash);
+    const conv = await db
+      .select()
+      .from(gossipDMConversations)
+      .where(eq(gossipDMConversations.id, conversationId))
+      .limit(1);
+
+    if (conv.length === 0) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+    
+    const isParticipant = conv[0].participant1Hash === hashedDevice || conv[0].participant2Hash === hashedDevice;
+    if (!isParticipant) {
+      return res.status(403).json({ error: "Not a participant in this conversation" });
+    }
+    await db
+      .update(gossipDMMessages)
+      .set({ isRead: true })
+      .where(
+        and(
+          eq(gossipDMMessages.conversationId, conversationId),
+          sql`${gossipDMMessages.senderHash} != ${hashedDevice}`
+        )
+      );
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Error marking messages as read:", error);
+    return res.status(500).json({ error: "Failed to mark as read" });
+  }
+});
+
+router.post("/dm/conversations/:conversationId/block", async (req: Request, res: Response) => {
+  try {
+    const { conversationId } = req.params;
+    const { deviceHash, block } = req.body;
+    
+    if (!deviceHash) {
+      return res.status(400).json({ error: "Missing deviceHash" });
+    }
+
+    const hashedDevice = hashDevice(deviceHash);
+    const conv = await db
+      .select()
+      .from(gossipDMConversations)
+      .where(eq(gossipDMConversations.id, conversationId))
+      .limit(1);
+
+    if (conv.length === 0) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+    
+    const isParticipant = conv[0].participant1Hash === hashedDevice || conv[0].participant2Hash === hashedDevice;
+    if (!isParticipant) {
+      return res.status(403).json({ error: "Not a participant in this conversation" });
+    }
+    await db
+      .update(gossipDMConversations)
+      .set({ isBlocked: block !== false })
+      .where(eq(gossipDMConversations.id, conversationId));
+
+    return res.json({ 
+      success: true,
+      isBlocked: block !== false,
+    });
+  } catch (error) {
+    console.error("Error blocking/unblocking conversation:", error);
+    return res.status(500).json({ error: "Failed to update block status" });
   }
 });
 
