@@ -138,21 +138,32 @@ export function registerHelpCenterRoutes(app: Express) {
   
   // ==================== HELP CATEGORIES ====================
   
-  // GET /api/help/categories - Get all categories
+  // GET /api/help/categories - Get all categories (supports parentId filter for subcategories)
   app.get("/api/help/categories", async (req: Request, res: Response) => {
     try {
-      console.log("[Help Center] Fetching categories...");
+      const { parentId } = req.query;
+      console.log("[Help Center] Fetching categories...", parentId ? `parentId=${parentId}` : "all");
+      
       // Calculate article counts dynamically with a subquery
-      let result = await pool.query(`
+      let query = `
         SELECT c.*, 
           COALESCE((
             SELECT COUNT(*) FROM help_articles a 
             WHERE a.category_id = c.id AND a.status = 'PUBLISHED'
           ), 0)::integer as article_count
         FROM help_categories c
-        WHERE c.is_active = true 
-        ORDER BY c.sort_order ASC, c.name ASC
-      `);
+        WHERE c.is_active = true
+      `;
+      
+      const values: any[] = [];
+      if (parentId) {
+        query += ` AND c.parent_id = $1`;
+        values.push(parentId);
+      }
+      
+      query += ` ORDER BY c.sort_order ASC, c.name ASC`;
+      
+      let result = await pool.query(query, values);
       
       // Auto-seed if empty (production first request)
       if (result.rows.length === 0) {
@@ -322,15 +333,16 @@ export function registerHelpCenterRoutes(app: Express) {
   // GET /api/help/articles - Get published articles with pagination
   app.get("/api/help/articles", async (req: Request, res: Response) => {
     try {
-      const { category, search, limit = 20, offset = 0 } = req.query;
+      const { category, categoryId, search, limit = 20, offset = 0 } = req.query;
+      const categoryFilter = categoryId || category; // Support both parameter names
       
       let whereClause = "status = 'PUBLISHED'";
       const values: any[] = [];
       let paramIndex = 1;
       
-      if (category) {
+      if (categoryFilter) {
         whereClause += ` AND category_id = $${paramIndex++}`;
-        values.push(category);
+        values.push(categoryFilter);
       }
       
       if (search) {
