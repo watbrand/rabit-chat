@@ -2916,6 +2916,36 @@ export const gossipBlockedWords = pgTable("gossip_blocked_words", {
   index("gossip_blocked_words_word_idx").on(table.word),
 ]);
 
+// Gossip Location Types
+export const gossipLocationTypeEnum = pgEnum("gossip_location_type", [
+  "COUNTRY",
+  "PROVINCE", 
+  "CITY",
+  "HOOD",
+]);
+
+// Gossip Locations Hierarchy (South Africa → Province → City → Hood)
+export const gossipLocations = pgTable("gossip_locations", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  type: gossipLocationTypeEnum("type").notNull(),
+  name: varchar("name", { length: 150 }).notNull(),
+  slug: varchar("slug", { length: 150 }).notNull(),
+  parentId: varchar("parent_id"),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  emoji: varchar("emoji", { length: 10 }),
+  postCount: integer("post_count").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  unique("gossip_locations_slug_parent").on(table.slug, table.parentId),
+  index("gossip_locations_type_idx").on(table.type),
+  index("gossip_locations_parent_idx").on(table.parentId),
+  index("gossip_locations_active_idx").on(table.isActive),
+]);
+
 // Gossip Location Stats (milestones, streaks, trending)
 export const gossipLocationStats = pgTable("gossip_location_stats", {
   id: varchar("id")
@@ -4167,6 +4197,7 @@ export type AnonGossipReplyReaction = typeof anonGossipReplyReactions.$inferSele
 export type AnonGossipReport = typeof anonGossipReports.$inferSelect;
 export type GossipSetting = typeof gossipSettings.$inferSelect;
 export type GossipBlockedWord = typeof gossipBlockedWords.$inferSelect;
+export type GossipLocation = typeof gossipLocations.$inferSelect;
 export type GossipLocationStat = typeof gossipLocationStats.$inferSelect;
 export type GossipEngagementVelocity = typeof gossipEngagementVelocity.$inferSelect;
 

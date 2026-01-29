@@ -13,6 +13,7 @@ import * as path from "path";
 import { initGossipJobs } from "./gossip-jobs";
 import { runStartupMigrations } from "./db";
 import { cleanupOldTempFiles, UPLOAD_TEMP_DIR } from "./cloudinary";
+import { seedGossipLocations } from "./seed-gossip-locations";
 
 validateEnvironment();
 
@@ -394,6 +395,7 @@ function setupErrorHandler(app: express.Application) {
       // Run startup tasks AFTER port is open (non-blocking for deployment)
       try {
         await runStartupMigrations();
+        await seedGossipLocations();
       } catch (err) {
         console.error('Startup migrations failed:', err);
       }
