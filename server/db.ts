@@ -62,6 +62,14 @@ export async function runStartupMigrations() {
   
   // Seed economy config if not present
   await seedEconomyConfig();
+  
+  // Seed help center content if not present
+  try {
+    const { seedHelpCenterOnStartup } = await import('./seed-help-center-startup');
+    await seedHelpCenterOnStartup();
+  } catch (error) {
+    console.error("[DB] Help center seed error:", error);
+  }
 }
 
 // Create admin user if it doesn't exist
