@@ -81,9 +81,11 @@ export default function HelpArticleScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState<"helpful" | "not_helpful" | null>(null);
 
-  const { data: article, isLoading, refetch } = useQuery<HelpArticle>({
+  const { data: articleResponse, isLoading, refetch } = useQuery<{ article: HelpArticle }>({
     queryKey: [`/api/help/articles/${articleId}`],
   });
+  
+  const article = articleResponse?.article;
 
   React.useEffect(() => {
     if (article) {

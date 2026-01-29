@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -26,6 +26,13 @@ import { uploadFileWithProgress } from "@/lib/upload";
 
 type TicketCategory = "ACCOUNT" | "PAYMENT" | "WITHDRAWAL" | "COINS" | "GIFTS" | "MALL" | "TECHNICAL" | "REPORT" | "OTHER";
 type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+
+type NewTicketParams = {
+  NewTicket: {
+    category?: string;
+    priority?: string;
+  };
+};
 
 interface SelectedFile {
   uri: string;
@@ -53,15 +60,38 @@ const PRIORITIES: { value: TicketPriority; label: string; color: string }[] = [
   { value: "URGENT", label: "Urgent", color: "#EF4444" },
 ];
 
+// Map incoming category params to valid TicketCategory values
+const mapCategoryParam = (param?: string): TicketCategory => {
+  if (!param) return "OTHER";
+  const upper = param.toUpperCase();
+  const validCategories: TicketCategory[] = ["ACCOUNT", "PAYMENT", "WITHDRAWAL", "COINS", "GIFTS", "MALL", "TECHNICAL", "REPORT", "OTHER"];
+  if (validCategories.includes(upper as TicketCategory)) return upper as TicketCategory;
+  // Map legacy values
+  if (upper === "SAFETY") return "REPORT";
+  return "OTHER";
+};
+
+const mapPriorityParam = (param?: string): TicketPriority => {
+  if (!param) return "MEDIUM";
+  const upper = param.toUpperCase();
+  const validPriorities: TicketPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
+  if (validPriorities.includes(upper as TicketPriority)) return upper as TicketPriority;
+  return "MEDIUM";
+};
+
 export default function NewTicketScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
   const { theme, isDark } = useTheme();
   const navigation = useNavigation<any>();
+  const route = useRoute<RouteProp<NewTicketParams, "NewTicket">>();
   const queryClient = useQueryClient();
 
-  const [category, setCategory] = useState<TicketCategory>("OTHER");
-  const [priority, setPriority] = useState<TicketPriority>("MEDIUM");
+  const initialCategory = mapCategoryParam(route.params?.category);
+  const initialPriority = mapPriorityParam(route.params?.priority);
+
+  const [category, setCategory] = useState<TicketCategory>(initialCategory);
+  const [priority, setPriority] = useState<TicketPriority>(initialPriority);
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);

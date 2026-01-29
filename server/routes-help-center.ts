@@ -1105,7 +1105,7 @@ export function registerHelpCenterRoutes(app: Express) {
         attachments: messageAttachments[m.id] || [],
       }));
       
-      res.json(messagesWithAttachments);
+      res.json({ messages: messagesWithAttachments });
     } catch (error: any) {
       console.error("Error fetching messages:", error);
       res.status(500).json({ error: "Failed to fetch messages" });

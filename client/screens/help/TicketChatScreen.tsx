@@ -336,13 +336,13 @@ export default function TicketChatScreen() {
   const ticket = ticketData?.ticket;
   const ticketMessages = ticketData?.messages || [];
 
-  const { data: messagesData, isLoading: messagesLoading, refetch: refetchMessages } = useQuery<TicketMessage[]>({
+  const { data: messagesResponse, isLoading: messagesLoading, refetch: refetchMessages } = useQuery<{ messages: TicketMessage[] }>({
     queryKey: [`/api/support/tickets/${ticketId}/messages`],
     enabled: !!ticketId,
     refetchInterval: 5000,
   });
   
-  const messages = messagesData || ticketMessages;
+  const messages = messagesResponse?.messages || ticketMessages;
 
   useEffect(() => {
     if (messages && messages.length > 0) {
