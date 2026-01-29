@@ -83,11 +83,11 @@ export default function HelpCenterScreen() {
   
   const categories = categoriesResponse?.categories || [];
 
-  const { data: articlesResponse, isLoading: articlesLoading, refetch: refetchArticles } = useQuery<{ articles: HelpArticle[]; total: number }>({
-    queryKey: ["/api/help/articles", { featured: true }],
+  const { data: featuredArticlesData, isLoading: articlesLoading, refetch: refetchArticles } = useQuery<HelpArticle[]>({
+    queryKey: ["/api/help/articles/featured"],
   });
   
-  const featuredArticles = articlesResponse?.articles || [];
+  const featuredArticles = featuredArticlesData || [];
 
   const { data: systemStatus, refetch: refetchStatus } = useQuery<SystemStatus>({
     queryKey: ["/api/help/status"],
@@ -143,7 +143,7 @@ export default function HelpCenterScreen() {
         navigation.navigate("FeatureRequests");
         break;
       case "bug":
-        navigation.navigate("ReportBug");
+        navigation.navigate("NewTicket", { category: "TECHNICAL", priority: "HIGH" });
         break;
     }
   }, [navigation]);
@@ -155,7 +155,7 @@ export default function HelpCenterScreen() {
 
   const handleCommunityPress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    navigation.navigate("CommunityQA");
+    navigation.navigate("FeatureRequests");
   }, [navigation]);
 
   const getStatusColor = (status?: string) => {
@@ -433,6 +433,58 @@ export default function HelpCenterScreen() {
             </View>
           </View>
         </View>
+
+        {searchQuery.length > 2 ? (
+          <Animated.View 
+            entering={FadeInDown.duration(200)} 
+            style={styles.searchResultsSection}
+          >
+            <ThemedText style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+              Search Results
+            </ThemedText>
+            {isSearching ? (
+              <View style={styles.searchLoading}>
+                <ThemedText style={{ color: theme.textSecondary }}>Searching...</ThemedText>
+              </View>
+            ) : searchResults && searchResults.length > 0 ? (
+              <View style={styles.searchResultsList}>
+                {searchResults.slice(0, 5).map((article, index) => (
+                  <Pressable
+                    key={article.id}
+                    style={[
+                      styles.searchResultItem,
+                      { backgroundColor: theme.glassBackground, borderColor: theme.glassBorder }
+                    ]}
+                    onPress={() => handleArticlePress(article)}
+                  >
+                    <View style={styles.searchResultContent}>
+                      <ThemedText style={styles.searchResultTitle} numberOfLines={1}>
+                        {article.title}
+                      </ThemedText>
+                      <ThemedText 
+                        style={[styles.searchResultSummary, { color: theme.textSecondary }]} 
+                        numberOfLines={2}
+                      >
+                        {article.summary || "Tap to read more..."}
+                      </ThemedText>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <View style={[styles.noResults, { backgroundColor: theme.glassBackground, borderColor: theme.glassBorder }]}>
+                <Feather name="search" size={24} color={theme.textSecondary} />
+                <ThemedText style={[styles.noResultsText, { color: theme.textSecondary }]}>
+                  No articles found for "{searchQuery}"
+                </ThemedText>
+                <ThemedText style={[styles.noResultsHint, { color: theme.textTertiary }]}>
+                  Try different keywords or ask our AI assistant
+                </ThemedText>
+              </View>
+            )}
+          </Animated.View>
+        ) : null}
 
         <View style={styles.statusSection}>
           <Pressable
@@ -877,5 +929,52 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     letterSpacing: 1,
+  },
+  searchResultsSection: {
+    marginBottom: Spacing.xl,
+  },
+  searchLoading: {
+    padding: Spacing.lg,
+    alignItems: "center",
+  },
+  searchResultsList: {
+    gap: Spacing.sm,
+  },
+  searchResultItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  searchResultContent: {
+    flex: 1,
+    marginRight: Spacing.sm,
+  },
+  searchResultTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  searchResultSummary: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  noResults: {
+    padding: Spacing.xl,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  noResultsText: {
+    fontSize: 15,
+    fontWeight: "500",
+    marginTop: Spacing.md,
+    textAlign: "center",
+  },
+  noResultsHint: {
+    fontSize: 13,
+    marginTop: Spacing.xs,
+    textAlign: "center",
   },
 });
