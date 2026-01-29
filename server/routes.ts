@@ -9,7 +9,12 @@ import multer from "multer";
 import OpenAI from "openai";
 import { storage } from "./storage";
 import { registerGossipRoutes } from "./gossip-routes";
-import gossipV2Router from "./routes-gossip-v2";
+import gossipV2Router, { 
+  subscribeToGossipLocation, 
+  unsubscribeFromGossipLocation, 
+  subscribeToGossipDevice, 
+  unsubscribeFromGossipDevice 
+} from "./routes-gossip-v2";
 import { registerAdvancedRoutes } from "./routes-advanced";
 import { registerOnboardingRoutes } from "./routes-onboarding";
 import { registerAdsRoutes } from "./routes-ads";
@@ -12167,6 +12172,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ws.send(JSON.stringify({ 
             type: "joined_conversation", 
             conversationId: message.conversationId 
+          }));
+        }
+
+        // Gossip V2 real-time subscriptions
+        if (message.type === "gossip_subscribe_location" && message.locationId) {
+          subscribeToGossipLocation(message.locationId, ws);
+          ws.send(JSON.stringify({ 
+            type: "gossip_subscribed_location", 
+            locationId: message.locationId 
+          }));
+        }
+
+        if (message.type === "gossip_unsubscribe_location" && message.locationId) {
+          unsubscribeFromGossipLocation(message.locationId, ws);
+          ws.send(JSON.stringify({ 
+            type: "gossip_unsubscribed_location", 
+            locationId: message.locationId 
+          }));
+        }
+
+        if (message.type === "gossip_subscribe_device" && message.deviceHash) {
+          subscribeToGossipDevice(message.deviceHash, ws);
+          ws.send(JSON.stringify({ 
+            type: "gossip_subscribed_device", 
+            deviceHash: message.deviceHash 
+          }));
+        }
+
+        if (message.type === "gossip_unsubscribe_device" && message.deviceHash) {
+          unsubscribeFromGossipDevice(message.deviceHash, ws);
+          ws.send(JSON.stringify({ 
+            type: "gossip_unsubscribed_device", 
+            deviceHash: message.deviceHash 
           }));
         }
 

@@ -25,6 +25,7 @@ interface GossipCardProps {
   onReport: (postId: string) => void;
   onViewReplies?: (postId: string) => void;
   onDM?: (postId: string) => void;
+  onShare?: (postId: string) => void;
   myReactions?: string[];
   index?: number;
 }
@@ -101,6 +102,7 @@ export function GossipCard({
   onReport,
   onViewReplies,
   onDM,
+  onShare,
   myReactions = [],
   index = 0,
 }: GossipCardProps) {
@@ -254,6 +256,21 @@ export function GossipCard({
               <Feather name="send" size={14} color={theme.textSecondary} />
               <ThemedText style={[styles.actionText, { color: theme.textSecondary }]}>
                 DM
+              </ThemedText>
+            </Pressable>
+          ) : null}
+
+          {onShare ? (
+            <Pressable
+              style={styles.actionButton}
+              onPress={() => {
+                Haptics.selectionAsync();
+                onShare(post.id);
+              }}
+            >
+              <Feather name="share-2" size={14} color={theme.textSecondary} />
+              <ThemedText style={[styles.actionText, { color: theme.textSecondary }]}>
+                Share
               </ThemedText>
             </Pressable>
           ) : null}

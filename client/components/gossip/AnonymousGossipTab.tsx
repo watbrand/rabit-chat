@@ -23,6 +23,7 @@ import { GossipComposeModal } from "./GossipComposeModal";
 import { GossipRepliesModal } from "./GossipRepliesModal";
 import { LocationSelector } from "./LocationSelector";
 import { type AnonGossipPost, type ReactionType, type ZaLocation } from "./AnonGossipTypes";
+import { useGossipShare } from "@/hooks/useGossipShare";
 
 type FeedTab = "community" | "trending";
 
@@ -41,6 +42,7 @@ export function AnonymousGossipTab() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const navigation = useNavigation<any>();
+  const { sharePost } = useGossipShare();
   
   const [activeTab, setActiveTab] = useState<FeedTab>("community");
   const [selectedCountry, setSelectedCountry] = useState<string | null>("ZA");
@@ -193,6 +195,29 @@ export function AnonymousGossipTab() {
     );
   }, [startDMMutation]);
 
+  const handleShare = useCallback((postId: string) => {
+    const post = data?.posts.find((p: AnonGossipPost) => p.id === postId);
+    if (post) {
+      sharePost({
+        id: post.id,
+        content: post.content,
+        locationDisplay: post.locationDisplay || locationDisplayText,
+        teaMeter: post.teaMeter,
+        alias: post.alias,
+        aliasEmoji: post.aliasEmoji,
+        reactions: {
+          fire: post.fireCount,
+          mindblown: post.mindblownCount,
+          laugh: post.laughCount,
+          skull: post.skullCount,
+          eyes: post.eyesCount,
+        },
+        replyCount: post.replyCount,
+        createdAt: post.createdAt,
+      });
+    }
+  }, [data?.posts, sharePost, locationDisplayText]);
+
   const handleLocationSelect = useCallback((country: string | null, location: ZaLocation | null, displayText: string) => {
     setSelectedCountry(country);
     setSelectedLocation(location);
@@ -226,9 +251,10 @@ export function AnonymousGossipTab() {
       onReport={handleReport}
       onViewReplies={handleReply}
       onDM={handleDM}
+      onShare={handleShare}
       myReactions={getMyReactions(item.id)}
     />
-  ), [handleReact, handleReply, handleReport, handleDM, getMyReactions]);
+  ), [handleReact, handleReply, handleReport, handleDM, handleShare, getMyReactions]);
 
   const renderEmptyState = useCallback(() => (
     <View style={styles.emptyContainer}>

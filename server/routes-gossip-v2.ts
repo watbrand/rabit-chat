@@ -57,6 +57,111 @@ function hashDevice(identifier: string): string {
   return crypto.createHash("sha256").update(identifier + "rabitchat-gossip-salt").digest("hex");
 }
 
+// WebSocket connections for gossip real-time updates
+// Track clients by location for broadcasting new posts
+import WebSocket from "ws";
+
+// Map of locationId -> Set of WebSocket clients subscribed to that location
+const gossipLocationClients = new Map<string, Set<WebSocket>>();
+// Map of deviceHash -> Set of WebSocket clients for DM notifications
+const gossipDeviceClients = new Map<string, Set<WebSocket>>();
+
+export function subscribeToGossipLocation(locationId: string, ws: WebSocket) {
+  if (!gossipLocationClients.has(locationId)) {
+    gossipLocationClients.set(locationId, new Set());
+  }
+  gossipLocationClients.get(locationId)!.add(ws);
+}
+
+export function unsubscribeFromGossipLocation(locationId: string, ws: WebSocket) {
+  const clients = gossipLocationClients.get(locationId);
+  if (clients) {
+    clients.delete(ws);
+    if (clients.size === 0) {
+      gossipLocationClients.delete(locationId);
+    }
+  }
+}
+
+export function subscribeToGossipDevice(deviceHash: string, ws: WebSocket) {
+  if (!gossipDeviceClients.has(deviceHash)) {
+    gossipDeviceClients.set(deviceHash, new Set());
+  }
+  gossipDeviceClients.get(deviceHash)!.add(ws);
+}
+
+export function unsubscribeFromGossipDevice(deviceHash: string, ws: WebSocket) {
+  const clients = gossipDeviceClients.get(deviceHash);
+  if (clients) {
+    clients.delete(ws);
+    if (clients.size === 0) {
+      gossipDeviceClients.delete(deviceHash);
+    }
+  }
+}
+
+export function broadcastNewGossipPost(locationId: string, post: any) {
+  const clients = gossipLocationClients.get(locationId);
+  if (clients && clients.size > 0) {
+    const message = JSON.stringify({
+      type: "GOSSIP_NEW_POST",
+      data: { post, locationId }
+    });
+    clients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    });
+  }
+}
+
+export function broadcastGossipReaction(locationId: string, postId: string, reactionType: string, count: number) {
+  const clients = gossipLocationClients.get(locationId);
+  if (clients && clients.size > 0) {
+    const message = JSON.stringify({
+      type: "GOSSIP_REACTION_UPDATE",
+      data: { postId, reactionType, count, locationId }
+    });
+    clients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    });
+  }
+}
+
+export function broadcastGossipDM(deviceHash: string, conversationId: string, messagePreview: string) {
+  const clients = gossipDeviceClients.get(deviceHash);
+  if (clients && clients.size > 0) {
+    const message = JSON.stringify({
+      type: "GOSSIP_NEW_DM",
+      data: { conversationId, messagePreview }
+    });
+    clients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    });
+  }
+}
+
+export function getGossipConnectionStats() {
+  let totalLocationClients = 0;
+  gossipLocationClients.forEach((clients) => {
+    totalLocationClients += clients.size;
+  });
+  let totalDeviceClients = 0;
+  gossipDeviceClients.forEach((clients) => {
+    totalDeviceClients += clients.size;
+  });
+  return {
+    locations: gossipLocationClients.size,
+    locationConnections: totalLocationClients,
+    devices: gossipDeviceClients.size,
+    deviceConnections: totalDeviceClients
+  };
+}
+
 router.get("/locations", async (_req: Request, res: Response) => {
   try {
     const country = await db
@@ -528,29 +633,32 @@ router.post("/posts", async (req: Request, res: Response) => {
         .where(eq(teaSpillerStats.deviceHash, hashedDevice));
     }
 
-    return res.status(201).json({ 
-      post: {
-        ...post,
-        alias: alias.name,
-        aliasEmoji: alias.emoji,
-        reactions: { fire: 0, mindblown: 0, laugh: 0, skull: 0, eyes: 0 },
-        replyCount: 0,
-        repostCount: 0,
-        saveCount: 0,
-        viewCount: 0,
-        isReacted: false,
-        isReposted: false,
-        isSaved: false,
-        isFollowing: false,
-        poll: pollQuestion ? {
-          question: pollQuestion,
-          options: pollOptions,
-          votes: pollOptions?.map(() => 0),
-          totalVotes: 0,
-          hasVoted: false,
-        } : null,
-      },
-    });
+    const responsePost = {
+      ...post,
+      alias: alias.name,
+      aliasEmoji: alias.emoji,
+      reactions: { fire: 0, mindblown: 0, laugh: 0, skull: 0, eyes: 0 },
+      replyCount: 0,
+      repostCount: 0,
+      saveCount: 0,
+      viewCount: 0,
+      isReacted: false,
+      isReposted: false,
+      isSaved: false,
+      isFollowing: false,
+      poll: pollQuestion ? {
+        question: pollQuestion,
+        options: pollOptions,
+        votes: pollOptions?.map(() => 0),
+        totalVotes: 0,
+        hasVoted: false,
+      } : null,
+    };
+
+    // Broadcast new post to all subscribers of this location
+    broadcastNewGossipPost(locationId, responsePost);
+
+    return res.status(201).json({ post: responsePost });
   } catch (error) {
     console.error("Error creating post:", error);
     return res.status(500).json({ error: "Failed to create post" });
@@ -2144,6 +2252,13 @@ router.post("/dm/conversations/:conversationId/messages", async (req: Request, r
       .update(gossipDMConversations)
       .set({ lastMessageAt: new Date() })
       .where(eq(gossipDMConversations.id, conversationId));
+
+    // Notify the other participant about the new DM
+    const otherParticipantHash = conv[0].participant1Hash === hashedDevice 
+      ? conv[0].participant2Hash 
+      : conv[0].participant1Hash;
+    const messagePreview = content.substring(0, 50) + (content.length > 50 ? "..." : "");
+    broadcastGossipDM(otherParticipantHash, conversationId, messagePreview);
 
     return res.status(201).json({
       success: true,
