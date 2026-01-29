@@ -1,10 +1,11 @@
 import React from "react";
-import { View, FlatList, StyleSheet, Pressable, ActivityIndicator } from "react-native";
+import { View, FlatList, StyleSheet, Pressable } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import { LoadingIndicator } from "@/components/animations";
 
 interface LeaderboardEntry {
   rank: number;
@@ -137,7 +138,7 @@ export function GossipLeaderboard({ onClose }: GossipLeaderboardProps) {
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

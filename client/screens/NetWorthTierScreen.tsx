@@ -4,7 +4,6 @@ import {
   StyleSheet,
   Dimensions,
   Pressable,
-  ActivityIndicator,
   Alert,
   ScrollView,
 } from "react-native";
@@ -27,6 +26,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
@@ -322,7 +322,7 @@ export default function NetWorthTierScreen() {
             end={{ x: 1, y: 0 }}
           >
             {selectMutation.isPending ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+              <LoadingIndicator size="small" />
             ) : (
               <ThemedText style={styles.continueText}>Continue</ThemedText>
             )}

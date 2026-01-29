@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator, Dimensions, Image } from "react-native";
+import { View, StyleSheet, Pressable, Dimensions, Image } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEvent } from "expo";
 import { Feather } from "@expo/vector-icons";

@@ -4,12 +4,12 @@ import {
   StyleSheet,
   FlatList,
   Pressable,
-  ActivityIndicator,
   Alert,
   Dimensions,
   ScrollView,
   Platform,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
@@ -630,7 +630,7 @@ export default function UserProfileScreen() {
 
   const renderEmptyState = () => {
     if (postsLoading) {
-      return <ActivityIndicator color={theme.primary} style={{ marginTop: Spacing.xl }} />;
+      return <LoadingIndicator size="medium" style={{ marginTop: Spacing.xl }} />;
     }
     
     const emptyMessages: Record<ContentTab, { icon: string; text: string }> = {
@@ -839,10 +839,7 @@ export default function UserProfileScreen() {
                   testID="button-follow"
                 >
                   {followMutation.isPending ? (
-                    <ActivityIndicator
-                      size="small"
-                      color={user?.isFollowing ? theme.primary : "#FFFFFF"}
-                    />
+                    <LoadingIndicator size="small" />
                   ) : (
                     <>
                       <Feather 
@@ -1059,7 +1056,7 @@ export default function UserProfileScreen() {
   if (userLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

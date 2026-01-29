@@ -5,9 +5,9 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  ActivityIndicator,
   Platform,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation } from "@react-navigation/native";
@@ -116,7 +116,7 @@ export default function SearchScreen() {
     if (isLoading) {
       return (
         <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
         </View>
       );
     }

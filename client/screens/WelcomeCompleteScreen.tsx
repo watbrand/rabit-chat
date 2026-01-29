@@ -5,8 +5,8 @@ import {
   Dimensions,
   Pressable,
   Platform,
-  ActivityIndicator,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
@@ -330,7 +330,7 @@ export default function WelcomeCompleteScreen() {
               end={{ x: 1, y: 0 }}
             >
               {isEntering ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <LoadingIndicator size="small" />
               ) : (
                 <>
                   <ThemedText style={styles.enterText}>Enter RabitChat</ThemedText>

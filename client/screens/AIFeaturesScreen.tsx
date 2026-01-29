@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   Alert,
   TextInput,
   Platform,
@@ -21,6 +20,7 @@ import { Image } from "expo-image";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography, Fonts } from "@/constants/theme";
@@ -202,7 +202,7 @@ export function AIFeaturesScreen() {
             disabled={generateAvatarMutation.isPending}
           >
             {generateAvatarMutation.isPending ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <LoadingIndicator size="small" />
             ) : (
               <>
                 <Feather name="cpu" size={18} color="#FFFFFF" />
@@ -219,7 +219,7 @@ export function AIFeaturesScreen() {
         </ThemedText>
 
         {loadingAvatars ? (
-          <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+          <LoadingIndicator size="large" />
         ) : avatars && avatars.length > 0 ? (
           <View style={styles.avatarsGrid}>
             {avatars.map((avatar) => (
@@ -315,7 +315,7 @@ export function AIFeaturesScreen() {
             disabled={translateMutation.isPending || !textToTranslate.trim()}
           >
             {translateMutation.isPending ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <LoadingIndicator size="small" />
             ) : (
               <>
                 <Feather name="globe" size={18} color="#FFFFFF" />
@@ -343,7 +343,7 @@ export function AIFeaturesScreen() {
         </ThemedText>
 
         {loadingTranslations ? (
-          <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+          <LoadingIndicator size="large" />
         ) : translations && translations.length > 0 ? (
           translations.slice(0, 5).map((t) => (
             <Card key={t.id} style={styles.translationCard}>

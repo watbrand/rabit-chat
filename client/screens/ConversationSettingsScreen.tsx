@@ -7,7 +7,6 @@ import {
   Switch,
   TextInput,
   Alert,
-  ActivityIndicator,
   FlatList,
   Dimensions,
   Platform,
@@ -23,6 +22,7 @@ import { Image } from "expo-image";
 
 import { Avatar } from "@/components/Avatar";
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import BottomSheet, { BottomSheetRef } from "@/components/BottomSheet";
 import { ReportModal } from "@/components/ReportModal";
 import { useTheme } from "@/hooks/useTheme";
@@ -372,7 +372,7 @@ export default function ConversationSettingsScreen() {
   if (settingsLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

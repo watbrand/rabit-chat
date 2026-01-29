@@ -6,10 +6,10 @@ import {
   ScrollView,
   Dimensions,
   Platform,
-  ActivityIndicator,
   Alert,
   Modal,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import { Feather } from "@expo/vector-icons";
@@ -195,7 +195,7 @@ function DocumentModal({ visible, onClose, document, isLoading }: DocumentModalP
 
         {isLoading ? (
           <View style={styles.modalLoading}>
-            <ActivityIndicator size="large" color={theme.primary} />
+            <LoadingIndicator size="large" />
             <ThemedText style={[styles.modalLoadingText, { color: theme.textSecondary }]}>
               Loading document...
             </ThemedText>
@@ -371,7 +371,7 @@ export function LegalAgreementScreen() {
       <View style={styles.container}>
         <GradientBackground />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
           <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
             Loading legal documents...
           </ThemedText>
@@ -562,7 +562,7 @@ export function LegalAgreementScreen() {
           testID="continue-button"
         >
           {isSubmitting || acceptMutation.isPending ? (
-            <ActivityIndicator size="small" color="white" />
+            <LoadingIndicator size="small" />
           ) : (
             <>
               <ThemedText

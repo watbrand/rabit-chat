@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   Dimensions,
   Platform,
   StatusBar,
@@ -29,6 +28,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
 import { ThemedText } from "@/components/ThemedText";
 import { GlassButton } from "@/components/GlassButton";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { Colors, Spacing, BorderRadius, Gradients } from "@/constants/theme";
 
@@ -322,7 +322,7 @@ export default function CameraScreen() {
   if (!permission) {
     return (
       <View style={[styles.container, { backgroundColor: "#000" }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

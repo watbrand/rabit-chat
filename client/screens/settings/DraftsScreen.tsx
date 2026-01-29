@@ -1,5 +1,6 @@
 import React from "react";
-import { View, StyleSheet, FlatList, Pressable, ActivityIndicator, Alert, Platform } from "react-native";
+import { View, StyleSheet, FlatList, Pressable, Alert, Platform } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -133,9 +134,7 @@ export default function DraftsScreen() {
 
   if (isLoading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
+      <LoadingIndicator fullScreen />
     );
   }
 

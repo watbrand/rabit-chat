@@ -4,7 +4,6 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  ActivityIndicator,
   Alert,
   Platform,
   Modal,
@@ -31,6 +30,7 @@ import { GradientBackground } from "@/components/GradientBackground";
 import { ThemedText } from "@/components/ThemedText";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { LocationPicker } from "@/components/LocationPicker";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
@@ -494,7 +494,7 @@ export default function BusinessSignupScreen() {
 
     if (isCheckingUsername) {
       return (
-        <ActivityIndicator size="small" color={theme.textSecondary} />
+        <LoadingIndicator size="small" />
       );
     }
 
@@ -1019,7 +1019,7 @@ export default function BusinessSignupScreen() {
                 style={styles.submitGradient}
               >
                 {isLoading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <LoadingIndicator size="small" />
                 ) : (
                   <>
                     <ThemedText style={styles.submitText}>

@@ -5,10 +5,10 @@ import {
   FlatList,
   Pressable,
   Image,
-  ActivityIndicator,
   ViewToken,
   useWindowDimensions,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -256,7 +256,7 @@ export function SwipeViewer({
     if (isLoading) {
       return (
         <View style={[styles.emptyContainer, { height }]}>
-          <ActivityIndicator color={theme.primary} size="large" />
+          <LoadingIndicator size="large" />
         </View>
       );
     }

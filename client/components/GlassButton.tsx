@@ -1,5 +1,6 @@
 import React from "react";
-import { StyleSheet, Pressable, ActivityIndicator, Platform, View, ViewStyle, TextStyle } from "react-native";
+import { StyleSheet, Pressable, Platform, View, ViewStyle, TextStyle } from "react-native";
+import { InlineLoader } from "@/components/animations";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   useAnimatedStyle,
@@ -192,10 +193,7 @@ export function GlassButton({
   const content = (
     <>
       {loading ? (
-        <ActivityIndicator
-          size="small"
-          color={variantStyles.iconColor}
-        />
+        <InlineLoader size={20} />
       ) : (
         <>
           {icon && iconPosition === "left" ? (

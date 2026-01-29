@@ -5,13 +5,13 @@ import {
   StyleSheet,
   FlatList,
   Pressable,
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   Alert,
   Platform,
   TextInput,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/hooks/useTheme";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -373,7 +373,7 @@ export default function WalletScreen({ navigation }: any) {
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -472,7 +472,7 @@ export default function WalletScreen({ navigation }: any) {
                 {purchase.coinsReceived.toLocaleString()} coins - R{purchase.amountPaidRands}
               </Text>
               {recoverPurchaseMutation.isPending ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <LoadingIndicator size="small" />
               ) : (
                 <Feather name="refresh-cw" size={16} color="#fff" />
               )}
@@ -546,7 +546,7 @@ export default function WalletScreen({ navigation }: any) {
           </View>
           <View style={styles.dailyRewardRight}>
             {claimDailyRewardMutation.isPending ? (
-              <ActivityIndicator size="small" color={dailyReward.canClaim ? "#333" : theme.primary} />
+              <LoadingIndicator size="small" />
             ) : (
               <>
                 <Text
@@ -834,7 +834,7 @@ export default function WalletScreen({ navigation }: any) {
               disabled={!customCoinAmount || parseInt(customCoinAmount, 10) < 10 || customPurchaseMutation.isPending}
             >
               {customPurchaseMutation.isPending ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <LoadingIndicator size="small" />
               ) : (
                 <Text style={[styles.customAmountButtonText, { color: customCoinAmount && parseInt(customCoinAmount, 10) >= 10 ? "#fff" : theme.textSecondary }]}>
                   {parseInt(customCoinAmount || "0", 10) < 10 ? "Minimum 10 coins" : `Buy ${parseInt(customCoinAmount || "0", 10).toLocaleString()} Coins`}

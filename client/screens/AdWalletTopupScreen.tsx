@@ -5,7 +5,6 @@ import {
   ScrollView,
   Pressable,
   Alert,
-  ActivityIndicator,
   TextInput,
   Platform,
 } from "react-native";
@@ -21,6 +20,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { useTheme } from "@/hooks/useTheme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
+import { LoadingIndicator } from "@/components/animations";
 
 const TOPUP_OPTIONS = [
   { amount: 100, label: "R100" },
@@ -236,7 +236,7 @@ export default function AdWalletTopupScreen() {
               disabled={redeemPromoMutation.isPending}
             >
               {redeemPromoMutation.isPending ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <LoadingIndicator size="small" />
               ) : (
                 <ThemedText weight="semiBold" style={{ color: "#FFFFFF" }}>
                   Redeem
@@ -279,7 +279,7 @@ export default function AdWalletTopupScreen() {
             style={styles.payButtonGradient}
           >
             {topupMutation.isPending ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <LoadingIndicator size="small" />
             ) : (
               <>
                 <Feather name="credit-card" size={20} color="#FFFFFF" />

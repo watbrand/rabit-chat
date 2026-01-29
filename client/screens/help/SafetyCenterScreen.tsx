@@ -5,10 +5,10 @@ import {
   Pressable,
   Platform,
   Linking,
-  ActivityIndicator,
   RefreshControl,
   Dimensions,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation } from "@react-navigation/native";
@@ -316,7 +316,7 @@ export default function SafetyCenterScreen() {
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={EMERGENCY_RED} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

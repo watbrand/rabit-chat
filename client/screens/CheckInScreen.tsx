@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   Alert,
   TextInput,
   RefreshControl,
@@ -22,6 +21,7 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { Avatar } from "@/components/Avatar";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography, Fonts } from "@/constants/theme";
@@ -231,7 +231,7 @@ export function CheckInScreen() {
           disabled={isGettingLocation}
         >
           {isGettingLocation ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <LoadingIndicator size="small" />
           ) : (
             <ThemedText style={styles.enableButtonText}>Enable Location</ThemedText>
           )}
@@ -292,7 +292,7 @@ export function CheckInScreen() {
           disabled={!currentLocation || checkInMutation.isPending}
         >
           {checkInMutation.isPending ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <LoadingIndicator size="small" />
           ) : (
             <>
               <Feather name="check" size={20} color="#FFFFFF" />
@@ -312,7 +312,7 @@ export function CheckInScreen() {
     if (loadingNearby) {
       return (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
         </View>
       );
     }
@@ -362,7 +362,7 @@ export function CheckInScreen() {
     if (loadingCheckIns) {
       return (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
         </View>
       );
     }

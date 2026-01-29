@@ -5,7 +5,6 @@ import {
   ScrollView,
   FlatList,
   Pressable,
-  ActivityIndicator,
   RefreshControl,
   Platform,
   Modal,
@@ -34,6 +33,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
+import { LoadingIndicator } from "@/components/animations";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -379,7 +379,7 @@ export default function BattlesScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -562,7 +562,7 @@ export default function BattlesScreen() {
                 end={{ x: 1, y: 0 }}
               >
                 {createMutation.isPending ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <LoadingIndicator size="small" />
                 ) : (
                   <ThemedText style={styles.confirmText}>Create Battle</ThemedText>
                 )}

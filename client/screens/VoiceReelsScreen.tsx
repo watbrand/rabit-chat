@@ -5,7 +5,6 @@ import {
   Dimensions,
   FlatList,
   Pressable,
-  ActivityIndicator,
   Platform,
   ViewToken,
 } from "react-native";
@@ -34,6 +33,7 @@ import * as Haptics from "expo-haptics";
 import { Avatar } from "@/components/Avatar";
 import { VideoOverlayActions, VideoOverlayInfo } from "@/components/VideoOverlayActions";
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Spacing, Gradients } from "@/constants/theme";
@@ -502,7 +502,7 @@ export default function VoiceReelsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: "#0f0f23" }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

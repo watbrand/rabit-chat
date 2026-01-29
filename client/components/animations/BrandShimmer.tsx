@@ -176,13 +176,10 @@ export function SkeletonText({ lines = 3, width, style }: SkeletonTextProps) {
         return (
           <BrandShimmer
             key={index}
-            width={typeof lineWidth === "number" ? lineWidth : undefined}
+            width={lineWidth as number | string}
             height={14}
             delay={index * 100}
-            style={[
-              index > 0 && styles.mt8,
-              typeof lineWidth === "string" && { width: lineWidth as any },
-            ]}
+            style={index > 0 ? styles.mt8 : undefined}
           />
         );
       })}

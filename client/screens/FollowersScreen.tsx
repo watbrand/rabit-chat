@@ -4,7 +4,6 @@ import {
   StyleSheet,
   FlatList,
   Pressable,
-  ActivityIndicator,
   RefreshControl,
   Platform,
 } from "react-native";
@@ -17,6 +16,7 @@ import * as Haptics from "expo-haptics";
 
 import { Avatar } from "@/components/Avatar";
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -122,7 +122,7 @@ export default function FollowersScreen() {
     if (isLoading) {
       return (
         <View style={styles.emptyContainer}>
-          <ActivityIndicator color={theme.primary} size="large" />
+          <LoadingIndicator size="large" />
         </View>
       );
     }

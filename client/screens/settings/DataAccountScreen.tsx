@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, StyleSheet, TextInput, Pressable, ActivityIndicator, Alert, Platform } from "react-native";
+import { View, StyleSheet, TextInput, Pressable, Alert, Platform } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useMutation } from "@tanstack/react-query";
@@ -146,7 +147,7 @@ export default function DataAccountScreen() {
             </View>
           </View>
           {exportMutation.isPending ? (
-            <ActivityIndicator size="small" color={theme.primary} />
+            <LoadingIndicator size="small" />
           ) : (
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           )}
@@ -175,7 +176,7 @@ export default function DataAccountScreen() {
             </View>
           </View>
           {deactivateMutation.isPending ? (
-            <ActivityIndicator size="small" color="#F59E0B" />
+            <LoadingIndicator size="small" />
           ) : (
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           )}
@@ -232,7 +233,7 @@ export default function DataAccountScreen() {
             disabled={deleteMutation.isPending}
           >
             {deleteMutation.isPending ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <LoadingIndicator size="small" />
             ) : (
               <>
                 <Feather name="trash-2" size={18} color="#FFFFFF" />

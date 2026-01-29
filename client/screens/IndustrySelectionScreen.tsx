@@ -4,10 +4,10 @@ import {
   StyleSheet,
   Dimensions,
   Pressable,
-  ActivityIndicator,
   Alert,
   ScrollView,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
@@ -283,7 +283,7 @@ export default function IndustrySelectionScreen() {
             style={styles.continueGradient}
           >
             {industryMutation.isPending ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <LoadingIndicator size="small" />
             ) : (
               <ThemedText style={styles.continueText}>Continue</ThemedText>
             )}

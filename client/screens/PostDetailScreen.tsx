@@ -5,7 +5,6 @@ import {
   FlatList,
   TextInput,
   Pressable,
-  ActivityIndicator,
   Alert,
   Platform,
 } from "react-native";
@@ -20,6 +19,7 @@ import * as Haptics from "expo-haptics";
 
 import { PostCard } from "@/components/PostCard";
 import { ReportModal } from "@/components/ReportModal";
+import { LoadingIndicator } from "@/components/animations";
 import { CommentCard } from "@/components/CommentCard";
 import { ThemedText } from "@/components/ThemedText";
 import { MentionInput } from "@/components/MentionInput";
@@ -162,7 +162,7 @@ export default function PostDetailScreen() {
   if (postLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -187,7 +187,7 @@ export default function PostDetailScreen() {
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={
           commentsLoading ? (
-            <ActivityIndicator color={theme.primary} style={{ marginTop: Spacing.xl }} />
+            <LoadingIndicator size="medium" style={{ marginTop: Spacing.xl }} />
           ) : (
             <ThemedText style={[styles.noComments, { color: theme.textSecondary }]}>
               No comments yet. Be the first!
@@ -238,7 +238,7 @@ export default function PostDetailScreen() {
           testID="button-send-comment"
         >
           {commentMutation.isPending ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <LoadingIndicator size="small" />
           ) : (
             <Feather name="send" size={18} color="#FFFFFF" />
           )}

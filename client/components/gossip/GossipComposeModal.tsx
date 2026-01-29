@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { View, Pressable, StyleSheet, Modal, TextInput, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from "react-native";
+import { View, Pressable, StyleSheet, Modal, TextInput, KeyboardAvoidingView, Platform, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
 import { uploadFileWithDuration } from "@/lib/upload";
+import { LoadingIndicator } from "@/components/animations";
 
 interface PresetLocation {
   countryCode: string;
@@ -266,7 +267,7 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
                 </View>
               ) : isUploading ? (
                 <View style={styles.uploadingState}>
-                  <ActivityIndicator size="large" color={theme.primary} />
+                  <LoadingIndicator size="large" />
                   <ThemedText style={{ marginTop: Spacing.sm }}>Uploading...</ThemedText>
                 </View>
               ) : (

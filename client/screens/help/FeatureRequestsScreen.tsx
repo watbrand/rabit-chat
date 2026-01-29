@@ -6,11 +6,11 @@ import {
   Platform,
   FlatList,
   RefreshControl,
-  ActivityIndicator,
   TextInput,
   Alert,
   Modal,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -372,7 +372,7 @@ export default function FeatureRequestsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -431,7 +431,7 @@ export default function FeatureRequestsScreen() {
               disabled={createMutation.isPending}
             >
               {createMutation.isPending ? (
-                <ActivityIndicator size="small" color={theme.primary} />
+                <LoadingIndicator size="small" />
               ) : (
                 <ThemedText style={[styles.modalSubmit, { color: theme.primary }]}>
                   Submit

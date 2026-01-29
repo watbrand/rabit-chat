@@ -10,7 +10,6 @@ import {
   Platform,
   Keyboard,
   Alert,
-  ActivityIndicator,
   ScrollView,
   Text,
 } from "react-native";
@@ -38,6 +37,7 @@ import { BlurView } from "expo-blur";
 
 import { Avatar } from "@/components/Avatar";
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import { StickerRenderer } from "@/components/story/stickers";
 import MusicOverlay from "@/components/story/MusicOverlay";
 import SongDetailsModal from "@/components/story/SongDetailsModal";
@@ -922,7 +922,7 @@ export default function StoryViewerScreen() {
                 <View style={styles.panelContent}>
                   {viewersLoading ? (
                     <View style={styles.panelLoading}>
-                      <ActivityIndicator size="small" color="#8B5CF6" />
+                      <LoadingIndicator size="small" />
                     </View>
                   ) : viewers && viewers.length > 0 ? (
                     <ScrollView 
@@ -1013,7 +1013,7 @@ export default function StoryViewerScreen() {
                   testID="button-send-story-reply"
                 >
                   {replyMutation.isPending ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <LoadingIndicator size="small" />
                   ) : (
                     <Feather name="send" size={18} color="#FFFFFF" />
                   )}

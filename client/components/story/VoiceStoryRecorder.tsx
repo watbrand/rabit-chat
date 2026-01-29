@@ -5,7 +5,6 @@ import {
   Pressable, 
   Text, 
   SafeAreaView,
-  ActivityIndicator,
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
@@ -20,6 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
+import { LoadingIndicator } from '@/components/animations';
 
 interface Props {
   onSave: (audioUri: string, duration: number) => void;
@@ -258,7 +258,7 @@ export default function VoiceStoryRecorder({ onSave, onCancel, maxDuration = 600
   if (hasPermission === null) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator size="large" color={Colors.dark.primary} />
+        <LoadingIndicator size="large" />
       </SafeAreaView>
     );
   }

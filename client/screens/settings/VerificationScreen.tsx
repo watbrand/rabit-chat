@@ -3,11 +3,11 @@ import {
   View,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   Alert,
   TextInput,
   Platform,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -141,9 +141,7 @@ export default function VerificationScreen() {
 
   if (isLoading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
+      <LoadingIndicator fullScreen />
     );
   }
 
@@ -347,7 +345,7 @@ export default function VerificationScreen() {
                       disabled={submitMutation.isPending}
                     >
                       {submitMutation.isPending ? (
-                        <ActivityIndicator color="#FFFFFF" />
+                        <LoadingIndicator size="small" />
                       ) : (
                         <ThemedText style={styles.submitButtonText}>Submit Request</ThemedText>
                       )}

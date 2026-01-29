@@ -6,7 +6,6 @@ import {
   Dimensions,
   FlatList,
   Platform,
-  ActivityIndicator,
   Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,6 +17,7 @@ import { BlurView } from "expo-blur";
 import Animated, { FadeInUp, FadeInDown, FadeIn } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
@@ -248,7 +248,7 @@ export default function ContentPreviewScreen() {
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
           <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
             Loading elite members...
           </ThemedText>

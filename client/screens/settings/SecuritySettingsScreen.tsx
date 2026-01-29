@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, StyleSheet, TextInput, Pressable, ActivityIndicator, Alert, Platform } from "react-native";
+import { View, StyleSheet, TextInput, Pressable, Alert, Platform } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -278,7 +279,7 @@ export default function SecuritySettingsScreen() {
             disabled={changePasswordMutation.isPending}
           >
             {changePasswordMutation.isPending ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <LoadingIndicator size="small" />
             ) : (
               <ThemedText style={styles.primaryButtonText}>Change Password</ThemedText>
             )}
@@ -297,7 +298,7 @@ export default function SecuritySettingsScreen() {
           ]}
         >
           {sessionsLoading ? (
-            <ActivityIndicator size="small" color={theme.primary} />
+            <LoadingIndicator size="small" />
           ) : (
             <>
               <ThemedText style={styles.sessionCount}>
@@ -329,7 +330,7 @@ export default function SecuritySettingsScreen() {
                 disabled={revokeSessionsMutation.isPending}
               >
                 {revokeSessionsMutation.isPending ? (
-                  <ActivityIndicator size="small" color={theme.error} />
+                  <LoadingIndicator size="small" />
                 ) : (
                   <ThemedText style={[styles.revokeButtonText, { color: theme.error }]}>
                     Sign Out Other Sessions
@@ -352,7 +353,7 @@ export default function SecuritySettingsScreen() {
           ]}
         >
           {loginSessionsLoading ? (
-            <ActivityIndicator size="small" color={theme.primary} />
+            <LoadingIndicator size="small" />
           ) : loginSessions && loginSessions.length > 0 ? (
             <>
               <ThemedText style={styles.sessionCount}>
@@ -420,7 +421,7 @@ export default function SecuritySettingsScreen() {
                 disabled={logoutAllMutation.isPending}
               >
                 {logoutAllMutation.isPending ? (
-                  <ActivityIndicator size="small" color={theme.error} />
+                  <LoadingIndicator size="small" />
                 ) : (
                   <ThemedText style={[styles.revokeButtonText, { color: theme.error }]}>
                     Logout All Other Devices
@@ -447,7 +448,7 @@ export default function SecuritySettingsScreen() {
           ]}
         >
           {devicesLoading ? (
-            <ActivityIndicator size="small" color={theme.primary} />
+            <LoadingIndicator size="small" />
           ) : trustedDevices && trustedDevices.length > 0 ? (
             <>
               <ThemedText style={styles.sessionCount}>

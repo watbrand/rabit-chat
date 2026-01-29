@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   RefreshControl,
   Modal,
   TextInput,
@@ -30,6 +29,7 @@ import { GlassButton } from "@/components/GlassButton";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
+import { LoadingIndicator, InlineLoader } from "@/components/animations";
 
 interface StakingTier {
   days: number;
@@ -339,7 +339,7 @@ export default function StakingScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -488,7 +488,7 @@ export default function StakingScreen() {
                     end={{ x: 1, y: 0 }}
                   >
                     {stakeMutation.isPending ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
+                      <InlineLoader size={20} />
                     ) : (
                       <ThemedText style={styles.confirmText}>Confirm Stake</ThemedText>
                     )}

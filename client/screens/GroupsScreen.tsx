@@ -7,10 +7,10 @@ import {
   Pressable,
   TextInput,
   Image,
-  ActivityIndicator,
   RefreshControl,
   Modal,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/hooks/useTheme";
@@ -143,7 +143,7 @@ export default function GroupsScreen({ navigation }: any) {
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
         </View>
       ) : (
         <FlatList

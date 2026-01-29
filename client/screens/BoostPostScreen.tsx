@@ -5,7 +5,6 @@ import {
   ScrollView,
   Pressable,
   Alert,
-  ActivityIndicator,
   Image,
   TextInput,
   Platform,
@@ -24,6 +23,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/query-client";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
+import { LoadingIndicator } from "@/components/animations";
 
 type BoostPostRouteParams = {
   BoostPost: {
@@ -265,7 +265,7 @@ export default function BoostPostScreen() {
     return (
       <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
           <ThemedText style={styles.loadingText}>Setting up your advertiser account...</ThemedText>
         </View>
       </ThemedView>
@@ -645,7 +645,7 @@ export default function BoostPostScreen() {
             style={styles.boostButtonGradient}
           >
             {boostPostMutation.isPending ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <LoadingIndicator size="small" />
             ) : (
               <>
                 <Feather name="zap" size={20} color="#FFFFFF" />

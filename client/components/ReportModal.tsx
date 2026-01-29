@@ -5,9 +5,9 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  ActivityIndicator,
   Alert,
 } from "react-native";
+import { InlineLoader } from "@/components/animations";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation } from "@tanstack/react-query";
@@ -207,7 +207,7 @@ export function ReportModal({
                   testID="button-submit-report"
                 >
                   {isLoading ? (
-                    <ActivityIndicator size="small" color={theme.buttonText} />
+                    <InlineLoader size={20} />
                   ) : (
                     <ThemedText style={styles.submitButtonText}>
                       Submit Report

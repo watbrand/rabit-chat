@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   FlatList,
-  ActivityIndicator,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { PostCard } from "@/components/PostCard";
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Spacing } from "@/constants/theme";
@@ -52,7 +52,7 @@ export default function SavedPostsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

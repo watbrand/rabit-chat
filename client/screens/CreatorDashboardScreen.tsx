@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   RefreshControl,
   Platform,
   Modal,
@@ -24,6 +23,7 @@ import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
+import { LoadingIndicator } from "@/components/animations";
 
 interface CreatorEarnings {
   totalEarningsCoins: number;
@@ -254,7 +254,7 @@ export default function CreatorDashboardScreen({ navigation }: any) {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -512,7 +512,7 @@ export default function CreatorDashboardScreen({ navigation }: any) {
                 end={{ x: 1, y: 0 }}
               >
                 {withdrawMutation.isPending ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <LoadingIndicator size="small" />
                 ) : (
                   <ThemedText style={styles.confirmText}>Confirm Withdrawal</ThemedText>
                 )}

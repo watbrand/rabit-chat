@@ -7,7 +7,6 @@ import {
   Linking,
   Share,
   Alert,
-  ActivityIndicator,
   Platform,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";

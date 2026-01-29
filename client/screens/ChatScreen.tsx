@@ -5,11 +5,11 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  ActivityIndicator,
   Platform,
   Alert,
   Dimensions,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -671,7 +671,7 @@ export default function ChatScreen() {
     >
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
         </View>
       ) : (
         <FlatList
@@ -802,7 +802,7 @@ export default function ChatScreen() {
                   testID="button-send-message"
                 >
                   {sendMutation.isPending ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <LoadingIndicator size="small" />
                   ) : (
                     <Feather name="send" size={20} color="#FFFFFF" />
                   )}

@@ -4,11 +4,11 @@ import {
   StyleSheet,
   Dimensions,
   Pressable,
-  ActivityIndicator,
   Alert,
   ScrollView,
   Platform,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -355,7 +355,7 @@ export default function SuggestedUsersScreen() {
           colors={isDark ? ["#1a1a2e", "#16213e", "#0f0f1a"] : ["#F8F5FF", "#EEE8FF", "#E8E0FF"]}
           style={StyleSheet.absoluteFill}
         />
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
         <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
           Loading Elite Network...
         </ThemedText>
@@ -458,7 +458,7 @@ export default function SuggestedUsersScreen() {
               testID="continue-button"
             >
               {completeMutation.isPending ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <LoadingIndicator size="small" />
               ) : (
                 <>
                   <ThemedText style={styles.continueText}>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Pressable, StyleSheet, Modal, FlatList, TextInput, ActivityIndicator } from "react-native";
+import { View, Pressable, StyleSheet, Modal, FlatList, TextInput } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
@@ -7,6 +7,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { type Country, type ZaLocation, getCountryFlag } from "./AnonGossipTypes";
+import { LoadingIndicator } from "@/components/animations";
 
 interface LocationSelectorProps {
   selectedCountry: string | null;
@@ -159,7 +160,7 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
             ) : null}
 
             {loadingLocations ? (
-              <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+              <LoadingIndicator size="large" style={styles.loader} />
             ) : null}
 
             {step === "country" ? (

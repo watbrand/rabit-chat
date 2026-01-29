@@ -4,10 +4,10 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  ActivityIndicator,
   Alert,
   Platform,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
@@ -327,7 +327,7 @@ export default function VerifyOTPScreen() {
               disabled={!isComplete || isVerifying}
             >
               {isVerifying ? (
-                <ActivityIndicator size="small" color="white" />
+                <LoadingIndicator size="small" />
               ) : (
                 <>
                   <ThemedText
@@ -363,7 +363,7 @@ export default function VerifyOTPScreen() {
             style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
           >
             {isResending ? (
-              <ActivityIndicator size="small" color={theme.primary} />
+              <LoadingIndicator size="small" />
             ) : (
               <ThemedText
                 style={[

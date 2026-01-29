@@ -4,7 +4,6 @@ import {
   FlatList,
   StyleSheet,
   Image,
-  ActivityIndicator,
   Pressable,
   Dimensions,
   Platform,
@@ -16,6 +15,7 @@ import {
   KeyboardAvoidingView,
   RefreshControl,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -310,7 +310,7 @@ function ExploreVideoCard({
       />
       {!isReady ? (
         <View style={styles.videoLoadingOverlay}>
-          <ActivityIndicator size="small" color="#FFFFFF" />
+          <LoadingIndicator size="small" />
         </View>
       ) : null}
       <View style={styles.exploreOverlay}>
@@ -907,7 +907,7 @@ function ReelsTab() {
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: "#000" }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -1261,7 +1261,7 @@ function TrendsTab() {
   if (isLoading && peopleLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -1554,7 +1554,7 @@ function DiscoverPeopleTab() {
   if (isLoading) {
     return (
       <View style={[styles.tabContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 50 }} />
+        <LoadingIndicator size="large" style={{ marginTop: 50 }} />
       </View>
     );
   }
@@ -2060,7 +2060,7 @@ function GossipTab() {
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -2259,7 +2259,7 @@ function GossipTab() {
                     <View style={styles.recordingPreviewContainer}>
                       {isUploadingAudio ? (
                         <View style={styles.uploadingContainer}>
-                          <ActivityIndicator size="small" color={theme.primary} />
+                          <LoadingIndicator size="small" />
                           <ThemedText style={[styles.uploadingText, { color: theme.textSecondary }]}>
                             Uploading... {Math.round(uploadProgress * 100)}%
                           </ThemedText>
@@ -2703,7 +2703,7 @@ function LiveTab() {
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

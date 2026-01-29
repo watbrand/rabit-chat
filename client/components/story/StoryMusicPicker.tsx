@@ -8,7 +8,6 @@ import {
   FlatList,
   SafeAreaView,
   Image,
-  ActivityIndicator,
 } from 'react-native';
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import * as Haptics from 'expo-haptics';
@@ -22,6 +21,7 @@ import Animated, {
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { useQuery } from '@tanstack/react-query';
+import { LoadingIndicator } from '@/components/animations';
 
 interface MusicTrack {
   id: number;
@@ -273,7 +273,7 @@ export default function StoryMusicPicker({ onSelect, onClose, maxClipDuration = 
       <View style={styles.trackListContainer}>
         <Text style={styles.sectionTitle}>Browse</Text>
         {isLoading ? (
-          <ActivityIndicator size="large" color={Colors.dark.primary} style={styles.loader} />
+          <LoadingIndicator size="large" style={styles.loader} />
         ) : (
           <FlatList
             data={tracks}

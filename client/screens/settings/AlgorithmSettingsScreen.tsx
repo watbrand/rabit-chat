@@ -4,11 +4,11 @@ import {
   StyleSheet,
   Pressable,
   Alert,
-  ActivityIndicator,
   FlatList,
   Platform,
   Switch,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -342,9 +342,7 @@ export default function AlgorithmSettingsScreen() {
 
   if (isLoadingInterests) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
+      <LoadingIndicator fullScreen />
     );
   }
 

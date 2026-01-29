@@ -6,7 +6,6 @@ import {
   Modal,
   TextInput,
   Pressable,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Alert,
@@ -22,6 +21,7 @@ import { apiRequest } from "@/lib/query-client";
 import { TeaMeter } from "./TeaMeter";
 import { ReactionButtons } from "./ReactionButtons";
 import { type AnonGossipPost, type ReactionType } from "./AnonGossipTypes";
+import { LoadingIndicator, InlineLoader } from "@/components/animations";
 
 interface Reply {
   id: string;
@@ -272,7 +272,7 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
 
           {isLoading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.primary} />
+              <LoadingIndicator size="large" />
             </View>
           ) : (
             <FlatList
@@ -329,7 +329,7 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
               disabled={replyText.trim().length < 2 || createReplyMutation.isPending}
             >
               {createReplyMutation.isPending ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <InlineLoader size={18} />
               ) : (
                 <Feather name="send" size={18} color="#FFFFFF" />
               )}

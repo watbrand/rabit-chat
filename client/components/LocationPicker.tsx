@@ -3,11 +3,11 @@ import {
   View,
   StyleSheet,
   Platform,
-  ActivityIndicator,
   ViewStyle,
   Modal,
   Pressable,
 } from "react-native";
+import { InlineLoader } from "@/components/animations";
 import { BlurView } from "expo-blur";
 import { Picker } from "@react-native-picker/picker";
 import { Feather } from "@expo/vector-icons";
@@ -341,7 +341,7 @@ export function LocationPicker({
           </ThemedText>
         ) : null}
         <View style={[styles.loadingContainer, { backgroundColor: isDark ? "rgba(26, 26, 36, 0.80)" : "rgba(255, 255, 255, 0.85)" }]}>
-          <ActivityIndicator size="small" color={theme.primary} />
+          <InlineLoader size={20} />
           <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
             Loading locations...
           </ThemedText>

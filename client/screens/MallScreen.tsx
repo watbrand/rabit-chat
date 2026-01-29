@@ -4,7 +4,6 @@ import {
   FlatList,
   StyleSheet,
   RefreshControl,
-  ActivityIndicator,
   Platform,
   Pressable,
   ScrollView,
@@ -12,6 +11,7 @@ import {
   Dimensions,
   Image,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -247,7 +247,7 @@ export default function MallScreen() {
         contentContainerStyle={styles.top50Scroll}
       >
         {top50Loading ? (
-          <ActivityIndicator size="small" color={theme.primary} />
+          <LoadingIndicator size="small" />
         ) : top50 && top50.length > 0 ? (
           top50.map((wealthyUser, index) => (
             <Pressable 
@@ -331,7 +331,7 @@ export default function MallScreen() {
           </ThemedText>
         </Pressable>
         {categoriesLoading ? (
-          <ActivityIndicator size="small" color={theme.primary} />
+          <LoadingIndicator size="small" />
         ) : categories && categories.length > 0 ? (
           categories.map((category) => (
             <Pressable

@@ -4,11 +4,11 @@ import {
   StyleSheet,
   Dimensions,
   Pressable,
-  ActivityIndicator,
   Alert,
   ScrollView,
   Platform,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -538,7 +538,7 @@ export default function CompleteProfileScreen() {
             style={styles.buttonGradient}
           >
             {completeProfileMutation.isPending ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <LoadingIndicator size="small" />
             ) : (
               <ThemedText style={styles.buttonText}>
                 {isLastStep ? "Complete Profile" : "Continue"}

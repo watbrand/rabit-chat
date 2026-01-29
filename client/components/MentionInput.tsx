@@ -7,8 +7,8 @@ import {
   StyleSheet,
   TextInputProps,
   Keyboard,
-  ActivityIndicator,
 } from "react-native";
+import { InlineLoader } from "@/components/animations";
 import { useQuery } from "@tanstack/react-query";
 
 import { Avatar } from "@/components/Avatar";
@@ -108,7 +108,7 @@ export function MentionInput({
         <View style={[styles.suggestionsContainer, { backgroundColor: theme.backgroundElevated, borderColor: theme.glassBorder }]}>
           {suggestionsLoading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={theme.primary} />
+              <InlineLoader size={20} />
             </View>
           ) : (
             <FlatList

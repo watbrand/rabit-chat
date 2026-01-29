@@ -5,9 +5,9 @@ import {
   Pressable,
   Platform,
   TextInput,
-  ActivityIndicator,
   Alert,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -430,7 +430,7 @@ export default function NewTicketScreen() {
           disabled={!canSubmit}
         >
           {isSubmitting ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <LoadingIndicator size="small" />
           ) : (
             <>
               <Feather name="send" size={18} color="#FFFFFF" />

@@ -4,7 +4,6 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  ActivityIndicator,
   Alert,
   Platform,
 } from "react-native";
@@ -22,6 +21,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
 import { Avatar } from "@/components/Avatar";
+import { LoadingIndicator, InlineLoader } from "@/components/animations";
 
 export default function GoLiveScreen() {
   const insets = useSafeAreaInsets();
@@ -136,7 +136,7 @@ export default function GoLiveScreen() {
   if (!permission) {
     return (
       <View style={[styles.container, { backgroundColor: "#000" }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -256,7 +256,7 @@ export default function GoLiveScreen() {
                 testID="button-start-live"
               >
                 {createStreamMutation.isPending || startStreamMutation.isPending ? (
-                  <ActivityIndicator size="small" color="#FFF" />
+                  <InlineLoader size={20} />
                 ) : (
                   <>
                     <Feather name="radio" size={24} color="#FFF" />
@@ -274,7 +274,7 @@ export default function GoLiveScreen() {
                 testID="button-end-stream"
               >
                 {endStreamMutation.isPending ? (
-                  <ActivityIndicator size="small" color="#FFF" />
+                  <InlineLoader size={20} />
                 ) : (
                   <>
                     <Feather name="square" size={20} color="#FFF" />

@@ -7,13 +7,13 @@ import {
   SafeAreaView,
   ScrollView,
   Switch,
-  ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
+import { InlineLoader } from '@/components/animations';
 
 interface StoryData {
   type: 'TEXT' | 'PHOTO' | 'VIDEO' | 'VOICE';
@@ -231,7 +231,7 @@ export default function StoryPreviewScreen({ storyData, onPublish, onSaveDraft, 
           disabled={publishing}
         >
           {publishing ? (
-            <ActivityIndicator color="#fff" />
+            <InlineLoader size={20} />
           ) : (
             <>
               <Feather name="send" size={20} color="#fff" />

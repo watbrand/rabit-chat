@@ -4,11 +4,11 @@ import {
   StyleSheet,
   Modal,
   Pressable,
-  ActivityIndicator,
   Alert,
   Platform,
   Dimensions,
 } from "react-native";
+import { InlineLoader } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Feather } from "@expo/vector-icons";
@@ -183,7 +183,7 @@ export function ImageViewerModal({
               hitSlop={12}
             >
               {isSaving ? (
-                <ActivityIndicator size="small" color="#FFF" />
+                <InlineLoader size={20} />
               ) : (
                 <Feather name="download" size={20} color="#FFF" />
               )}
@@ -208,7 +208,7 @@ export function ImageViewerModal({
                 disabled={isSaving}
               >
                 {isSaving ? (
-                  <ActivityIndicator size="small" color="#FFF" />
+                  <InlineLoader size={20} />
                 ) : (
                   <>
                     <Feather name="download" size={18} color="#FFF" />

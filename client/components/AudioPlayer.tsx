@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Pressable } from "react-native";
+import { InlineLoader } from "@/components/animations";
 import { Audio } from "expo-av";
 import { Feather } from "@expo/vector-icons";
 
@@ -162,7 +163,7 @@ export function AudioPlayer({ uri, durationMs, compact = false, postId, source =
       >
         <View style={[styles.playButtonSmall, { backgroundColor: theme.primary }]}>
           {isLoading ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <InlineLoader size={16} />
           ) : (
             <Feather name={isPlaying ? "pause" : "play"} size={16} color="#FFFFFF" />
           )}
@@ -188,7 +189,7 @@ export function AudioPlayer({ uri, durationMs, compact = false, postId, source =
           disabled={isLoading}
         >
           {isLoading ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <InlineLoader size={24} />
           ) : (
             <Feather name={isPlaying ? "pause" : "play"} size={24} color="#FFFFFF" />
           )}

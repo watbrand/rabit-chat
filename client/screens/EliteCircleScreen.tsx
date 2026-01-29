@@ -6,7 +6,6 @@ import {
   ScrollView,
   Dimensions,
   Platform,
-  ActivityIndicator,
   Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -33,6 +32,7 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { GradientBackground } from "@/components/GradientBackground";
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
@@ -324,7 +324,7 @@ export function EliteCircleScreen() {
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
+            <LoadingIndicator size="large" />
             <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
               Loading elite members...
             </ThemedText>

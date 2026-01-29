@@ -4,7 +4,6 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  ActivityIndicator,
   Alert,
   ScrollView,
   Dimensions,
@@ -24,6 +23,7 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import { Avatar } from "@/components/Avatar";
 import MusicPickerModal, { MusicTrackData } from "@/components/MusicPickerModal";
 import { useTheme } from "@/hooks/useTheme";
@@ -581,7 +581,7 @@ export default function CreatePostScreen() {
             ]}
           >
             {isPending ? (
-              <ActivityIndicator size="small" color="#FFF" />
+              <LoadingIndicator size="small" />
             ) : (
               <>
                 <Feather name="send" size={14} color={isPostEnabled ? "#FFF" : theme.textSecondary} />
@@ -700,7 +700,7 @@ export default function CreatePostScreen() {
                 {media.isUploading ? (
                   <View style={styles.uploadProgressContainer}>
                     <View style={[styles.uploadStatusBadge, { backgroundColor: theme.primary + "20" }]}>
-                      <ActivityIndicator size="small" color={theme.primary} />
+                      <LoadingIndicator size="small" />
                       <ThemedText style={[styles.uploadStatusText, { color: theme.primary }]}>
                         Uploading... {media.uploadProgress ?? 0}%
                       </ThemedText>
@@ -753,7 +753,7 @@ export default function CreatePostScreen() {
                 {media.isUploading ? (
                   <View style={styles.uploadOverlay}>
                     <View style={styles.uploadProgressContent}>
-                      <ActivityIndicator size="large" color="#FFF" />
+                      <LoadingIndicator size="large" />
                       <ThemedText style={styles.uploadProgressText}>
                         Uploading... {media.uploadProgress ?? 0}%
                       </ThemedText>
@@ -946,7 +946,7 @@ export default function CreatePostScreen() {
             testID="button-share-post"
           >
             {isPending ? (
-              <ActivityIndicator size="small" color="#FFF" />
+              <LoadingIndicator size="small" />
             ) : (
               <>
                 <Feather name="send" size={18} color={isPostEnabled ? "#FFF" : theme.textSecondary} />

@@ -5,12 +5,12 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  ActivityIndicator,
   Platform,
   Alert,
   Dimensions,
   RefreshControl,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -614,7 +614,7 @@ export default function TicketChatScreen() {
     >
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
         </View>
       ) : (
         <FlatList

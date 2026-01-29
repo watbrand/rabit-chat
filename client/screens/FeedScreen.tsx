@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { View, FlatList, StyleSheet, RefreshControl, Image, ActivityIndicator, Platform, Pressable, ScrollView, TextInput, Text, Dimensions } from "react-native";
+import { View, FlatList, StyleSheet, RefreshControl, Image, Platform, Pressable, ScrollView, TextInput, Text, Dimensions } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -571,7 +572,7 @@ export default function FeedScreen() {
         ListFooterComponent={
           isFetchingNextPage ? (
             <View style={styles.footerLoader}>
-              <ActivityIndicator size="small" color={theme.primary} />
+              <LoadingIndicator size="small" />
             </View>
           ) : null
         }

@@ -4,7 +4,6 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  ActivityIndicator,
   Alert,
   Platform,
   Modal,
@@ -31,6 +30,7 @@ import { GradientBackground } from "@/components/GradientBackground";
 import { ThemedText } from "@/components/ThemedText";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { LocationPicker } from "@/components/LocationPicker";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
@@ -402,7 +402,7 @@ export default function PersonalSignupScreen() {
 
     if (isCheckingUsername) {
       return (
-        <ActivityIndicator size="small" color={theme.textSecondary} />
+        <LoadingIndicator size="small" />
       );
     }
 
@@ -823,7 +823,7 @@ export default function PersonalSignupScreen() {
               end={{ x: 1, y: 1 }}
             >
               {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <LoadingIndicator size="small" />
               ) : (
                 <>
                   <ThemedText

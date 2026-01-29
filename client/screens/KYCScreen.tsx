@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   RefreshControl,
   Alert,
   Modal,
@@ -28,6 +27,7 @@ import { Card } from "@/components/Card";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { uploadFileWithProgress } from "@/lib/upload";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
+import { LoadingIndicator } from "@/components/animations";
 
 interface KYCData {
   id: string;
@@ -231,7 +231,7 @@ export default function KYCScreen({ navigation }: any) {
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -530,7 +530,7 @@ function DocumentUpload({
           disabled={isUploading}
         >
           {isUploading ? (
-            <ActivityIndicator color={theme.primary} />
+            <LoadingIndicator size="small" />
           ) : (
             <>
               <Feather name="upload" size={24} color={theme.textSecondary} />

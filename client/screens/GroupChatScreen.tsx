@@ -6,7 +6,6 @@ import {
   FlatList,
   TextInput,
   Pressable,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -17,6 +16,7 @@ import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Feather } from "@expo/vector-icons";
 import { Avatar } from "@/components/Avatar";
 import { useAuth } from "@/hooks/useAuth";
+import { LoadingIndicator } from "@/components/animations";
 
 interface GroupMessage {
   id: string;
@@ -138,7 +138,7 @@ export default function GroupChatScreen({ route, navigation }: any) {
   if (conversationLoading || messagesLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

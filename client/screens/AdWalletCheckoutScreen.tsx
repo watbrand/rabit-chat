@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   StyleSheet,
-  ActivityIndicator,
   Platform,
   Pressable,
   Alert,
@@ -20,6 +19,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { GradientBackground } from "@/components/GradientBackground";
 import { getApiUrl } from "@/lib/query-client";
+import { LoadingIndicator } from "@/components/animations";
 
 type PaymentData = {
   merchant_id: string;
@@ -327,7 +327,7 @@ export default function AdWalletCheckoutScreen() {
 
       {loading && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
           <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
             Preparing secure checkout...
           </ThemedText>
@@ -353,7 +353,7 @@ export default function AdWalletCheckoutScreen() {
 
       {checkingStatus && (
         <View style={styles.statusOverlay}>
-          <ActivityIndicator size="small" color={theme.primary} />
+          <LoadingIndicator size="small" />
           <ThemedText style={[styles.statusText, { color: theme.textSecondary }]}>
             Verifying payment...
           </ThemedText>

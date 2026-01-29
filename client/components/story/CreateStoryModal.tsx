@@ -8,12 +8,12 @@ import {
   SafeAreaView,
   FlatList,
   Image,
-  ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
+import { LoadingIndicator } from '@/components/animations';
 
 export type StoryCreationType = 'TEXT' | 'PHOTO' | 'VIDEO' | 'VOICE';
 
@@ -166,7 +166,7 @@ export default function CreateStoryModal({
 
           {loadingGallery && (
             <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color={Colors.dark.primary} />
+              <LoadingIndicator size="large" />
             </View>
           )}
 

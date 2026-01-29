@@ -5,9 +5,9 @@ import {
   ScrollView,
   Pressable,
   FlatList,
-  ActivityIndicator,
   useWindowDimensions,
 } from "react-native";
+import { LoadingIndicator, InlineLoader } from "@/components/animations";
 import { Feather } from "@expo/vector-icons";
 
 import { ProfileGridTile } from "./ProfileGridTile";
@@ -96,7 +96,7 @@ export function ProfileTabs({
     if (!hasMore) return null;
     return (
       <View style={styles.footer}>
-        <ActivityIndicator color={theme.primary} />
+        <InlineLoader size={24} />
       </View>
     );
   };
@@ -105,7 +105,7 @@ export function ProfileTabs({
     if (isLoading) {
       return (
         <View style={styles.emptyContainer}>
-          <ActivityIndicator color={theme.primary} size="large" />
+          <LoadingIndicator size="large" />
         </View>
       );
     }

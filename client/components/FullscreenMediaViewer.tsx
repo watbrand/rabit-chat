@@ -8,12 +8,12 @@ import {
   StatusBar,
   TextInput,
   FlatList,
-  ActivityIndicator,
   Alert,
   Platform,
   Keyboard,
   Share,
 } from "react-native";
+import { LoadingIndicator, InlineLoader } from "@/components/animations";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Feather } from "@expo/vector-icons";
@@ -373,7 +373,7 @@ export function FullscreenMediaViewer({
                 contentContainerStyle={styles.commentsListContent}
                 ListEmptyComponent={
                   commentsLoading ? (
-                    <ActivityIndicator color="#FFFFFF" style={{ marginTop: Spacing.xl }} />
+                    <LoadingIndicator size="small" style={{ marginTop: Spacing.xl }} />
                   ) : (
                     <ThemedText style={styles.noComments}>No comments yet</ThemedText>
                   )
@@ -404,7 +404,7 @@ export function FullscreenMediaViewer({
                   testID="button-fullscreen-send-comment"
                 >
                   {commentMutation.isPending ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <InlineLoader size={18} />
                   ) : (
                     <Feather name="send" size={18} color="#FFFFFF" />
                   )}

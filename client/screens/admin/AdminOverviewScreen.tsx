@@ -1,5 +1,6 @@
 import React from "react";
-import { View, StyleSheet, Pressable, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView, RefreshControl } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
@@ -69,7 +70,7 @@ export default function AdminOverviewScreen() {
   if (isLoading) {
     return (
       <View style={[styles.centerContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

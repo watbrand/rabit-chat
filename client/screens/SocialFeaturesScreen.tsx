@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   Alert,
   Platform,
   RefreshControl,
@@ -19,6 +18,7 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { Avatar } from "@/components/Avatar";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography, Fonts } from "@/constants/theme";
@@ -160,7 +160,7 @@ export function SocialFeaturesScreen() {
       </ThemedText>
 
       {loadingPokes ? (
-        <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="medium" style={styles.loader} />
       ) : pokes && pokes.length > 0 ? (
         pokes.map((poke, index) => (
           <Animated.View entering={FadeInUp.delay(50 * index)} key={poke.id}>
@@ -214,7 +214,7 @@ export function SocialFeaturesScreen() {
       </Card>
 
       {loadingBff ? (
-        <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="medium" style={styles.loader} />
       ) : bffList && bffList.length > 0 ? (
         bffList.map((bff, index) => (
           <Animated.View entering={FadeInUp.delay(50 * index)} key={bff.id}>
@@ -261,7 +261,7 @@ export function SocialFeaturesScreen() {
       </Card>
 
       {loadingCloseFriends ? (
-        <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="medium" style={styles.loader} />
       ) : closeFriends && closeFriends.length > 0 ? (
         closeFriends.map((cf, index) => (
           <Animated.View entering={FadeInUp.delay(50 * index)} key={cf.id}>

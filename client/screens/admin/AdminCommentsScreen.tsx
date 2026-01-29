@@ -5,13 +5,13 @@ import {
   StyleSheet,
   Pressable,
   Alert,
-  ActivityIndicator,
   RefreshControl,
   TextInput,
   Modal,
   ScrollView,
   Platform,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
@@ -250,7 +250,7 @@ export default function AdminCommentsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.centerContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -371,7 +371,7 @@ export default function AdminCommentsScreen() {
                         disabled={hideCommentMutation.isPending}
                       >
                         {hideCommentMutation.isPending ? (
-                          <ActivityIndicator size="small" color="#FFF" />
+                          <LoadingIndicator size="small" />
                         ) : (
                           <ThemedText style={{ color: "#FFF" }}>Hide Comment</ThemedText>
                         )}
@@ -387,7 +387,7 @@ export default function AdminCommentsScreen() {
                         disabled={unhideCommentMutation.isPending}
                       >
                         {unhideCommentMutation.isPending ? (
-                          <ActivityIndicator size="small" color="#FFF" />
+                          <LoadingIndicator size="small" />
                         ) : (
                           <>
                             <Feather name="eye" size={18} color="#FFF" />

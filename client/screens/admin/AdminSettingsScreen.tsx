@@ -5,13 +5,13 @@ import {
   StyleSheet,
   Pressable,
   Alert,
-  ActivityIndicator,
   RefreshControl,
   Switch,
   TextInput,
   Modal,
   ScrollView,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
@@ -363,7 +363,7 @@ export default function AdminSettingsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.centerContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -438,7 +438,7 @@ export default function AdminSettingsScreen() {
                   >
                     {(seedMallMutation.isPending && action.key === "seedMall") || 
                      (resetNetWorthMutation.isPending && action.key === "resetUserNetWorth") ? (
-                      <ActivityIndicator size="small" color={action.dangerous ? theme.error : theme.primary} />
+                      <LoadingIndicator size="small" />
                     ) : (
                       <ThemedText style={{ color: action.dangerous ? theme.error : theme.primary, fontWeight: "600" }}>
                         Run Action

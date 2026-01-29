@@ -4,7 +4,6 @@ import {
   FlatList,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   RefreshControl,
   Alert,
   Modal,
@@ -12,6 +11,7 @@ import {
   ScrollView,
   Switch,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
@@ -499,7 +499,7 @@ export default function AdminRolesScreen() {
   if (isLoading) {
     return (
       <View style={[styles.centerContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

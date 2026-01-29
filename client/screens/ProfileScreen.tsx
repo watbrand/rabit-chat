@@ -4,7 +4,6 @@ import {
   StyleSheet,
   FlatList,
   Pressable,
-  ActivityIndicator,
   RefreshControl,
   Dimensions,
   ScrollView,
@@ -13,6 +12,7 @@ import {
   Alert,
   Modal,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -873,7 +873,7 @@ export default function ProfileScreen() {
 
   const renderEmptyState = () => {
     if (isLoading) {
-      return <ActivityIndicator color={theme.primary} style={{ marginTop: Spacing.xl }} />;
+      return <LoadingIndicator size="medium" style={{ marginTop: Spacing.xl }} />;
     }
     
     const emptyMessages: Record<ContentTab, { icon: string; text: string; subtext: string }> = {
@@ -903,7 +903,7 @@ export default function ProfileScreen() {
   if (!user) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

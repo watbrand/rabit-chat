@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, TextInput, Pressable, Text, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, TextInput, Pressable } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -9,6 +9,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
+import { InlineLoader } from '@/components/animations';
 
 interface Props {
   onSendReply: (text: string, mediaUrl?: string) => Promise<void>;
@@ -85,7 +86,7 @@ export default function StoryReplyInput({
             disabled={!canSend}
           >
             {sending ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <InlineLoader size={18} />
             ) : (
               <Feather name="send" size={18} color={canSend ? '#fff' : Colors.dark.textTertiary} />
             )}

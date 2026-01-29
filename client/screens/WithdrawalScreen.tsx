@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   RefreshControl,
   Alert,
   Modal,
@@ -25,6 +24,7 @@ import { GlassInput } from "@/components/GlassInput";
 import { Card } from "@/components/Card";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
+import { LoadingIndicator } from "@/components/animations";
 
 interface Wallet {
   id: string;
@@ -194,7 +194,7 @@ export default function WithdrawalScreen({ navigation }: any) {
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

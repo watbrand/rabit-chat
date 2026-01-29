@@ -5,13 +5,13 @@ import {
   StyleSheet,
   Pressable,
   Alert,
-  ActivityIndicator,
   RefreshControl,
   TextInput,
   Modal,
   ScrollView,
   Platform,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
@@ -341,7 +341,7 @@ export default function AdminPostsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.centerContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }
@@ -488,7 +488,7 @@ export default function AdminPostsScreen() {
                         disabled={hidePostMutation.isPending}
                       >
                         {hidePostMutation.isPending ? (
-                          <ActivityIndicator size="small" color="#FFF" />
+                          <LoadingIndicator size="small" />
                         ) : (
                           <ThemedText style={{ color: "#FFF" }}>Hide Post</ThemedText>
                         )}
@@ -522,7 +522,7 @@ export default function AdminPostsScreen() {
                         disabled={softDeleteMutation.isPending}
                       >
                         {softDeleteMutation.isPending ? (
-                          <ActivityIndicator size="small" color="#FFF" />
+                          <LoadingIndicator size="small" />
                         ) : (
                           <ThemedText style={{ color: "#FFF" }}>Soft Delete</ThemedText>
                         )}
@@ -538,7 +538,7 @@ export default function AdminPostsScreen() {
                         disabled={unhidePostMutation.isPending}
                       >
                         {unhidePostMutation.isPending ? (
-                          <ActivityIndicator size="small" color="#FFF" />
+                          <LoadingIndicator size="small" />
                         ) : (
                           <>
                             <Feather name="eye" size={18} color="#FFF" />
@@ -563,7 +563,7 @@ export default function AdminPostsScreen() {
                         disabled={featurePostMutation.isPending}
                       >
                         {featurePostMutation.isPending ? (
-                          <ActivityIndicator size="small" color={theme.text} />
+                          <LoadingIndicator size="small" />
                         ) : (
                           <>
                             <Feather name="star" size={18} color={theme.textSecondary} />
@@ -578,7 +578,7 @@ export default function AdminPostsScreen() {
                         disabled={featurePostMutation.isPending}
                       >
                         {featurePostMutation.isPending ? (
-                          <ActivityIndicator size="small" color="#FFF" />
+                          <LoadingIndicator size="small" />
                         ) : (
                           <>
                             <Feather name="star" size={18} color="#FFF" />

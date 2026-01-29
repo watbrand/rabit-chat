@@ -4,10 +4,10 @@ import {
   StyleSheet,
   Pressable,
   Platform,
-  ActivityIndicator,
   RefreshControl,
   FlatList,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
@@ -300,7 +300,7 @@ export default function HelpCategoryScreen() {
     if (articlesLoading || subcategoriesLoading) {
       return (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
           <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
             Loading content...
           </ThemedText>

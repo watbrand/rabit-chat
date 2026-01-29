@@ -8,9 +8,9 @@ import {
   FlatList,
   SafeAreaView,
   Image,
-  ActivityIndicator,
   Modal,
 } from 'react-native';
+import { LoadingIndicator } from '@/components/animations';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import * as Haptics from 'expo-haptics';
@@ -361,7 +361,7 @@ export default function MusicPickerModal({ visible, onSelect, onClose }: Props) 
           </Text>
 
           {isLoading ? (
-            <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+            <LoadingIndicator size="large" style={styles.loader} />
           ) : (
             <FlatList
               data={displayTracks}

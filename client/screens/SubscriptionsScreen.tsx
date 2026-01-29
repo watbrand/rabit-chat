@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   Alert,
   RefreshControl,
   Platform,
@@ -18,6 +17,7 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { Avatar } from "@/components/Avatar";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography, Fonts } from "@/constants/theme";
@@ -197,7 +197,7 @@ export function SubscriptionsScreen() {
               }}
             >
               {subscribeMutation.isPending ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <LoadingIndicator size="small" />
               ) : (
                 <ThemedText style={styles.subscribeButtonText}>
                   Super Follow
@@ -400,7 +400,7 @@ export function SubscriptionsScreen() {
         if (loadingSubscriptions) {
           return (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.primary} />
+              <LoadingIndicator size="large" />
             </View>
           );
         }
@@ -427,7 +427,7 @@ export function SubscriptionsScreen() {
         if (loadingSubscribers) {
           return (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.primary} />
+              <LoadingIndicator size="large" />
             </View>
           );
         }
@@ -454,7 +454,7 @@ export function SubscriptionsScreen() {
         if (loadingTiers) {
           return (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.primary} />
+              <LoadingIndicator size="large" />
             </View>
           );
         }

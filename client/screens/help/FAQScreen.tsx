@@ -5,9 +5,9 @@ import {
   Pressable,
   Platform,
   TextInput,
-  ActivityIndicator,
   RefreshControl,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery } from "@tanstack/react-query";
@@ -176,7 +176,7 @@ export default function FAQScreen() {
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
         <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
           Loading FAQs...
         </ThemedText>

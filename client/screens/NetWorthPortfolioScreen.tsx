@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
-  ActivityIndicator,
 } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, RouteProp } from "@react-navigation/native";
@@ -17,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Typography, Gradients } from "@/constants/theme";
 import { Avatar } from "@/components/Avatar";
+import { LoadingIndicator } from "@/components/animations";
 
 type RouteParams = {
   NetWorthPortfolio: {
@@ -86,7 +86,7 @@ export default function NetWorthPortfolioScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: headerHeight + 100 }} />
+        <LoadingIndicator size="large" style={{ marginTop: headerHeight + 100 }} />
       </View>
     );
   }

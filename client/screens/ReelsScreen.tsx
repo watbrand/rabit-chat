@@ -5,10 +5,10 @@ import {
   Dimensions,
   FlatList,
   Pressable,
-  ActivityIndicator,
   Platform,
   ViewToken,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -346,7 +346,7 @@ export default function ReelsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: "#000" }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

@@ -5,7 +5,6 @@ import {
   Pressable,
   Dimensions,
   Platform,
-  ActivityIndicator,
   Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +26,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { GradientBackground } from "@/components/GradientBackground";
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
@@ -130,7 +130,7 @@ function SocialAuthButton({ provider, onPress, loading, disabled }: SocialAuthBu
         ]}
       >
         {loading ? (
-          <ActivityIndicator size="small" color={textColor} />
+          <LoadingIndicator size="small" />
         ) : (
           <>
             {isGoogle ? (

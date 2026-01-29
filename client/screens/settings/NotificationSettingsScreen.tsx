@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Switch, ActivityIndicator, Alert, Platform } from "react-native";
+import { View, StyleSheet, Switch, Alert, Platform } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -101,9 +102,7 @@ export default function NotificationSettingsScreen() {
 
   if (isLoading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-      </View>
+      <LoadingIndicator fullScreen />
     );
   }
 
@@ -151,7 +150,7 @@ export default function NotificationSettingsScreen() {
 
       {updateMutation.isPending ? (
         <View style={styles.savingIndicator}>
-          <ActivityIndicator size="small" color={theme.primary} />
+          <LoadingIndicator size="small" />
           <ThemedText style={[styles.savingText, { color: theme.textSecondary }]}>
             Saving...
           </ThemedText>

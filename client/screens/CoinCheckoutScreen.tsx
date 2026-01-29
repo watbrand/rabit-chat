@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   StyleSheet,
-  ActivityIndicator,
   Platform,
   Pressable,
   Alert,
@@ -21,6 +20,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { GradientBackground } from "@/components/GradientBackground";
 import { getApiUrl } from "@/lib/query-client";
+import { LoadingIndicator } from "@/components/animations";
 
 type PaymentData = {
   merchant_id: string;
@@ -330,7 +330,7 @@ export default function CoinCheckoutScreen() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
           <ThemedText style={styles.loadingText}>
             Connecting to payment gateway...
           </ThemedText>
@@ -375,7 +375,7 @@ export default function CoinCheckoutScreen() {
       {checkingStatus ? (
         <View style={styles.statusOverlay}>
           <Card style={styles.statusCard}>
-            <ActivityIndicator size="large" color={theme.primary} />
+            <LoadingIndicator size="large" />
             <ThemedText style={styles.statusText}>
               Verifying payment...
             </ThemedText>

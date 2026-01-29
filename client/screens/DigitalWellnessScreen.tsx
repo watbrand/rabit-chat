@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   Alert,
   Switch,
   Platform,
@@ -19,6 +18,7 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography, Fonts } from "@/constants/theme";
@@ -158,7 +158,7 @@ export function DigitalWellnessScreen() {
                   Today's Screen Time
                 </ThemedText>
                 {loadingStats ? (
-                  <ActivityIndicator size="small" color={theme.primary} />
+                  <LoadingIndicator size="small" />
                 ) : (
                   <ThemedText
                     style={[
@@ -227,7 +227,7 @@ export function DigitalWellnessScreen() {
             </View>
 
             {loadingFocus ? (
-              <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+              <LoadingIndicator size="medium" style={styles.loader} />
             ) : (
               <>
                 <SettingRow

@@ -5,11 +5,11 @@ import {
   Modal,
   Pressable,
   FlatList,
-  ActivityIndicator,
   Alert,
   Dimensions,
   Platform,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { BlurView } from "expo-blur";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -224,7 +224,7 @@ export function GiftSheet({
 
           {loadingGifts ? (
             <View style={styles.loading}>
-              <ActivityIndicator size="large" color={theme.primary} />
+              <LoadingIndicator size="large" />
             </View>
           ) : (
             <FlatList

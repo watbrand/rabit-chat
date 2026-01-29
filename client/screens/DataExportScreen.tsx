@@ -4,11 +4,11 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   Alert,
   Platform,
   RefreshControl,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
@@ -195,7 +195,7 @@ export function DataExportScreen() {
               disabled={selectedTypes.length === 0 || requestExportMutation.isPending}
             >
               {requestExportMutation.isPending ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <LoadingIndicator size="small" />
               ) : (
                 <>
                   <Feather name="download" size={18} color="#FFFFFF" />
@@ -256,7 +256,7 @@ export function DataExportScreen() {
               disabled={requestBackupMutation.isPending}
             >
               {requestBackupMutation.isPending ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <LoadingIndicator size="small" />
               ) : (
                 <>
                   <Feather name="archive" size={18} color="#FFFFFF" />
@@ -273,7 +273,7 @@ export function DataExportScreen() {
           </ThemedText>
 
           {loadingExports ? (
-            <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+            <LoadingIndicator size="large" style={styles.loader} />
           ) : exportRequests && exportRequests.length > 0 ? (
             exportRequests.map((request, index) => (
               <Card key={request.id} style={styles.exportCard}>

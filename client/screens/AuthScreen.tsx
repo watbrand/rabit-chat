@@ -5,7 +5,6 @@ import {
   Image,
   TextInput,
   Pressable,
-  ActivityIndicator,
   Alert,
   ScrollView,
 } from "react-native";
@@ -17,6 +16,7 @@ import debounce from "lodash.debounce";
 
 import { ThemedText } from "@/components/ThemedText";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography } from "@/constants/theme";
@@ -184,7 +184,7 @@ export default function AuthScreen() {
     if (isCheckingUsername) {
       return (
         <View style={styles.usernameStatus}>
-          <ActivityIndicator size="small" color={theme.textSecondary} />
+          <LoadingIndicator size="small" />
           <ThemedText style={[styles.statusText, { color: theme.textSecondary }]}>
             Checking...
           </ThemedText>
@@ -290,17 +290,17 @@ export default function AuthScreen() {
                       autoCapitalize="none"
                       testID="input-username"
                     />
-                    {username.length >= 3 && (
+                    {username.length >= 3 ? (
                       <View style={styles.inputIcon}>
                         {isCheckingUsername ? (
-                          <ActivityIndicator size="small" color={theme.textSecondary} />
+                          <LoadingIndicator size="small" />
                         ) : usernameAvailable === true ? (
                           <Feather name="check-circle" size={20} color="#10B981" />
                         ) : usernameAvailable === false ? (
                           <Feather name="x-circle" size={20} color="#EF4444" />
                         ) : null}
                       </View>
-                    )}
+                    ) : null}
                   </View>
                   {renderUsernameStatus()}
                 </View>
@@ -372,7 +372,7 @@ export default function AuthScreen() {
               testID="button-submit"
             >
               {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <LoadingIndicator size="small" />
               ) : (
                 <ThemedText style={styles.buttonText}>
                   {isLogin ? "Sign In" : "Create Account"}

@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   Alert,
   StatusBar,
   Dimensions,
@@ -18,6 +17,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import { 
   UniversalStoryEditor,
   TextStoryEditor,
@@ -440,7 +440,7 @@ export default function StoryComposerScreen() {
         {isUploading ? (
           <View style={styles.uploadingOverlay}>
             <View style={styles.uploadProgressContent}>
-              <ActivityIndicator size="large" color={theme.primary} />
+              <LoadingIndicator size="large" />
               <ThemedText style={styles.uploadingText}>
                 Uploading... {uploadProgress}%
               </ThemedText>

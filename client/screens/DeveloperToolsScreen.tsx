@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   Alert,
   TextInput,
   Switch,
@@ -24,6 +23,7 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography, Fonts } from "@/constants/theme";
@@ -196,7 +196,7 @@ export function DeveloperToolsScreen() {
         </ThemedText>
 
         {loadingWebhooks ? (
-          <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+          <LoadingIndicator size="large" />
         ) : webhooks && webhooks.length > 0 ? (
           webhooks.map((webhook, index) => (
             <Animated.View entering={FadeInUp.delay(50 * index)} key={webhook.id}>
@@ -322,7 +322,7 @@ export function DeveloperToolsScreen() {
                 disabled={!webhookName.trim() || !webhookUrl.trim() || selectedEvents.length === 0 || createWebhookMutation.isPending}
               >
                 {createWebhookMutation.isPending ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <LoadingIndicator size="small" />
                 ) : (
                   <ThemedText style={{ color: "#FFFFFF" }}>Create</ThemedText>
                 )}
@@ -344,7 +344,7 @@ export function DeveloperToolsScreen() {
 
             <ScrollView style={styles.deliveriesScroll}>
               {loadingDeliveries ? (
-                <ActivityIndicator size="large" color={theme.primary} />
+                <LoadingIndicator size="large" />
               ) : deliveries && deliveries.length > 0 ? (
                 deliveries.map((delivery) => (
                   <View key={delivery.id} style={[styles.deliveryItem, { borderColor: theme.glassBorder }]}>

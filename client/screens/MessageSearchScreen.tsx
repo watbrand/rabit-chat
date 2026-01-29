@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -18,6 +17,7 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Avatar } from "@/components/Avatar";
+import { LoadingIndicator } from "@/components/animations";
 import { GradientBackground } from "@/components/GradientBackground";
 import { useTheme } from "@/hooks/useTheme";
 import { getApiUrl } from "@/lib/query-client";
@@ -184,7 +184,7 @@ export default function MessageSearchScreen() {
     if (isLoading && debouncedQuery.length >= 2) {
       return (
         <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
           <ThemedText style={[styles.emptyText, { color: theme.textSecondary }]}>
             Searching messages...
           </ThemedText>

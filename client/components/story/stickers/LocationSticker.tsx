@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Pressable, Text, TextInput, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Pressable, Text, TextInput } from 'react-native';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import Animated, {
@@ -11,6 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
+import { InlineLoader } from '@/components/animations';
 
 interface Props {
   locationName?: string;
@@ -110,7 +111,7 @@ export default function LocationSticker({
         
         {isLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color={Colors.dark.primary} />
+            <InlineLoader size={20} />
             <Text style={styles.loadingText}>Finding your location...</Text>
           </View>
         ) : error ? (

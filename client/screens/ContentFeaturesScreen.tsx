@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   Alert,
   TextInput,
   Platform,
@@ -22,6 +21,7 @@ import { Image } from "expo-image";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { Avatar } from "@/components/Avatar";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography, Fonts } from "@/constants/theme";
@@ -172,7 +172,7 @@ export function ContentFeaturesScreen() {
           disabled={!threadTitle.trim() || createThreadMutation.isPending}
         >
           {createThreadMutation.isPending ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <LoadingIndicator size="small" />
           ) : (
             <Feather name="plus" size={20} color="#FFFFFF" />
           )}
@@ -184,7 +184,7 @@ export function ContentFeaturesScreen() {
       </ThemedText>
 
       {loadingThreads ? (
-        <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="large" />
       ) : threads && threads.length > 0 ? (
         threads.map((thread, index) => (
           <Animated.View entering={FadeInUp.delay(50 * index)} key={thread.id}>
@@ -243,7 +243,7 @@ export function ContentFeaturesScreen() {
       </ThemedText>
 
       {loadingDuets ? (
-        <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="large" />
       ) : duets && duets.length > 0 ? (
         duets.map((duet, index) => (
           <Animated.View entering={FadeInUp.delay(50 * index)} key={duet.id}>
@@ -314,7 +314,7 @@ export function ContentFeaturesScreen() {
       </ScrollView>
 
       {loadingFilters ? (
-        <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="large" />
       ) : arFilters && arFilters.length > 0 ? (
         <View style={styles.filtersGrid}>
           {arFilters

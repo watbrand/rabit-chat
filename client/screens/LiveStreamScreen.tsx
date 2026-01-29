@@ -7,7 +7,6 @@ import {
   TextInput,
   Pressable,
   Dimensions,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -16,6 +15,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Avatar } from "@/components/Avatar";
+import { LoadingIndicator } from "@/components/animations";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
   useAnimatedStyle,
@@ -148,7 +148,7 @@ export default function LiveStreamScreen({ route, navigation }: any) {
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: "#000" }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

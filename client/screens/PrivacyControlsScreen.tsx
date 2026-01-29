@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   Alert,
   TextInput,
   Switch,
@@ -21,6 +20,7 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { Avatar } from "@/components/Avatar";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography, Fonts } from "@/constants/theme";
@@ -177,7 +177,7 @@ export function PrivacyControlsScreen() {
           disabled={!newKeyword.trim() || addKeywordMutation.isPending}
         >
           {addKeywordMutation.isPending ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <LoadingIndicator size="small" />
           ) : (
             <Feather name="plus" size={20} color="#FFFFFF" />
           )}
@@ -185,7 +185,7 @@ export function PrivacyControlsScreen() {
       </View>
 
       {loadingKeywords ? (
-        <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="medium" style={styles.loader} />
       ) : keywords && keywords.length > 0 ? (
         keywords.map((kw, index) => (
           <Animated.View entering={FadeInUp.delay(50 * index)} key={kw.id}>
@@ -225,7 +225,7 @@ export function PrivacyControlsScreen() {
       </Card>
 
       {loadingMuted ? (
-        <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="medium" style={styles.loader} />
       ) : mutedAccounts && mutedAccounts.length > 0 ? (
         mutedAccounts.map((muted, index) => (
           <Animated.View entering={FadeInUp.delay(50 * index)} key={muted.id}>
@@ -278,7 +278,7 @@ export function PrivacyControlsScreen() {
       </Card>
 
       {loadingRestricted ? (
-        <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="medium" style={styles.loader} />
       ) : restrictedAccounts && restrictedAccounts.length > 0 ? (
         restrictedAccounts.map((restricted, index) => (
           <Animated.View entering={FadeInUp.delay(50 * index)} key={restricted.id}>

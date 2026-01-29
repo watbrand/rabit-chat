@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   TextInput,
-  ActivityIndicator,
   Alert,
   Pressable,
   TouchableOpacity,
@@ -19,6 +18,7 @@ import { Image } from "expo-image";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { Avatar } from "@/components/Avatar";
+import { LoadingIndicator } from "@/components/animations";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
@@ -186,7 +186,7 @@ export default function EditProfileScreen() {
           style={{ padding: 8, marginRight: 8 }}
         >
           {isSaving ? (
-            <ActivityIndicator size="small" color={theme.primary} />
+            <LoadingIndicator size="small" />
           ) : (
             <ThemedText
               style={{
@@ -223,7 +223,7 @@ export default function EditProfileScreen() {
             <Avatar uri={avatarUrl} size={100} />
             <View style={[styles.avatarOverlay, { backgroundColor: "rgba(0,0,0,0.4)" }]}>
               {isUploading ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <LoadingIndicator size="small" />
               ) : (
                 <Feather name="camera" size={24} color="#fff" />
               )}
@@ -277,7 +277,7 @@ export default function EditProfileScreen() {
             ) : null}
             <View style={[styles.coverOverlay, { backgroundColor: "rgba(0,0,0,0.4)" }]}>
               {isCoverUploading ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <LoadingIndicator size="small" />
               ) : (
                 <View style={styles.coverUploadContent}>
                   <Feather name="camera" size={24} color="#fff" />
@@ -342,7 +342,7 @@ export default function EditProfileScreen() {
           />
           <View style={styles.usernameStatusIcon}>
             {usernameChecking ? (
-              <ActivityIndicator size="small" color={theme.textSecondary} />
+              <LoadingIndicator size="small" />
             ) : usernameAvailable === true && !usernameError ? (
               <Feather name="check-circle" size={20} color="#10B981" />
             ) : usernameError ? (
@@ -507,7 +507,7 @@ export default function EditProfileScreen() {
             testID="button-save-profile"
           >
             {isSaving ? (
-              <ActivityIndicator size="small" color="#FFF" />
+              <LoadingIndicator size="small" />
             ) : (
               <>
                 <Feather name="check" size={18} color={canSave ? "#FFF" : theme.textSecondary} />

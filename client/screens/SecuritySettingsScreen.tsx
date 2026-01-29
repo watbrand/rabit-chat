@@ -4,7 +4,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   Alert,
   Switch,
   RefreshControl,
@@ -19,6 +18,7 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography, Fonts } from "@/constants/theme";
@@ -349,7 +349,7 @@ export function SecuritySettingsScreen() {
                 </ThemedText>
               </View>
               {loading2fa ? (
-                <ActivityIndicator size="small" color={theme.primary} />
+                <LoadingIndicator size="small" />
               ) : (
                 <Switch
                   value={twoFactorStatus?.isEnabled ?? false}
@@ -382,7 +382,7 @@ export function SecuritySettingsScreen() {
             </View>
 
             {loadingSessions ? (
-              <ActivityIndicator size="small" color={theme.primary} style={styles.loader} />
+              <LoadingIndicator size="small" style={styles.loader} />
             ) : activeSessions.length > 0 ? (
               <>
                 {activeSessions.map((session) => (
@@ -418,7 +418,7 @@ export function SecuritySettingsScreen() {
                     disabled={revokeAllSessionsMutation.isPending}
                   >
                     {revokeAllSessionsMutation.isPending ? (
-                      <ActivityIndicator size="small" color={theme.error} />
+                      <LoadingIndicator size="small" />
                     ) : (
                       <>
                         <Feather name="log-out" size={16} color={theme.error} />
@@ -448,7 +448,7 @@ export function SecuritySettingsScreen() {
             </View>
 
             {loadingDevices ? (
-              <ActivityIndicator size="small" color={theme.primary} style={styles.loader} />
+              <LoadingIndicator size="small" style={styles.loader} />
             ) : trustedDevices && trustedDevices.length > 0 ? (
               trustedDevices.map((device) => (
                 <View key={device.id} style={styles.sessionRow}>
@@ -489,7 +489,7 @@ export function SecuritySettingsScreen() {
             </View>
 
             {loadingAccounts ? (
-              <ActivityIndicator size="small" color={theme.primary} style={styles.loader} />
+              <LoadingIndicator size="small" style={styles.loader} />
             ) : linkedAccounts && linkedAccounts.length > 0 ? (
               linkedAccounts.map((account) => (
                 <View key={account.id} style={styles.sessionRow}>

@@ -5,7 +5,6 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
-  ActivityIndicator,
   Image,
   ScrollView,
 } from "react-native";
@@ -22,6 +21,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { useTheme } from "@/hooks/useTheme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
+import { LoadingIndicator } from "@/components/animations";
 
 interface Campaign {
   id: string;
@@ -290,7 +290,7 @@ function CampaignCard({
         >
           {detailsLoading ? (
             <View style={styles.loadingDetails}>
-              <ActivityIndicator size="small" color={theme.primary} />
+              <LoadingIndicator size="small" />
               <ThemedText style={styles.loadingText}>Loading details...</ThemedText>
             </View>
           ) : (
@@ -580,7 +580,7 @@ export default function MyBoostsScreen() {
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
+            <LoadingIndicator size="large" />
           </View>
         ) : campaigns && campaigns.length > 0 ? (
           campaigns.map(campaign => (

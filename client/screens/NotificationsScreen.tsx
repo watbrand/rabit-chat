@@ -1,5 +1,6 @@
 import React from "react";
-import { View, FlatList, StyleSheet, RefreshControl, ActivityIndicator, Platform, Pressable } from "react-native";
+import { View, FlatList, StyleSheet, RefreshControl, Platform, Pressable } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -211,7 +212,7 @@ export default function NotificationsScreen() {
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
+        <LoadingIndicator size="large" />
       </View>
     );
   }

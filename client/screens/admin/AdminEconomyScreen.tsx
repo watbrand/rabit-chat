@@ -6,9 +6,9 @@ import {
   Pressable,
   TextInput,
   Alert,
-  ActivityIndicator,
   RefreshControl,
 } from "react-native";
+import { LoadingIndicator } from "@/components/animations";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInUp, FadeInDown } from "react-native-reanimated";
@@ -351,7 +351,7 @@ export default function AdminEconomyScreen() {
       />
 
       {walletsLoading ? (
-        <ActivityIndicator color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="small" style={styles.loader} />
       ) : (
         filteredWallets?.map((wallet, index) => (
           <Animated.View key={wallet.id} entering={FadeInUp.delay(index * 50).springify()}>
@@ -439,7 +439,7 @@ export default function AdminEconomyScreen() {
   const renderGifts = () => (
     <View style={styles.listContainer}>
       {giftsLoading ? (
-        <ActivityIndicator color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="small" style={styles.loader} />
       ) : (
         giftTypes?.map((gift, index) => (
           <Animated.View key={gift.id} entering={FadeInUp.delay(index * 50).springify()}>
@@ -483,7 +483,7 @@ export default function AdminEconomyScreen() {
   const renderBundles = () => (
     <View style={styles.listContainer}>
       {bundlesLoading ? (
-        <ActivityIndicator color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="small" style={styles.loader} />
       ) : (
         bundles?.map((bundle, index) => (
           <Animated.View key={bundle.id} entering={FadeInUp.delay(index * 50).springify()}>
@@ -534,7 +534,7 @@ export default function AdminEconomyScreen() {
   const renderWithdrawals = () => (
     <View style={styles.listContainer}>
       {withdrawalsLoading ? (
-        <ActivityIndicator color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="small" style={styles.loader} />
       ) : pendingWithdrawals?.length === 0 ? (
         <Card variant="glass" style={styles.emptyCard}>
           <Feather name="check-circle" size={48} color={theme.success} />
@@ -803,7 +803,7 @@ export default function AdminEconomyScreen() {
         }
       >
         {statsLoading && activeTab === "overview" ? (
-          <ActivityIndicator color={theme.primary} style={styles.loader} />
+          <LoadingIndicator size="medium" style={styles.loader} />
         ) : (
           renderContent()
         )}

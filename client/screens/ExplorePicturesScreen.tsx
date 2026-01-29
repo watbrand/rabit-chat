@@ -9,7 +9,6 @@ import {
   ViewToken,
   Image,
   TextInput,
-  ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Share,
@@ -32,6 +31,7 @@ import * as Haptics from "expo-haptics";
 
 import { Avatar } from "@/components/Avatar";
 import { ThemedText } from "@/components/ThemedText";
+import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { apiRequest } from "@/lib/query-client";
 import { Spacing } from "@/constants/theme";
@@ -407,7 +407,7 @@ export default function ExplorePicturesScreen() {
 
           {commentsLoading ? (
             <View style={styles.commentsLoading}>
-              <ActivityIndicator color="#FFFFFF" />
+              <LoadingIndicator size="medium" />
             </View>
           ) : (
             <FlatList
@@ -442,7 +442,7 @@ export default function ExplorePicturesScreen() {
               ]}
             >
               {commentMutation.isPending ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <LoadingIndicator size="small" />
               ) : (
                 <Feather name="send" size={20} color="#FFFFFF" />
               )}

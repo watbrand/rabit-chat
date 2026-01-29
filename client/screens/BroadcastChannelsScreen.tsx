@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   Pressable,
-  ActivityIndicator,
   RefreshControl,
   Modal,
 } from "react-native";
@@ -18,6 +17,7 @@ import { Feather } from "@expo/vector-icons";
 import { Avatar } from "@/components/Avatar";
 import { GlassButton } from "@/components/GlassButton";
 import { GlassInput } from "@/components/GlassInput";
+import { LoadingIndicator } from "@/components/animations";
 
 interface BroadcastChannel {
   id: string;
@@ -173,7 +173,7 @@ export default function BroadcastChannelsScreen({ navigation }: any) {
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <LoadingIndicator size="large" />
         </View>
       ) : (
         <FlatList

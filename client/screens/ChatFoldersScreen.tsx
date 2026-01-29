@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   Alert,
   TextInput,
   Platform,
@@ -25,6 +24,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography, Fonts } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
+import { LoadingIndicator, InlineLoader } from "@/components/animations";
 
 interface ChatFolder {
   id: string;
@@ -150,7 +150,7 @@ export function ChatFoldersScreen() {
       </Pressable>
 
       {loadingFolders ? (
-        <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="medium" style={styles.loader} />
       ) : folders && folders.length > 0 ? (
         folders.map((folder, index) => (
           <Animated.View entering={FadeInUp.delay(50 * index)} key={folder.id}>
@@ -185,7 +185,7 @@ export function ChatFoldersScreen() {
   const renderScheduledTab = () => (
     <View>
       {loadingScheduled ? (
-        <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+        <LoadingIndicator size="medium" style={styles.loader} />
       ) : scheduledMessages && scheduledMessages.length > 0 ? (
         scheduledMessages.map((msg, index) => (
           <Animated.View entering={FadeInUp.delay(50 * index)} key={msg.id}>
@@ -331,7 +331,7 @@ export function ChatFoldersScreen() {
                 disabled={!newFolderName.trim() || createFolderMutation.isPending}
               >
                 {createFolderMutation.isPending ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <InlineLoader size={20} />
                 ) : (
                   <ThemedText style={{ color: "#FFFFFF" }}>Create</ThemedText>
                 )}
