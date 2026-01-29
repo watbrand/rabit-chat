@@ -226,8 +226,8 @@ export async function seedHelpCenterOnStartup() {
     let articleCount = 0;
     for (const article of articles) {
       await client.query(
-        `INSERT INTO help_articles (id, category_id, title, slug, summary, content, difficulty, estimated_read_time, view_count, helpful_count, is_published, published_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, NOW(), NOW(), NOW())
+        `INSERT INTO help_articles (id, category_id, title, slug, summary, content, difficulty, status, estimated_read_time, view_count, helpful_count, published_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'PUBLISHED', $8, $9, $10, NOW(), NOW(), NOW())
          ON CONFLICT (id) DO NOTHING`,
         [
           crypto.randomUUID(),
