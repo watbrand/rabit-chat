@@ -697,7 +697,7 @@ export default function TicketChatScreen() {
                 },
               ]}
             >
-              <ActivityIndicator size="small" color={theme.primary} />
+              <LoadingIndicator size="small" />
               <ThemedText style={[styles.uploadingText, { color: theme.textSecondary }]}>
                 Uploading... {Math.round(uploadProgress * 100)}%
               </ThemedText>
@@ -757,7 +757,7 @@ export default function TicketChatScreen() {
                   testID="button-send"
                 >
                   {sendMutation.isPending ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <LoadingIndicator size="small" />
                   ) : (
                     <Feather name="send" size={20} color="#FFFFFF" />
                   )}
