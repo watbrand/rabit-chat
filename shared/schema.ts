@@ -2779,6 +2779,7 @@ export const anonGossipPosts = pgTable("anon_gossip_posts", {
   accuracyUnsureVotes: integer("accuracy_unsure_votes").default(0).notNull(),
   isVerifiedTea: boolean("is_verified_tea").default(false).notNull(),
   isBreaking: boolean("is_breaking").default(false).notNull(),
+  isHot: boolean("is_hot").default(false).notNull(),
   trendingScore: real("trending_score").default(0).notNull(),
   velocityScore: real("velocity_score").default(0).notNull(),
   isHidden: boolean("is_hidden").default(false).notNull(),
@@ -2800,6 +2801,8 @@ export const anonGossipPosts = pgTable("anon_gossip_posts", {
   index("anon_gossip_posts_post_type_idx").on(table.postType),
   index("anon_gossip_posts_trending_idx").on(table.trendingScore),
   index("anon_gossip_posts_verified_idx").on(table.isVerifiedTea),
+  index("anon_gossip_posts_hot_idx").on(table.isHot),
+  index("anon_gossip_posts_breaking_idx").on(table.isBreaking),
 ]);
 
 // Anonymous Gossip Reactions

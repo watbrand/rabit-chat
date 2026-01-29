@@ -1399,4 +1399,305 @@ router.get("/stats/tea-spiller", async (req: Request, res: Response) => {
   }
 });
 
+function calculateTrendingScore(
+  reactions: number,
+  comments: number,
+  reposts: number,
+  views: number,
+  createdAt: Date,
+  avgEngagementRate: number = 0.05
+): { score: number; isBreaking: boolean; isHot: boolean } {
+  const now = new Date();
+  const ageHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+  const ageDays = ageHours / 24;
+  const timeDecay = Math.pow(0.95, ageDays);
+  const recentBonus = ageHours < 1 ? 2.0 : ageHours < 6 ? 1.5 : ageHours < 24 ? 1.2 : 1.0;
+  const reactionWeight = 1;
+  const commentWeight = 2;
+  const repostWeight = 3;
+  const viewWeight = 0.1;
+  
+  const baseScore = 
+    (reactions * reactionWeight) + 
+    (comments * commentWeight) + 
+    (reposts * repostWeight) + 
+    (views * viewWeight);
+  const currentEngagementRate = views > 0 ? (reactions + comments + reposts) / views : 0;
+  const velocityBonus = currentEngagementRate > avgEngagementRate * 2 ? 1.5 : 
+                        currentEngagementRate > avgEngagementRate ? 1.2 : 1.0;
+  const engagementsPerHour = ageHours > 0 ? (reactions + comments + reposts) / ageHours : reactions + comments + reposts;
+  const isBreaking = engagementsPerHour > 10 && ageHours < 2;
+  const isHot = engagementsPerHour > 5 && ageHours < 6;
+  const score = baseScore * timeDecay * recentBonus * velocityBonus;
+  
+  return { score: Math.round(score * 100) / 100, isBreaking, isHot };
+}
+
+router.post("/trending/recalculate", async (_req: Request, res: Response) => {
+  try {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    
+    const posts = await db
+      .select({
+        id: anonGossipPosts.id,
+        fireCount: anonGossipPosts.fireCount,
+        mindblownCount: anonGossipPosts.mindblownCount,
+        laughCount: anonGossipPosts.laughCount,
+        skullCount: anonGossipPosts.skullCount,
+        eyesCount: anonGossipPosts.eyesCount,
+        replyCount: anonGossipPosts.replyCount,
+        repostCount: anonGossipPosts.repostCount,
+        viewCount: anonGossipPosts.viewCount,
+        createdAt: anonGossipPosts.createdAt,
+      })
+      .from(anonGossipPosts)
+      .where(
+        and(
+          eq(anonGossipPosts.isHidden, false),
+          gte(anonGossipPosts.createdAt, twentyFourHoursAgo)
+        )
+      );
+
+    let updatedCount = 0;
+    
+    for (const post of posts) {
+      const totalReactions = (post.fireCount || 0) + (post.mindblownCount || 0) + 
+        (post.laughCount || 0) + (post.skullCount || 0) + (post.eyesCount || 0);
+      const { score, isBreaking, isHot } = calculateTrendingScore(
+        totalReactions,
+        post.replyCount || 0,
+        post.repostCount || 0,
+        post.viewCount || 0,
+        new Date(post.createdAt)
+      );
+      
+      await db
+        .update(anonGossipPosts)
+        .set({
+          trendingScore: score,
+          isBreaking,
+          isHot,
+          updatedAt: new Date(),
+        })
+        .where(eq(anonGossipPosts.id, post.id));
+      
+      updatedCount++;
+    }
+    const oldPosts = await db
+      .update(anonGossipPosts)
+      .set({
+        isBreaking: false,
+        isHot: false,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          gte(anonGossipPosts.trendingScore, 0),
+          sql`${anonGossipPosts.createdAt} < ${twentyFourHoursAgo}`
+        )
+      );
+
+    return res.json({ 
+      success: true, 
+      message: `Recalculated trending scores for ${updatedCount} posts` 
+    });
+  } catch (error) {
+    console.error("Error recalculating trending:", error);
+    return res.status(500).json({ error: "Failed to recalculate trending" });
+  }
+});
+
+router.get("/trending/breaking", async (req: Request, res: Response) => {
+  try {
+    const { locationId, limit = "10" } = req.query;
+    const conditions = [
+      eq(anonGossipPosts.isHidden, false),
+      eq(anonGossipPosts.isBreaking, true),
+    ];
+    
+    if (locationId) {
+      conditions.push(eq(anonGossipPosts.zaLocationId, locationId as string));
+    }
+    
+    const breakingPosts = await db
+      .select()
+      .from(anonGossipPosts)
+      .where(and(...conditions))
+      .orderBy(desc(anonGossipPosts.trendingScore))
+      .limit(parseInt(limit as string) || 10);
+
+    return res.json({ 
+      posts: breakingPosts,
+      count: breakingPosts.length 
+    });
+  } catch (error) {
+    console.error("Error fetching breaking posts:", error);
+    return res.status(500).json({ error: "Failed to fetch breaking posts" });
+  }
+});
+
+router.get("/trending/hot", async (req: Request, res: Response) => {
+  try {
+    const { locationId, limit = "20" } = req.query;
+    const conditions = [
+      eq(anonGossipPosts.isHidden, false),
+      eq(anonGossipPosts.isHot, true),
+    ];
+    
+    if (locationId) {
+      conditions.push(eq(anonGossipPosts.zaLocationId, locationId as string));
+    }
+    
+    const hotPosts = await db
+      .select()
+      .from(anonGossipPosts)
+      .where(and(...conditions))
+      .orderBy(desc(anonGossipPosts.trendingScore))
+      .limit(parseInt(limit as string) || 20);
+
+    return res.json({ 
+      posts: hotPosts,
+      count: hotPosts.length 
+    });
+  } catch (error) {
+    console.error("Error fetching hot posts:", error);
+    return res.status(500).json({ error: "Failed to fetch hot posts" });
+  }
+});
+
+router.get("/trending/national", async (req: Request, res: Response) => {
+  try {
+    const { limit = "50", cursor } = req.query;
+    const conditions = [eq(anonGossipPosts.isHidden, false)];
+    
+    if (cursor) {
+      conditions.push(sql`${anonGossipPosts.trendingScore} < ${parseFloat(cursor as string)}`);
+    }
+    
+    const posts = await db
+      .select()
+      .from(anonGossipPosts)
+      .where(and(...conditions))
+      .orderBy(desc(anonGossipPosts.trendingScore), desc(anonGossipPosts.createdAt))
+      .limit(parseInt(limit as string) || 50);
+
+    const nextCursor = posts.length > 0 ? posts[posts.length - 1].trendingScore : null;
+
+    return res.json({ 
+      posts,
+      nextCursor,
+      hasMore: posts.length === parseInt(limit as string)
+    });
+  } catch (error) {
+    console.error("Error fetching national trending:", error);
+    return res.status(500).json({ error: "Failed to fetch national trending" });
+  }
+});
+
+router.get("/trending/provincial/:provinceSlug", async (req: Request, res: Response) => {
+  try {
+    const { provinceSlug } = req.params;
+    const { limit = "50", cursor } = req.query;
+    const province = await db
+      .select()
+      .from(gossipLocations)
+      .where(
+        and(
+          eq(gossipLocations.slug, provinceSlug),
+          eq(gossipLocations.type, "PROVINCE")
+        )
+      )
+      .limit(1);
+
+    if (province.length === 0) {
+      return res.status(404).json({ error: "Province not found" });
+    }
+    const cities = await db
+      .select({ id: gossipLocations.id })
+      .from(gossipLocations)
+      .where(eq(gossipLocations.parentId, province[0].id));
+    
+    const cityIds = cities.map(c => c.id);
+    const hoods = await db
+      .select({ id: gossipLocations.id })
+      .from(gossipLocations)
+      .where(sql`${gossipLocations.parentId} IN (${sql.join(cityIds, sql`, `)})`);
+    
+    const allLocationIds = [province[0].id, ...cityIds, ...hoods.map(h => h.id)];
+    const conditions = [
+      eq(anonGossipPosts.isHidden, false),
+      sql`${anonGossipPosts.zaLocationId} IN (${sql.join(allLocationIds, sql`, `)})`
+    ];
+    
+    if (cursor) {
+      conditions.push(sql`${anonGossipPosts.trendingScore} < ${parseFloat(cursor as string)}`);
+    }
+    
+    const posts = await db
+      .select()
+      .from(anonGossipPosts)
+      .where(and(...conditions))
+      .orderBy(desc(anonGossipPosts.trendingScore), desc(anonGossipPosts.createdAt))
+      .limit(parseInt(limit as string) || 50);
+
+    const nextCursor = posts.length > 0 ? posts[posts.length - 1].trendingScore : null;
+
+    return res.json({ 
+      province: province[0],
+      posts,
+      nextCursor,
+      hasMore: posts.length === parseInt(limit as string)
+    });
+  } catch (error) {
+    console.error("Error fetching provincial trending:", error);
+    return res.status(500).json({ error: "Failed to fetch provincial trending" });
+  }
+});
+
+router.get("/trending/stats", async (req: Request, res: Response) => {
+  try {
+    const { locationId } = req.query;
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const conditions = [
+      eq(anonGossipPosts.isHidden, false),
+      gte(anonGossipPosts.createdAt, twentyFourHoursAgo),
+    ];
+    
+    if (locationId) {
+      conditions.push(eq(anonGossipPosts.zaLocationId, locationId as string));
+    }
+    
+    const stats = await db
+      .select({
+        totalPosts: count(),
+        totalReactions: sql<number>`COALESCE(SUM("fire_count" + "mindblown_count" + "laugh_count" + "skull_count" + "eyes_count"), 0)`,
+        totalComments: sql<number>`COALESCE(SUM("reply_count"), 0)`,
+        totalReposts: sql<number>`COALESCE(SUM("repost_count"), 0)`,
+        totalViews: sql<number>`COALESCE(SUM("view_count"), 0)`,
+        avgTrendingScore: sql<number>`COALESCE(AVG("trending_score"), 0)`,
+        breakingCount: sql<number>`COALESCE(SUM(CASE WHEN "is_breaking" = true THEN 1 ELSE 0 END), 0)`,
+        hotCount: sql<number>`COALESCE(SUM(CASE WHEN "is_hot" = true THEN 1 ELSE 0 END), 0)`,
+      })
+      .from(anonGossipPosts)
+      .where(and(...conditions));
+
+    return res.json({ 
+      period: "24h",
+      stats: stats[0] || {
+        totalPosts: 0,
+        totalReactions: 0,
+        totalComments: 0,
+        totalReposts: 0,
+        totalViews: 0,
+        avgTrendingScore: 0,
+        breakingCount: 0,
+        hotCount: 0,
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching trending stats:", error);
+    return res.status(500).json({ error: "Failed to fetch trending stats" });
+  }
+});
+
 export default router;
