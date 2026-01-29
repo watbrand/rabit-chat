@@ -8,6 +8,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { type Country, type ZaLocation, getCountryFlag } from "./AnonGossipTypes";
 import { LoadingIndicator } from "@/components/animations";
+import { getApiUrl } from "@/lib/query-client";
 
 interface LocationSelectorProps {
   selectedCountry: string | null;
@@ -23,14 +24,71 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: countries = [] } = useQuery<Country[]>({
-    queryKey: ["/api/gossip/countries"],
+  const { data: locationData } = useQuery<{ country: { name: string; emoji: string }; provinces: any[] }>({
+    queryKey: ["/api/gossip/v2/locations"],
+    queryFn: async () => {
+      const response = await fetch(`${getApiUrl()}/api/gossip/v2/locations`);
+      if (!response.ok) return { country: { name: "South Africa", emoji: "🇿🇦" }, provinces: [] };
+      return response.json();
+    },
     staleTime: 1000 * 60 * 60,
   });
 
+  const countries: Country[] = [{ id: "za", code: "ZA", name: "South Africa", isSouthAfrica: true, isActive: true, sortOrder: 0 }];
+
   const { data: zaLocations = [], isLoading: loadingLocations } = useQuery<ZaLocation[]>({
-    queryKey: ["/api/gossip/za-locations", { province: selectedProvince, city: selectedCity, level: step === "province" ? 1 : step === "city" ? 2 : 3 }],
-    enabled: selectedCountry === "ZA" && (step === "province" || step === "city" || step === "kasi"),
+    queryKey: ["/api/gossip/v2/locations-flat", selectedProvince, selectedCity, step],
+    queryFn: async () => {
+      if (!locationData?.provinces) return [];
+      const locations: ZaLocation[] = [];
+      
+      if (step === "province") {
+        locationData.provinces.forEach((p: any) => {
+          locations.push({
+            id: p.id,
+            province: p.name,
+            city: null,
+            kasi: null,
+            level: 1,
+            population: null,
+            isActive: true,
+          });
+        });
+      } else if (step === "city" && selectedProvince) {
+        const province = locationData.provinces.find((p: any) => p.name === selectedProvince);
+        if (province?.cities) {
+          province.cities.forEach((c: any) => {
+            locations.push({
+              id: c.id,
+              province: selectedProvince,
+              city: c.name,
+              kasi: null,
+              level: 2,
+              population: null,
+              isActive: true,
+            });
+          });
+        }
+      } else if (step === "kasi" && selectedProvince && selectedCity) {
+        const province = locationData.provinces.find((p: any) => p.name === selectedProvince);
+        const city = province?.cities?.find((c: any) => c.name === selectedCity);
+        if (city?.hoods) {
+          city.hoods.forEach((h: any) => {
+            locations.push({
+              id: h.id,
+              province: selectedProvince,
+              city: selectedCity,
+              kasi: h.name,
+              level: 3,
+              population: null,
+              isActive: true,
+            });
+          });
+        }
+      }
+      return locations;
+    },
+    enabled: selectedCountry === "ZA" && (step === "province" || step === "city" || step === "kasi") && !!locationData,
     staleTime: 1000 * 60 * 5,
   });
 

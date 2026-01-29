@@ -5,10 +5,11 @@ import { Feather } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { Audio } from "expo-av";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { apiRequest } from "@/lib/query-client";
+import { getApiUrl } from "@/lib/query-client";
 import { uploadFileWithDuration } from "@/lib/upload";
 import { LoadingIndicator } from "@/components/animations";
 
@@ -37,17 +38,39 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   const [recordedAudioUri, setRecordedAudioUri] = useState<string | null>(null);
   const [uploadedAudioUrl, setUploadedAudioUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
   
   const recordingRef = useRef<Audio.Recording | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const loadDeviceId = async () => {
+      const id = await AsyncStorage.getItem("@gossip_device_id");
+      setDeviceId(id);
+    };
+    loadDeviceId();
+  }, [visible]);
   
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest("POST", "/api/gossip/posts", data);
+      if (!deviceId) throw new Error("Device ID not found");
+      const response = await fetch(`${getApiUrl()}/api/gossip/v2/posts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-device-id": deviceId,
+        },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || err.error || "Failed to post");
+      }
+      return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/gossip/posts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/gossip/trending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/trending"] });
       resetForm();
       onClose();
       if (Platform.OS !== "web") {
@@ -159,19 +182,17 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   };
   
   const handleSubmit = () => {
-    if (!canSubmit() || !presetLocation) return;
+    if (!canSubmit() || !presetLocation || !deviceId) return;
     
     const data: any = {
-      countryCode: presetLocation.countryCode,
-      zaLocationId: presetLocation.zaLocationId,
-      locationDisplay: presetLocation.locationDisplay,
-      type: isVoiceMode ? "VOICE" : "TEXT",
-      isWhisper,
+      deviceHash: deviceId,
+      locationId: presetLocation.zaLocationId,
+      postType: "REGULAR",
+      isWhisperMode: isWhisper,
     };
     
     if (isVoiceMode) {
       data.mediaUrl = uploadedAudioUrl;
-      data.durationMs = recordingDuration * 1000;
     } else {
       data.content = content.trim();
     }

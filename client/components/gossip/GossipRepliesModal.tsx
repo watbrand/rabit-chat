@@ -14,10 +14,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { apiRequest } from "@/lib/query-client";
+import { getApiUrl } from "@/lib/query-client";
 import { TeaMeter } from "./TeaMeter";
 import { ReactionButtons } from "./ReactionButtons";
 import { type AnonGossipPost, type ReactionType } from "./AnonGossipTypes";
@@ -121,27 +122,56 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
 
   const [replyText, setReplyText] = useState("");
   const [myReactions, setMyReactions] = useState<Record<string, string[]>>({});
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadDeviceId = async () => {
+      const id = await AsyncStorage.getItem("@gossip_device_id");
+      setDeviceId(id);
+    };
+    loadDeviceId();
+  }, [visible]);
 
   const {
     data: replies = [],
     isLoading,
     refetch,
   } = useQuery<Reply[]>({
-    queryKey: ["/api/gossip/posts", post?.id, "replies"],
-    enabled: !!post?.id && visible,
+    queryKey: ["/api/gossip/v2/posts", post?.id, "comments", deviceId],
+    queryFn: async () => {
+      if (!deviceId || !post?.id) return [];
+      const response = await fetch(
+        `${getApiUrl()}/api/gossip/v2/posts/${post.id}/comments`,
+        { headers: { "x-device-id": deviceId } }
+      );
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.comments || [];
+    },
+    enabled: !!post?.id && visible && !!deviceId,
   });
 
   const createReplyMutation = useMutation({
     mutationFn: async (content: string) => {
-      return apiRequest("POST", `/api/gossip/posts/${post?.id}/replies`, {
-        content,
-        type: "TEXT",
-      });
+      if (!deviceId || !post?.id) throw new Error("Missing required data");
+      const response = await fetch(
+        `${getApiUrl()}/api/gossip/v2/posts/${post.id}/comments`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-device-id": deviceId,
+          },
+          body: JSON.stringify({ content, deviceHash: deviceId }),
+        }
+      );
+      if (!response.ok) throw new Error("Failed to post reply");
+      return response.json();
     },
     onSuccess: () => {
       setReplyText("");
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["/api/gossip/posts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"] });
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -153,9 +183,20 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
 
   const reactionMutation = useMutation({
     mutationFn: async ({ replyId, type }: { replyId: string; type: ReactionType }) => {
-      return apiRequest("POST", `/api/gossip/replies/${replyId}/reactions`, {
-        reactionType: type,
-      });
+      if (!deviceId) throw new Error("No device ID");
+      const response = await fetch(
+        `${getApiUrl()}/api/gossip/v2/comments/${replyId}/react`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-device-id": deviceId,
+          },
+          body: JSON.stringify({ type, deviceHash: deviceId }),
+        }
+      );
+      if (!response.ok) throw new Error("Failed to react");
+      return response.json();
     },
     onMutate: async ({ replyId, type }) => {
       const currentReactions = myReactions[replyId] || [];
@@ -190,9 +231,27 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
               Alert.alert("Error", "Please provide a reason (min 5 characters)");
               return;
             }
+            if (!deviceId) {
+              Alert.alert("Error", "Device not ready");
+              return;
+            }
             try {
-              await apiRequest("POST", `/api/gossip/replies/${replyId}/report`, { reason });
-              Alert.alert("Reported", "Thank you for helping keep the community safe.");
+              const response = await fetch(
+                `${getApiUrl()}/api/gossip/v2/comments/${replyId}/report`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-device-id": deviceId,
+                  },
+                  body: JSON.stringify({ reason, deviceHash: deviceId }),
+                }
+              );
+              if (response.ok) {
+                Alert.alert("Reported", "Thank you for helping keep the community safe.");
+              } else {
+                Alert.alert("Error", "Failed to report reply");
+              }
             } catch (error) {
               Alert.alert("Error", "Failed to report reply");
             }
