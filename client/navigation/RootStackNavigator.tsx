@@ -87,7 +87,7 @@ import BankAccountsScreen from "@/screens/BankAccountsScreen";
 import KYCScreen from "@/screens/KYCScreen";
 import WithdrawalScreen from "@/screens/WithdrawalScreen";
 import CoinCheckoutScreen from "@/screens/CoinCheckoutScreen";
-import { HelpCenterScreen, SupportInboxScreen, TicketChatScreen, HelpArticleScreen, FAQScreen, NewTicketScreen, FeatureRequestsScreen, SafetyCenterScreen } from "@/screens/help";
+import { HelpCenterScreen, SupportInboxScreen, TicketChatScreen, HelpArticleScreen, HelpCategoryScreen, FAQScreen, NewTicketScreen, FeatureRequestsScreen, SafetyCenterScreen } from "@/screens/help";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuth } from "@/hooks/useAuth";
 import { useOnboarding } from "@/hooks/useOnboarding";
@@ -976,6 +976,14 @@ export default function RootStackNavigator() {
             component={HelpCenterScreen}
             options={{
               title: "Help Center",
+              animation: "slide_from_right",
+            }}
+          />
+          <Stack.Screen
+            name="HelpCategory"
+            component={HelpCategoryScreen}
+            options={{
+              title: "Category",
               animation: "slide_from_right",
             }}
           />
