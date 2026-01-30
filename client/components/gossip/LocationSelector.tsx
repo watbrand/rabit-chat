@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View, Pressable, StyleSheet, Modal, FlatList, TextInput } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { ThemedText } from "@/components/ThemedText";
@@ -18,6 +19,7 @@ interface LocationSelectorProps {
 
 export function LocationSelector({ selectedCountry, selectedLocation, onSelect }: LocationSelectorProps) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const [showModal, setShowModal] = useState(false);
   const [step, setStep] = useState<"country" | "province" | "city" | "kasi">("country");
   const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
@@ -189,7 +191,7 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
         <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
           <View style={styles.modalOverlay}>
             <Pressable style={styles.modalDismiss} onPress={() => { setShowModal(false); resetSelection(); }} />
-            <View style={[styles.modalContent, { backgroundColor: theme.backgroundRoot }]}>
+            <View style={[styles.modalContent, { backgroundColor: theme.backgroundRoot, paddingBottom: insets.bottom + Spacing.lg }]}>
               <View style={styles.modalHeader}>
               {step !== "country" ? (
                 <Pressable onPress={handleBack} style={styles.backButton}>

@@ -256,21 +256,36 @@ export function AnonymousGossipTab() {
     />
   ), [handleReact, handleReply, handleReport, handleDM, handleShare, getMyReactions]);
 
+  const canPost = selectedLocation?.level === 3;
+  const showCommunityContent = activeTab === "community" && selectedLocation?.level === 3;
+
   const renderEmptyState = useCallback(() => (
     <View style={styles.emptyContainer}>
-      <EmptyState type="posts" message="No gossip yet in this area" />
-      <Pressable 
-        style={styles.beFirstButton}
-        onPress={() => setShowComposeModal(true)}
-      >
-        <Feather name="coffee" size={20} color={Colors.dark.text} />
-        <ThemedText style={styles.beFirstText}>Be the first to spill tea</ThemedText>
-      </Pressable>
+      {canPost ? (
+        <>
+          <EmptyState type="posts" message="No gossip yet in this hood" />
+          <Pressable 
+            style={styles.beFirstButton}
+            onPress={() => setShowComposeModal(true)}
+          >
+            <Feather name="coffee" size={20} color={Colors.light.textInverse} />
+            <ThemedText style={styles.beFirstText}>Be the first to spill tea</ThemedText>
+          </Pressable>
+        </>
+      ) : (
+        <EmptyState 
+          type="gossip" 
+          message={activeTab === "community" 
+            ? "Select a hood/kasi to see local gossip" 
+            : "No trending gossip right now"
+          } 
+        />
+      )}
     </View>
-  ), []);
+  ), [canPost, activeTab]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <ThemedText style={styles.title}>Local Gossip</ThemedText>
@@ -278,7 +293,7 @@ export function AnonymousGossipTab() {
             style={styles.dmButton}
             onPress={() => navigation.navigate("GossipDMList")}
           >
-            <Feather name="inbox" size={20} color={Colors.dark.primary} />
+            <Feather name="inbox" size={20} color={Colors.light.primary} />
           </Pressable>
         </View>
         <LocationSelector
@@ -357,15 +372,17 @@ export function AnonymousGossipTab() {
         />
       )}
 
-      <Pressable
-        style={styles.fab}
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          setShowComposeModal(true);
-        }}
-      >
-        <Feather name="plus" size={24} color={Colors.dark.text} />
-      </Pressable>
+      {canPost ? (
+        <Pressable
+          style={styles.fab}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setShowComposeModal(true);
+          }}
+        >
+          <Feather name="plus" size={24} color={Colors.light.textInverse} />
+        </Pressable>
+      ) : null}
 
       <GossipComposeModal
         visible={showComposeModal}
@@ -391,7 +408,7 @@ export function AnonymousGossipTab() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.dark.backgroundRoot,
+    backgroundColor: Colors.light.backgroundRoot,
   },
   header: {
     paddingHorizontal: Spacing.md,
@@ -405,14 +422,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "700",
-    color: Colors.dark.text,
+    color: Colors.light.text,
     marginBottom: Spacing.xs,
   },
   dmButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(139, 92, 246, 0.15)",
+    backgroundColor: Colors.light.backgroundSecondary,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -429,18 +446,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: Colors.light.backgroundSecondary,
   },
   activeTab: {
-    backgroundColor: "rgba(139, 92, 246, 0.2)",
+    backgroundColor: Colors.light.backgroundTertiary,
   },
   tabText: {
     fontSize: 14,
-    color: Colors.dark.textSecondary,
+    color: Colors.light.textSecondary,
     fontWeight: "500",
   },
   activeTabText: {
-    color: Colors.dark.primary,
+    color: Colors.light.primary,
   },
   loadingContainer: {
     flex: 1,
@@ -465,13 +482,13 @@ const styles = StyleSheet.create({
     marginTop: Spacing.lg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.dark.primary,
+    backgroundColor: Colors.light.primary,
     borderRadius: BorderRadius.full,
   },
   beFirstText: {
     fontSize: 14,
     fontWeight: "600",
-    color: Colors.dark.text,
+    color: Colors.light.textInverse,
   },
   fab: {
     position: "absolute",
