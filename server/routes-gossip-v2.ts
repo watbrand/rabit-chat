@@ -540,6 +540,13 @@ router.post("/posts", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Invalid location" });
     }
 
+    if (location[0].type !== "HOOD") {
+      return res.status(400).json({ 
+        error: "Invalid location type",
+        message: "Posts can only be created in hoods/kasis. Please select a specific hood."
+      });
+    }
+
     const alias = generateAlias();
     const locationDisplay = await buildLocationDisplay(locationId);
 
