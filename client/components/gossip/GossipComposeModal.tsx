@@ -93,6 +93,7 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
     },
     onSuccess: (data) => {
       console.log("[GossipCompose] POST SUCCESS:", JSON.stringify(data));
+      Alert.alert("DEBUG: SUCCESS!", `Post created! ID: ${data?.id || 'unknown'}\nRefreshing feed...`);
       queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"], exact: false });
       queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/trending"], exact: false });
       resetForm();
