@@ -6,12 +6,46 @@ import Constants from "expo-constants";
  * @returns {string} The API base URL
  */
 export function getApiUrl(): string {
+  // Debug logging for production troubleshooting
+  console.log("[getApiUrl] Starting domain resolution...");
+  console.log("[getApiUrl] process.env.EXPO_PUBLIC_DOMAIN:", process.env.EXPO_PUBLIC_DOMAIN);
+  console.log("[getApiUrl] Constants.expoConfig:", JSON.stringify(Constants.expoConfig?.extra, null, 2));
+  console.log("[getApiUrl] Constants.manifest2?.extra:", JSON.stringify((Constants as any).manifest2?.extra, null, 2));
+  console.log("[getApiUrl] Constants.manifest?.extra:", JSON.stringify((Constants as any).manifest?.extra, null, 2));
+  
   // Try multiple sources for the domain
   let host = process.env.EXPO_PUBLIC_DOMAIN;
   
   // Fallback to Expo Constants if available (for published static builds)
+  // The build script sets this at manifest.extra.expoClient.extra.apiDomain
   if (!host && Constants.expoConfig?.extra?.apiDomain) {
     host = Constants.expoConfig.extra.apiDomain;
+  }
+  
+  // Also check expoClient.extra.apiDomain (static build manifest structure)
+  if (!host && (Constants as any).expoConfig?.extra?.expoClient?.extra?.apiDomain) {
+    host = (Constants as any).expoConfig.extra.expoClient.extra.apiDomain;
+  }
+  
+  // Check manifest2 structure for static builds
+  if (!host && (Constants as any).manifest2?.extra?.expoClient?.extra?.apiDomain) {
+    host = (Constants as any).manifest2.extra.expoClient.extra.apiDomain;
+  }
+  
+  // Also check the direct manifest structure that Expo Go might use
+  if (!host && (Constants as any).manifest?.extra?.expoClient?.extra?.apiDomain) {
+    host = (Constants as any).manifest.extra.expoClient.extra.apiDomain;
+  }
+  
+  // Check if expoGo contains the production domain (build.js sets debuggerHost to include domain)
+  if (!host && (Constants as any).manifest2?.extra?.expoGo?.debuggerHost) {
+    // debuggerHost format: "domain.replit.app/ios" - extract just the domain
+    const debuggerHost = (Constants as any).manifest2.extra.expoGo.debuggerHost;
+    const parts = debuggerHost.split('/');
+    if (parts[0] && (parts[0].includes('replit.app') || parts[0].includes('replit.dev'))) {
+      host = parts[0];
+      console.log("[getApiUrl] Extracted domain from debuggerHost:", host);
+    }
   }
   
   // Fallback to hostUri for Expo Go development mode
@@ -34,16 +68,53 @@ export function getApiUrl(): string {
     host = hostUri.split(':')[0];
   }
   
-  // Ultimate fallback - use the Replit dev domain directly
-  // This ensures the app works even if env vars aren't passed correctly
+  // For web: try to get the domain from the current location
+  if (!host && typeof window !== 'undefined' && window.location?.hostname) {
+    // Use current page hostname for web builds
+    const hostname = window.location.hostname;
+    // Only use this if it looks like a Replit domain
+    if (hostname.includes('replit.dev') || hostname.includes('repl.co') || hostname.includes('replit.app')) {
+      host = hostname;
+      console.log("[getApiUrl] Using window.location.hostname:", host);
+    }
+  }
+  
+  // For Expo static builds, check the runtime manifest
   if (!host) {
-    host = "e42123f6-2a05-4c86-a608-763b544187e9-00-bdvy7k1ckg5u.kirk.replit.dev";
-    console.log("[getApiUrl] Using hardcoded fallback domain");
+    try {
+      // In static builds, the manifest extra may have the domain
+      const extra = (Constants as any).manifest?.extra || 
+                    (Constants as any).expoConfig?.extra || 
+                    (Constants as any).manifest2?.extra;
+      if (extra?.apiDomain) {
+        host = extra.apiDomain;
+        console.log("[getApiUrl] Found apiDomain in manifest extra:", host);
+      }
+    } catch (e) {
+      console.log("[getApiUrl] Error checking manifest extra:", e);
+    }
+  }
+  
+  // Final fallback for web: use current origin
+  if (!host && typeof window !== 'undefined' && window.location?.origin) {
+    // Just use current origin directly for API calls
+    const url = new URL(window.location.origin);
+    console.log("[getApiUrl] Using current origin as fallback:", url.href);
+    return url.href;
+  }
+  
+  if (!host) {
+    console.error("[getApiUrl] CRITICAL: Could not determine API host from any source!");
+    console.log("[getApiUrl] Constants:", JSON.stringify({
+      expoConfig: Constants.expoConfig,
+      manifest: (Constants as any).manifest,
+      manifest2: (Constants as any).manifest2,
+    }, null, 2));
+    // Use relative URLs as last resort - this works for web but not native
+    console.log("[getApiUrl] Using empty string (relative URLs)");
+    return "";
   }
 
-  console.log("[getApiUrl] EXPO_PUBLIC_DOMAIN:", process.env.EXPO_PUBLIC_DOMAIN);
-  console.log("[getApiUrl] Constants.expoConfig.hostUri:", Constants.expoConfig?.hostUri);
-  console.log("[getApiUrl] Constants.manifest2:", JSON.stringify((Constants as any).manifest2?.extra?.expoGo, null, 2));
   console.log("[getApiUrl] Resolved host:", host);
 
   // Remove port suffix if present - Replit's HTTPS proxy handles routing
