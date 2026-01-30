@@ -85,7 +85,17 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
           const err = await response.json().catch(() => ({}));
           throw new Error(err.message || err.error || "Failed to post");
         }
-        return response.json();
+        
+        const responseText = await response.text();
+        Alert.alert("DEBUG: Raw Response", responseText.substring(0, 200));
+        
+        try {
+          const jsonData = JSON.parse(responseText);
+          return jsonData;
+        } catch (parseError: any) {
+          Alert.alert("DEBUG: JSON Parse Error", parseError.message);
+          throw new Error("Failed to parse response");
+        }
       } catch (fetchError: any) {
         Alert.alert("DEBUG: Fetch Error", `${fetchError.name}: ${fetchError.message}`);
         throw fetchError;
