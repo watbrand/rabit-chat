@@ -178,7 +178,7 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   const canSubmit = () => {
     if (!presetLocation) return false;
     if (isVoiceMode) return !!uploadedAudioUrl && !isUploading;
-    return content.trim().length > 0;
+    return content.trim().length >= 10;
   };
   
   const handleSubmit = () => {
@@ -193,6 +193,7 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
     
     if (isVoiceMode) {
       data.mediaUrl = uploadedAudioUrl;
+      data.mediaType = "AUDIO";
     } else {
       data.content = content.trim();
     }

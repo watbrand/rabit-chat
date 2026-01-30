@@ -32,7 +32,12 @@ const DEVICE_ID_KEY = "@gossip_device_id";
 async function getOrCreateDeviceId(): Promise<string> {
   let deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
   if (!deviceId) {
-    deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Generate UUID format (36 chars) to meet backend's min 32 char requirement
+    deviceId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
     await AsyncStorage.setItem(DEVICE_ID_KEY, deviceId);
   }
   return deviceId;
@@ -65,7 +70,7 @@ export function AnonymousGossipTab() {
         params.set("locationId", selectedLocation.id);
       }
       if (activeTab === "trending") {
-        params.set("sortBy", "trending");
+        params.set("tab", "trending");
       }
       params.set("limit", "30");
       

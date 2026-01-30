@@ -465,7 +465,7 @@ async function buildLocationDisplay(locationId: string): Promise<string> {
 const createPostSchema = z.object({
   deviceHash: z.string().min(32).max(128),
   locationId: z.string().uuid(),
-  content: z.string().min(10).max(5000),
+  content: z.string().max(5000).optional(),
   postType: z.enum(["REGULAR", "CONFESSION", "AMA", "I_SAW", "I_HEARD"]).default("REGULAR"),
   isInsider: z.boolean().default(false),
   pollQuestion: z.string().max(500).optional(),
@@ -473,7 +473,10 @@ const createPostSchema = z.object({
   isWhisperMode: z.boolean().default(false),
   mediaUrl: z.string().url().optional(),
   mediaType: z.enum(["IMAGE", "VIDEO", "AUDIO"]).optional(),
-});
+}).refine(
+  (data) => (data.content && data.content.length >= 10) || data.mediaUrl,
+  { message: "Either content (min 10 chars) or mediaUrl is required" }
+);
 
 router.post("/posts", async (req: Request, res: Response) => {
   try {
