@@ -67,9 +67,11 @@ export function AnonymousGossipTab() {
     getOrCreateDeviceId().then(setDeviceId);
   }, []);
 
-  const { data: postsData, isLoading: postsLoading, refetch: refetchPosts } = useQuery({
+  const { data: postsData, isLoading: postsLoading, refetch: refetchPosts, error: postsError, isError: postsIsError } = useQuery({
     queryKey: ["/api/gossip/v2/posts", selectedLocation?.id, activeTab],
     queryFn: async () => {
+      const apiUrl = getApiUrl();
+      console.log("[GossipTab] Fetching posts from:", apiUrl);
       const params = new URLSearchParams();
       if (selectedLocation?.id) {
         params.set("locationId", selectedLocation.id);
@@ -79,17 +81,30 @@ export function AnonymousGossipTab() {
       }
       params.set("limit", "30");
       
-      const response = await fetch(
-        `${getApiUrl()}/api/gossip/v2/posts?${params.toString()}`,
-        { headers: deviceId ? { "x-device-id": deviceId } : {} }
-      );
-      if (!response.ok) throw new Error("Failed to fetch posts");
-      return response.json();
+      const url = `${apiUrl}/api/gossip/v2/posts?${params.toString()}`;
+      console.log("[GossipTab] Full URL:", url);
+      
+      const response = await fetch(url, { 
+        headers: deviceId ? { "x-device-id": deviceId } : {} 
+      });
+      
+      console.log("[GossipTab] Response status:", response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        console.error("[GossipTab] Error response:", errorText);
+        throw new Error(`Failed to fetch posts: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log("[GossipTab] Posts received:", data?.posts?.length || 0);
+      return data;
     },
     enabled: !!deviceId,
     staleTime: 0,
     refetchOnMount: true,
     refetchOnWindowFocus: true,
+    retry: 2,
   });
 
   const { data: myReactionsData } = useQuery({
@@ -357,6 +372,19 @@ export function AnonymousGossipTab() {
         <View style={styles.loadingContainer}>
           <LoadingIndicator size="large" />
         </View>
+      ) : postsIsError ? (
+        <View style={styles.errorContainer}>
+          <Feather name="alert-circle" size={48} color={Colors.light.error} />
+          <ThemedText style={styles.errorText}>
+            Failed to load gossip
+          </ThemedText>
+          <ThemedText style={styles.errorDetail}>
+            {postsError?.message || "Please try again"}
+          </ThemedText>
+          <Pressable style={styles.retryButton} onPress={() => refetchPosts()}>
+            <ThemedText style={styles.retryText}>Tap to retry</ThemedText>
+          </Pressable>
+        </View>
       ) : (
         <FlatList
           data={posts}
@@ -511,6 +539,36 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: Colors.light.text,
+    marginTop: Spacing.md,
+  },
+  errorDetail: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginTop: Spacing.sm,
+    textAlign: "center",
+  },
+  retryButton: {
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    backgroundColor: Colors.light.primary,
+    borderRadius: BorderRadius.full,
+  },
+  retryText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.light.textInverse,
   },
   listContent: {
     paddingVertical: Spacing.md,

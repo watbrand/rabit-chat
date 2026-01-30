@@ -672,6 +672,17 @@ router.post("/posts", async (req: Request, res: Response) => {
 router.get("/posts", async (req: Request, res: Response) => {
   try {
     const { locationId, tab, limit = "20", offset = "0", deviceHash } = req.query;
+    const deviceIdHeader = req.headers["x-device-id"];
+    console.log("[Gossip Posts] Fetching posts:", {
+      locationId,
+      tab,
+      limit,
+      offset,
+      deviceHash,
+      deviceIdHeader,
+      origin: req.headers.origin,
+      host: req.headers.host,
+    });
     const parsedLimit = Math.min(parseInt(limit as string) || 20, 50);
     const parsedOffset = parseInt(offset as string) || 0;
 
