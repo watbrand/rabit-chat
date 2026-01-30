@@ -63,19 +63,33 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!deviceId) throw new Error("Device ID not found");
-      const response = await fetch(`${getApiUrl()}/api/gossip/v2/posts`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-device-id": deviceId,
-        },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.message || err.error || "Failed to post");
+      const apiUrl = getApiUrl();
+      const fullUrl = `${apiUrl}/api/gossip/v2/posts`;
+      
+      // DEBUG: Show URL being used
+      Alert.alert("DEBUG: Fetch Starting", `URL: ${fullUrl}\nData: ${JSON.stringify(data).substring(0, 100)}`);
+      
+      try {
+        const response = await fetch(fullUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-device-id": deviceId,
+          },
+          body: JSON.stringify(data),
+        });
+        
+        Alert.alert("DEBUG: Response", `Status: ${response.status} ${response.statusText}`);
+        
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.message || err.error || "Failed to post");
+        }
+        return response.json();
+      } catch (fetchError: any) {
+        Alert.alert("DEBUG: Fetch Error", `${fetchError.name}: ${fetchError.message}`);
+        throw fetchError;
       }
-      return response.json();
     },
     onSuccess: (data) => {
       console.log("[GossipCompose] POST SUCCESS:", JSON.stringify(data));
