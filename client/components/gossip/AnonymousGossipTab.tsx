@@ -560,7 +560,7 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
   },
   dmModalContent: {
-    backgroundColor: Colors.light.background,
+    backgroundColor: Colors.light.backgroundRoot,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     width: "100%",
