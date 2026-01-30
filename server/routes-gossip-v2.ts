@@ -558,7 +558,7 @@ router.post("/posts", async (req: Request, res: Response) => {
       teaMeter = Math.min(Math.max(Math.round(accuracyRate / 10 + engagementBonus), 1), 10);
     }
 
-    const extractedHashtags = content.match(/#[a-zA-Z0-9_]+/g) || [];
+    const extractedHashtags = content?.match(/#[a-zA-Z0-9_]+/g) || [];
 
     const [post] = await db.insert(anonGossipPosts).values({
       deviceHash: hashedDevice,
@@ -638,6 +638,7 @@ router.post("/posts", async (req: Request, res: Response) => {
 
     const responsePost = {
       ...post,
+      type: mediaUrl && !content ? "VOICE" : "TEXT",
       alias: alias.name,
       aliasEmoji: alias.emoji,
       reactions: { fire: 0, mindblown: 0, laugh: 0, skull: 0, eyes: 0 },
@@ -846,6 +847,7 @@ router.get("/posts", async (req: Request, res: Response) => {
 
         return {
           ...post,
+          type: post.mediaUrl && !post.content ? "VOICE" : "TEXT",
           alias: alias.name,
           aliasEmoji: alias.emoji,
           reactions: {
@@ -4270,7 +4272,7 @@ router.get("/analytics/accuracy-history", async (req: Request, res: Response) =>
       const rate = total > 0 ? (post.trueVotes / total * 100) : 0;
       return {
         postId: post.id,
-        contentPreview: post.content + (post.content && post.content.length >= 100 ? "..." : ""),
+        contentPreview: (post.content || "[Voice/Media]") + (post.content && post.content.length >= 100 ? "..." : ""),
         votes: {
           true: post.trueVotes,
           false: post.falseVotes,
