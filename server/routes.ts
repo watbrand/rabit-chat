@@ -10783,6 +10783,163 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===== VIRTUAL MALL PRESENCE ROUTES =====
+
+  app.post("/api/mall/presence/enter", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { positionX = 50, positionY = 85 } = req.body;
+
+      await db.insert(mallPresence).values({
+        userId,
+        positionX,
+        positionY,
+        isActive: true,
+        lastActiveAt: new Date(),
+        enteredAt: new Date(),
+      }).onConflictDoUpdate({
+        target: [mallPresence.userId],
+        set: {
+          isActive: true,
+          positionX,
+          positionY,
+          lastActiveAt: new Date(),
+          enteredAt: new Date(),
+        },
+      });
+
+      broadcastMallPresence();
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to enter mall:", error);
+      res.status(500).json({ message: "Failed to enter mall" });
+    }
+  });
+
+  app.post("/api/mall/presence/leave", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+
+      await db.update(mallPresence)
+        .set({ isActive: false, lastActiveAt: new Date() })
+        .where(eq(mallPresence.userId, userId));
+
+      broadcastMallPresence();
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to leave mall:", error);
+      res.status(500).json({ message: "Failed to leave mall" });
+    }
+  });
+
+  app.post("/api/mall/presence/move", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { positionX, positionY, currentShopId } = req.body;
+
+      await db.update(mallPresence)
+        .set({
+          positionX,
+          positionY,
+          currentShopId: currentShopId || null,
+          lastActiveAt: new Date(),
+        })
+        .where(eq(mallPresence.userId, userId));
+
+      broadcastMallPresence();
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to update mall position:", error);
+      res.status(500).json({ message: "Failed to update position" });
+    }
+  });
+
+  app.get("/api/mall/presence", requireAuth, async (req, res) => {
+    try {
+      const activeUsers = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        netWorth: users.netWorth,
+        positionX: mallPresence.positionX,
+        positionY: mallPresence.positionY,
+        currentShopId: mallPresence.currentShopId,
+      })
+      .from(mallPresence)
+      .innerJoin(users, eq(mallPresence.userId, users.id))
+      .where(eq(mallPresence.isActive, true));
+
+      res.json(activeUsers);
+    } catch (error) {
+      console.error("Failed to get mall presence:", error);
+      res.status(500).json({ message: "Failed to get mall presence" });
+    }
+  });
+
+  app.get("/api/admin/mall/analytics", requireAdmin, async (req, res) => {
+    try {
+      const activeCount = await db.select({ count: sql<number>`count(*)` })
+        .from(mallPresence)
+        .where(eq(mallPresence.isActive, true));
+
+      const shopVisits = await db.select({
+        shopId: mallPresence.currentShopId,
+        shopName: mallCategories.name,
+        count: sql<number>`count(*)`,
+      })
+      .from(mallPresence)
+      .leftJoin(mallCategories, eq(mallPresence.currentShopId, mallCategories.id))
+      .where(and(
+        eq(mallPresence.isActive, true),
+        isNotNull(mallPresence.currentShopId)
+      ))
+      .groupBy(mallPresence.currentShopId, mallCategories.name);
+
+      const totalVisitsToday = await db.select({ count: sql<number>`count(*)` })
+        .from(mallPresence)
+        .where(sql`${mallPresence.enteredAt} >= CURRENT_DATE`);
+
+      res.json({
+        activeUsers: activeCount[0]?.count || 0,
+        shopOccupancy: shopVisits,
+        totalVisitsToday: totalVisitsToday[0]?.count || 0,
+      });
+    } catch (error) {
+      console.error("Failed to get mall analytics:", error);
+      res.status(500).json({ message: "Failed to get mall analytics" });
+    }
+  });
+
+  async function broadcastMallPresence() {
+    try {
+      const activeUsers = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        netWorth: users.netWorth,
+        positionX: mallPresence.positionX,
+        positionY: mallPresence.positionY,
+        currentShopId: mallPresence.currentShopId,
+      })
+      .from(mallPresence)
+      .innerJoin(users, eq(mallPresence.userId, users.id))
+      .where(eq(mallPresence.isActive, true));
+
+      wss?.clients?.forEach((client: any) => {
+        if (client.readyState === 1 && client.channel === "mall") {
+          client.send(JSON.stringify({
+            type: "mall_presence_update",
+            users: activeUsers,
+          }));
+        }
+      });
+    } catch (error) {
+      console.error("Failed to broadcast mall presence:", error);
+    }
+  }
+
   app.get("/api/net-worth/history", requireAuth, async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 50;
