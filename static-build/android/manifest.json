@@ -1,11 +1,11 @@
 {
-  "id": "a499fa32-0bf1-4a66-98b3-273d47af52d7",
-  "createdAt": "2026-01-30T18:08:04.757Z",
+  "id": "fd09a729-e63e-4f8a-9b13-24e85038026e",
+  "createdAt": "2026-01-30T18:16:09.580Z",
   "runtimeVersion": "exposdk:54.0.0",
   "launchAsset": {
-    "key": "bundle-1769796484757-11550",
+    "key": "bundle-1769796969580-13218",
     "contentType": "application/javascript",
-    "url": "https://rabit-chat--watbrandafrica.replit.app/1769796484757-11550/_expo/static/js/android/bundle.js"
+    "url": "https://e42123f6-2a05-4c86-a608-763b544187e9-00-bdvy7k1ckg5u.kirk.replit.dev/1769796969580-13218/_expo/static/js/android/bundle.js"
   },
   "assets": [],
   "metadata": {},
@@ -93,7 +93,7 @@
         "eas": {
           "projectId": "rabitchat"
         },
-        "apiDomain": "rabit-chat--watbrandafrica.replit.app"
+        "apiDomain": "e42123f6-2a05-4c86-a608-763b544187e9-00-bdvy7k1ckg5u.kirk.replit.dev"
       },
       "_internal": {
         "isDebug": false,
@@ -130,10 +130,10 @@
         "backgroundColor": "#0F0F0F"
       },
       "iconUrl": "http://127.0.0.1:8081/assets/./assets/images/icon.png",
-      "hostUri": "rabit-chat--watbrandafrica.replit.app/android"
+      "hostUri": "e42123f6-2a05-4c86-a608-763b544187e9-00-bdvy7k1ckg5u.kirk.replit.dev/android"
     },
     "expoGo": {
-      "debuggerHost": "rabit-chat--watbrandafrica.replit.app/android",
+      "debuggerHost": "e42123f6-2a05-4c86-a608-763b544187e9-00-bdvy7k1ckg5u.kirk.replit.dev/android",
       "developer": {
         "tool": "expo-cli",
         "projectRoot": "/home/runner/workspace"
