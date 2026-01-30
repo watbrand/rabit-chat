@@ -9,7 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { getApiUrl } from "@/lib/query-client";
+import { getApiUrl, PRODUCTION_API_URL } from "@/lib/query-client";
 import { uploadFileWithDuration } from "@/lib/upload";
 import { LoadingIndicator } from "@/components/animations";
 
@@ -63,10 +63,11 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!deviceId) throw new Error("Device ID not found");
-      const apiUrl = getApiUrl();
-      const fullUrl = `${apiUrl}/api/gossip/v2/posts`;
       
-      console.log("[GossipCompose] Posting to URL:", fullUrl);
+      // Always use production URL for posts
+      const fullUrl = `${PRODUCTION_API_URL}/api/gossip/v2/posts`;
+      
+      console.log("[GossipCompose] Posting to PRODUCTION:", fullUrl);
       console.log("[GossipCompose] Post data:", JSON.stringify(data));
       
       const response = await fetch(fullUrl, {
