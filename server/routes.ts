@@ -39,7 +39,7 @@ import {
   hasPermission,
   createPolicyError,
 } from "./policy";
-import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements } from "@shared/schema";
+import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, mallPresence, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements } from "@shared/schema";
 import cloudinary, {
   uploadToCloudinary,
   uploadToCloudinaryFromFile,
