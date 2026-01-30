@@ -162,8 +162,12 @@ export function VirtualMallView({
 
   const connectWebSocket = () => {
     try {
-      const wsUrl = getApiUrl().replace(/^http/, "ws");
-      const ws = new WebSocket(`${wsUrl}ws?channel=mall`);
+      const baseUrl = getApiUrl();
+      const wsUrl = baseUrl.replace("https://", "wss://").replace("http://", "ws://");
+      // Ensure proper URL construction with /ws path
+      const separator = wsUrl.endsWith("/") ? "" : "/";
+      const fullWsUrl = `${wsUrl}${separator}ws?channel=mall${user?.id ? `&userId=${user.id}` : ""}`;
+      const ws = new WebSocket(fullWsUrl);
       
       ws.onopen = () => {
         console.log("[VirtualMall] WebSocket connected");

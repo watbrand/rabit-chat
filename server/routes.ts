@@ -12282,8 +12282,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
-  wss.on("connection", async (ws, req) => {
+  wss.on("connection", async (ws: any, req) => {
     let userId: string | null = null;
+    let channel: string | null = null;
+    
+    // Parse URL parameters for channel and userId
+    if (req.url) {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      channel = url.searchParams.get("channel");
+      
+      // Store channel on the WebSocket for filtering broadcasts
+      if (channel) {
+        ws.channel = channel;
+        console.log("[WebSocket] Channel set:", channel);
+      }
+    }
     
     // Try cookie-based auth first (browser)
     const cookies = parseCookies(req.headers.cookie);
