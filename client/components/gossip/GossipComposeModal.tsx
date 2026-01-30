@@ -66,6 +66,9 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       const apiUrl = getApiUrl();
       const fullUrl = `${apiUrl}/api/gossip/v2/posts`;
       
+      console.log("[GossipCompose] Posting to URL:", fullUrl);
+      console.log("[GossipCompose] Post data:", JSON.stringify(data));
+      
       const response = await fetch(fullUrl, {
         method: "POST",
         headers: {
@@ -75,12 +78,16 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
         body: JSON.stringify(data),
       });
       
+      console.log("[GossipCompose] Response status:", response.status);
+      
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new Error(err.message || err.error || "Failed to post");
       }
       
-      return response.json();
+      const result = await response.json();
+      console.log("[GossipCompose] Response data:", JSON.stringify(result));
+      return result;
     },
     onSuccess: (data) => {
       console.log("[GossipCompose] POST SUCCESS:", JSON.stringify(data));
