@@ -6,6 +6,8 @@ import {
   Pressable,
   RefreshControl,
   Alert,
+  Modal,
+  TextInput,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -57,6 +59,9 @@ export function AnonymousGossipTab() {
   const [showRepliesModal, setShowRepliesModal] = useState(false);
   const [selectedPost, setSelectedPost] = useState<AnonGossipPost | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [showDMModal, setShowDMModal] = useState(false);
+  const [dmPostId, setDmPostId] = useState<string | null>(null);
+  const [dmMessage, setDmMessage] = useState("");
 
   React.useEffect(() => {
     getOrCreateDeviceId().then(setDeviceId);
@@ -180,25 +185,19 @@ export function AnonymousGossipTab() {
   });
 
   const handleDM = useCallback((postId: string) => {
-    Alert.prompt(
-      "Send Anonymous DM",
-      "Start a private conversation with this poster. Your identity stays hidden.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Send",
-          onPress: (message: string | undefined) => {
-            if (message?.trim()) {
-              startDMMutation.mutate({ postId, message: message.trim() });
-            }
-          },
-        },
-      ],
-      "plain-text",
-      "",
-      "default"
-    );
-  }, [startDMMutation]);
+    setDmPostId(postId);
+    setDmMessage("");
+    setShowDMModal(true);
+  }, []);
+
+  const handleSendDM = useCallback(() => {
+    if (dmPostId && dmMessage.trim()) {
+      startDMMutation.mutate({ postId: dmPostId, message: dmMessage.trim() });
+      setShowDMModal(false);
+      setDmPostId(null);
+      setDmMessage("");
+    }
+  }, [dmPostId, dmMessage, startDMMutation]);
 
   const handleShare = useCallback((postId: string) => {
     const post = postsData?.posts.find((p: AnonGossipPost) => p.id === postId);
@@ -404,6 +403,49 @@ export function AnonymousGossipTab() {
         }}
         post={selectedPost}
       />
+
+      <Modal
+        visible={showDMModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDMModal(false)}
+      >
+        <Pressable 
+          style={styles.dmModalOverlay} 
+          onPress={() => setShowDMModal(false)}
+        >
+          <Pressable style={styles.dmModalContent} onPress={(e) => e.stopPropagation()}>
+            <ThemedText style={styles.dmModalTitle}>Send Anonymous DM</ThemedText>
+            <ThemedText style={styles.dmModalSubtitle}>
+              Start a private conversation with this poster. Your identity stays hidden.
+            </ThemedText>
+            <TextInput
+              style={styles.dmModalInput}
+              placeholder="Type your message..."
+              placeholderTextColor="#999"
+              value={dmMessage}
+              onChangeText={setDmMessage}
+              multiline
+              maxLength={500}
+            />
+            <View style={styles.dmModalButtons}>
+              <Pressable 
+                style={[styles.dmModalButton, styles.dmModalButtonCancel]}
+                onPress={() => setShowDMModal(false)}
+              >
+                <ThemedText style={styles.dmModalButtonText}>Cancel</ThemedText>
+              </Pressable>
+              <Pressable 
+                style={[styles.dmModalButton, styles.dmModalButtonSend, !dmMessage.trim() && styles.dmModalButtonDisabled]}
+                onPress={handleSendDM}
+                disabled={!dmMessage.trim()}
+              >
+                <ThemedText style={[styles.dmModalButtonText, { color: "#FFF" }]}>Send</ThemedText>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -509,5 +551,68 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 8,
+  },
+  dmModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.lg,
+  },
+  dmModalContent: {
+    backgroundColor: Colors.light.background,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    width: "100%",
+    maxWidth: 400,
+  },
+  dmModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.light.text,
+    marginBottom: Spacing.xs,
+  },
+  dmModalSubtitle: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginBottom: Spacing.md,
+  },
+  dmModalInput: {
+    borderWidth: 1,
+    borderColor: Colors.light.glassBorder,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    fontSize: 16,
+    minHeight: 100,
+    textAlignVertical: "top",
+    color: Colors.light.text,
+    backgroundColor: Colors.light.backgroundSecondary,
+  },
+  dmModalButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  dmModalButton: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    minWidth: 80,
+    alignItems: "center",
+  },
+  dmModalButtonCancel: {
+    backgroundColor: Colors.light.backgroundSecondary,
+  },
+  dmModalButtonSend: {
+    backgroundColor: Colors.light.primary,
+  },
+  dmModalButtonDisabled: {
+    opacity: 0.5,
+  },
+  dmModalButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.light.text,
   },
 });

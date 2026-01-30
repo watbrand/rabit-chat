@@ -123,13 +123,25 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
   const [replyText, setReplyText] = useState("");
   const [myReactions, setMyReactions] = useState<Record<string, string[]>>({});
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReplyId, setReportReplyId] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState("");
 
   useEffect(() => {
-    const loadDeviceId = async () => {
-      const id = await AsyncStorage.getItem("@gossip_device_id");
+    const loadOrCreateDeviceId = async () => {
+      let id = await AsyncStorage.getItem("@gossip_device_id");
+      if (!id) {
+        // Create device ID if not exists (fallback for edge cases)
+        id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = Math.random() * 16 | 0;
+          const v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+        await AsyncStorage.setItem("@gossip_device_id", id);
+      }
       setDeviceId(id);
     };
-    loadDeviceId();
+    loadOrCreateDeviceId();
   }, [visible]);
 
   const {
@@ -218,48 +230,43 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
   };
 
   const handleReport = (replyId: string) => {
-    Alert.prompt(
-      "Report Reply",
-      "Why are you reporting this reply?",
-      [
-        { text: "Cancel", style: "cancel" },
+    setReportReplyId(replyId);
+    setReportReason("");
+    setShowReportModal(true);
+  };
+
+  const handleSubmitReport = async () => {
+    if (!reportReason || reportReason.length < 5) {
+      Alert.alert("Error", "Please provide a reason (min 5 characters)");
+      return;
+    }
+    if (!deviceId || !reportReplyId) {
+      Alert.alert("Error", "Device not ready");
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${getApiUrl()}/api/gossip/v2/comments/${reportReplyId}/report`,
         {
-          text: "Report",
-          style: "destructive",
-          onPress: async (reason: string | undefined) => {
-            if (!reason || reason.length < 5) {
-              Alert.alert("Error", "Please provide a reason (min 5 characters)");
-              return;
-            }
-            if (!deviceId) {
-              Alert.alert("Error", "Device not ready");
-              return;
-            }
-            try {
-              const response = await fetch(
-                `${getApiUrl()}/api/gossip/v2/comments/${replyId}/report`,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "x-device-id": deviceId,
-                  },
-                  body: JSON.stringify({ reason, deviceHash: deviceId }),
-                }
-              );
-              if (response.ok) {
-                Alert.alert("Reported", "Thank you for helping keep the community safe.");
-              } else {
-                Alert.alert("Error", "Failed to report reply");
-              }
-            } catch (error) {
-              Alert.alert("Error", "Failed to report reply");
-            }
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-device-id": deviceId,
           },
-        },
-      ],
-      "plain-text"
-    );
+          body: JSON.stringify({ reason: reportReason, deviceHash: deviceId }),
+        }
+      );
+      if (response.ok) {
+        setShowReportModal(false);
+        setReportReplyId(null);
+        setReportReason("");
+        Alert.alert("Reported", "Thank you for helping keep the community safe.");
+      } else {
+        Alert.alert("Error", "Failed to report reply");
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to report reply");
+    }
   };
 
   const handleSubmitReply = () => {
@@ -396,6 +403,46 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={showReportModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowReportModal(false)}
+      >
+        <Pressable style={styles.reportModalOverlay} onPress={() => setShowReportModal(false)}>
+          <Pressable style={[styles.reportModalContent, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()}>
+            <ThemedText style={styles.reportModalTitle}>Report Reply</ThemedText>
+            <ThemedText style={[styles.reportModalSubtitle, { color: theme.textSecondary }]}>
+              Why are you reporting this reply?
+            </ThemedText>
+            <TextInput
+              style={[styles.reportModalInput, { borderColor: theme.glassBorder, color: theme.text, backgroundColor: theme.backgroundSecondary }]}
+              placeholder="Enter reason (min 5 characters)..."
+              placeholderTextColor={theme.textTertiary}
+              value={reportReason}
+              onChangeText={setReportReason}
+              multiline
+              maxLength={200}
+            />
+            <View style={styles.reportModalButtons}>
+              <Pressable 
+                style={[styles.reportModalButton, { backgroundColor: theme.backgroundSecondary }]}
+                onPress={() => setShowReportModal(false)}
+              >
+                <ThemedText style={{ color: theme.text }}>Cancel</ThemedText>
+              </Pressable>
+              <Pressable 
+                style={[styles.reportModalButton, { backgroundColor: theme.error }, reportReason.length < 5 && styles.reportButtonDisabled]}
+                onPress={handleSubmitReport}
+                disabled={reportReason.length < 5}
+              >
+                <ThemedText style={{ color: "#FFF", fontWeight: "600" }}>Report</ThemedText>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Modal>
   );
 }
@@ -527,5 +574,51 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
+  },
+  reportModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.lg,
+  },
+  reportModalContent: {
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    width: "100%",
+    maxWidth: 400,
+  },
+  reportModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: Spacing.xs,
+  },
+  reportModalSubtitle: {
+    fontSize: 14,
+    marginBottom: Spacing.md,
+  },
+  reportModalInput: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    fontSize: 14,
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
+  reportModalButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  reportModalButton: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    minWidth: 80,
+    alignItems: "center",
+  },
+  reportButtonDisabled: {
+    opacity: 0.5,
   },
 });

@@ -44,11 +44,20 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    const loadDeviceId = async () => {
-      const id = await AsyncStorage.getItem("@gossip_device_id");
+    const loadOrCreateDeviceId = async () => {
+      let id = await AsyncStorage.getItem("@gossip_device_id");
+      if (!id) {
+        // Create device ID if not exists (fallback for edge cases)
+        id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = Math.random() * 16 | 0;
+          const v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+        await AsyncStorage.setItem("@gossip_device_id", id);
+      }
       setDeviceId(id);
     };
-    loadDeviceId();
+    loadOrCreateDeviceId();
   }, [visible]);
   
   const createMutation = useMutation({
@@ -110,8 +119,16 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       setIsRecording(true);
       setRecordingDuration(0);
       
+      const MAX_DURATION = 300; // 5 minutes max
       intervalRef.current = setInterval(() => {
-        setRecordingDuration(d => d + 1);
+        setRecordingDuration(d => {
+          if (d >= MAX_DURATION - 1) {
+            // Auto-stop at max duration
+            stopRecording();
+            return MAX_DURATION;
+          }
+          return d + 1;
+        });
       }, 1000);
       
       if (Platform.OS !== "web") {
@@ -292,6 +309,9 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
                 <View style={styles.recordingState}>
                   <View style={[styles.recordingDot, { backgroundColor: theme.error }]} />
                   <ThemedText style={{ fontSize: 24, fontWeight: "700" }}>{formatDuration(recordingDuration)}</ThemedText>
+                  <ThemedText style={{ color: theme.textTertiary, fontSize: 12 }}>
+                    Max {formatDuration(300 - recordingDuration)} remaining
+                  </ThemedText>
                   <Pressable style={[styles.stopButton, { backgroundColor: theme.error }]} onPress={stopRecording}>
                     <Feather name="square" size={20} color="#FFFFFF" />
                   </Pressable>
