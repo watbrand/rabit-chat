@@ -208,22 +208,20 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   };
   
   const handleSubmit = () => {
-    console.log("[GossipCompose] handleSubmit called");
-    console.log("[GossipCompose] canSubmit:", canSubmit());
-    console.log("[GossipCompose] presetLocation:", JSON.stringify(presetLocation));
-    console.log("[GossipCompose] deviceId:", deviceId);
-    console.log("[GossipCompose] content length:", content.trim().length);
+    // DEBUG: Show alert with current state
+    const debugState = `canSubmit: ${canSubmit()}\npresetLocation: ${presetLocation ? 'SET' : 'NULL'}\nzaLocationId: ${presetLocation?.zaLocationId || 'N/A'}\ndeviceId: ${deviceId ? 'SET' : 'NULL'}\ncontent: ${content.trim().length} chars`;
+    Alert.alert("DEBUG: Submit State", debugState);
     
     if (!canSubmit()) {
-      console.log("[GossipCompose] BLOCKED: canSubmit() returned false");
+      Alert.alert("BLOCKED", "canSubmit() returned false");
       return;
     }
     if (!presetLocation) {
-      console.log("[GossipCompose] BLOCKED: presetLocation is null");
+      Alert.alert("BLOCKED", "presetLocation is null");
       return;
     }
     if (!deviceId) {
-      console.log("[GossipCompose] BLOCKED: deviceId is null");
+      Alert.alert("BLOCKED", "deviceId is null");
       return;
     }
     
@@ -241,7 +239,7 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       data.content = content.trim();
     }
     
-    console.log("[GossipCompose] Sending POST with data:", JSON.stringify(data));
+    Alert.alert("DEBUG: Sending", `locationId: ${data.locationId}\ncontent: ${data.content?.substring(0, 30)}...`);
     createMutation.mutate(data);
   };
   
