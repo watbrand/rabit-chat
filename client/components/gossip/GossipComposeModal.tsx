@@ -263,6 +263,13 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <Pressable style={styles.dismiss} onPress={() => { resetForm(); onClose(); }} />
         <View style={[styles.content, { backgroundColor: theme.backgroundRoot, paddingBottom: insets.bottom + Spacing.lg }]}>
+          {/* DEBUG BANNER v3 - visible proof of code update */}
+          <View style={{ backgroundColor: '#FF0000', padding: 8, marginBottom: 8 }}>
+            <ThemedText style={{ color: '#FFFFFF', fontSize: 10, textAlign: 'center' }}>
+              DEBUG v3 | Location: {presetLocation?.zaLocationId || 'NONE'} | Device: {deviceId ? 'OK' : 'NULL'} | canSubmit: {String(canSubmit())}
+            </ThemedText>
+          </View>
+          
           <View style={styles.header}>
             <Pressable onPress={() => { resetForm(); onClose(); }}>
               <ThemedText style={{ color: theme.textSecondary }}>Cancel</ThemedText>
