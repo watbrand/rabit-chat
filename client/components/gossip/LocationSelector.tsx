@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { View, Pressable, StyleSheet, Modal, FlatList, TextInput } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,81 +17,68 @@ interface LocationSelectorProps {
   onSelect: (country: string | null, location: ZaLocation | null, displayText: string) => void;
 }
 
+interface Province {
+  id: string;
+  name: string;
+  slug: string;
+  emoji?: string;
+}
+
+interface City {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+interface Hood {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export function LocationSelector({ selectedCountry, selectedLocation, onSelect }: LocationSelectorProps) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const [showModal, setShowModal] = useState(false);
   const [step, setStep] = useState<"country" | "province" | "city" | "kasi">("country");
-  const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
-  const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  const [selectedProvince, setSelectedProvince] = useState<{ name: string; slug: string } | null>(null);
+  const [selectedCity, setSelectedCity] = useState<{ name: string; slug: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: locationData } = useQuery<{ country: { name: string; emoji: string }; provinces: any[] }>({
-    queryKey: ["/api/gossip/v2/locations"],
+  const countries: Country[] = [{ id: "za", code: "ZA", name: "South Africa", isSouthAfrica: true, isActive: true, sortOrder: 0 }];
+
+  const { data: provincesData, isLoading: loadingProvinces } = useQuery<{ provinces: Province[] }>({
+    queryKey: ["/api/gossip/v2/locations/provinces"],
     queryFn: async () => {
-      const response = await fetch(`${getApiUrl()}/api/gossip/v2/locations`);
-      if (!response.ok) return { country: { name: "South Africa", emoji: "🇿🇦" }, provinces: [] };
+      const response = await fetch(`${getApiUrl()}/api/gossip/v2/locations/provinces`);
+      if (!response.ok) return { provinces: [] };
       return response.json();
     },
     staleTime: 1000 * 60 * 60,
   });
 
-  const countries: Country[] = [{ id: "za", code: "ZA", name: "South Africa", isSouthAfrica: true, isActive: true, sortOrder: 0 }];
-
-  const { data: zaLocations = [], isLoading: loadingLocations } = useQuery<ZaLocation[]>({
-    queryKey: ["/api/gossip/v2/locations-flat", selectedProvince, selectedCity, step],
+  const { data: citiesData, isLoading: loadingCities } = useQuery<{ cities: City[] }>({
+    queryKey: ["/api/gossip/v2/locations/provinces", selectedProvince?.slug, "cities"],
     queryFn: async () => {
-      if (!locationData?.provinces) return [];
-      const locations: ZaLocation[] = [];
-      
-      if (step === "province") {
-        locationData.provinces.forEach((p: any) => {
-          locations.push({
-            id: p.id,
-            province: p.name,
-            city: null,
-            kasi: null,
-            level: 1,
-            population: null,
-            isActive: true,
-          });
-        });
-      } else if (step === "city" && selectedProvince) {
-        const province = locationData.provinces.find((p: any) => p.name === selectedProvince);
-        if (province?.cities) {
-          province.cities.forEach((c: any) => {
-            locations.push({
-              id: c.id,
-              province: selectedProvince,
-              city: c.name,
-              kasi: null,
-              level: 2,
-              population: null,
-              isActive: true,
-            });
-          });
-        }
-      } else if (step === "kasi" && selectedProvince && selectedCity) {
-        const province = locationData.provinces.find((p: any) => p.name === selectedProvince);
-        const city = province?.cities?.find((c: any) => c.name === selectedCity);
-        if (city?.hoods) {
-          city.hoods.forEach((h: any) => {
-            locations.push({
-              id: h.id,
-              province: selectedProvince,
-              city: selectedCity,
-              kasi: h.name,
-              level: 3,
-              population: null,
-              isActive: true,
-            });
-          });
-        }
-      }
-      return locations;
+      if (!selectedProvince?.slug) return { cities: [] };
+      const response = await fetch(`${getApiUrl()}/api/gossip/v2/locations/provinces/${selectedProvince.slug}/cities`);
+      if (!response.ok) return { cities: [] };
+      return response.json();
     },
-    enabled: selectedCountry === "ZA" && (step === "province" || step === "city" || step === "kasi") && !!locationData,
-    staleTime: 1000 * 60 * 5,
+    enabled: !!selectedProvince?.slug && step === "city",
+    staleTime: 1000 * 60 * 30,
+  });
+
+  const { data: hoodsData, isLoading: loadingHoods } = useQuery<{ hoods: Hood[] }>({
+    queryKey: ["/api/gossip/v2/locations/provinces", selectedProvince?.slug, "cities", selectedCity?.slug, "hoods"],
+    queryFn: async () => {
+      if (!selectedProvince?.slug || !selectedCity?.slug) return { hoods: [] };
+      const response = await fetch(`${getApiUrl()}/api/gossip/v2/locations/provinces/${selectedProvince.slug}/cities/${selectedCity.slug}/hoods`);
+      if (!response.ok) return { hoods: [] };
+      return response.json();
+    },
+    enabled: !!selectedProvince?.slug && !!selectedCity?.slug && step === "kasi",
+    staleTime: 1000 * 60 * 30,
   });
 
   const getDisplayText = () => {
@@ -119,18 +106,27 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
     }
   };
 
-  const handleProvinceSelect = (province: string) => {
-    setSelectedProvince(province);
+  const handleProvinceSelect = (province: Province) => {
+    setSelectedProvince({ name: province.name, slug: province.slug });
     setStep("city");
   };
 
-  const handleCitySelect = (city: string) => {
-    setSelectedCity(city);
+  const handleCitySelect = (city: City) => {
+    setSelectedCity({ name: city.name, slug: city.slug });
     setStep("kasi");
   };
 
-  const handleKasiSelect = (location: ZaLocation) => {
-    const displayText = `${location.province} > ${location.city || ""} > ${location.kasi || ""}`.replace(/ > $/g, "");
+  const handleKasiSelect = (hood: Hood) => {
+    const location: ZaLocation = {
+      id: hood.id,
+      province: selectedProvince!.name,
+      city: selectedCity!.name,
+      kasi: hood.name,
+      level: 3,
+      population: null,
+      isActive: true,
+    };
+    const displayText = `${selectedProvince!.name} > ${selectedCity!.name} > ${hood.name}`;
     onSelect("ZA", location, displayText);
     setShowModal(false);
     resetSelection();
@@ -155,24 +151,18 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
     }
   };
 
-  const getProvinces = () => {
-    const provinces = new Set<string>();
-    zaLocations.filter(l => l.level === 1).forEach(l => provinces.add(l.province));
-    return Array.from(provinces);
-  };
-
-  const getCities = () => {
-    return zaLocations.filter(l => l.level === 2 && l.province === selectedProvince);
-  };
-
-  const getKasis = () => {
-    return zaLocations.filter(l => l.level === 3 && l.province === selectedProvince && l.city === selectedCity);
-  };
+  const provinces = provincesData?.provinces || [];
+  const cities = citiesData?.cities || [];
+  const hoods = hoodsData?.hoods || [];
 
   const filteredCountries = countries.filter(c =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.code.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const isLoading = (step === "province" && loadingProvinces) || 
+                    (step === "city" && loadingCities) || 
+                    (step === "kasi" && loadingHoods);
 
   return (
     <>
@@ -191,7 +181,7 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
         <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
           <View style={styles.modalOverlay}>
             <Pressable style={styles.modalDismiss} onPress={() => { setShowModal(false); resetSelection(); }} />
-            <View style={[styles.modalContent, { backgroundColor: theme.backgroundRoot, paddingBottom: insets.bottom + Spacing.lg }]}>
+            <View style={[styles.modalContent, { backgroundColor: theme.backgroundRoot, paddingBottom: Math.max(insets.bottom, 24) + 40 }]}>
               <View style={styles.modalHeader}>
               {step !== "country" ? (
                 <Pressable onPress={handleBack} style={styles.backButton}>
@@ -219,7 +209,7 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
               </View>
             ) : null}
 
-            {loadingLocations ? (
+            {isLoading ? (
               <LoadingIndicator size="large" style={styles.loader} />
             ) : null}
 
@@ -246,39 +236,41 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
                 )}
                 ListEmptyComponent={<ThemedText style={styles.emptyText}>No countries found</ThemedText>}
               />
-            ) : step === "province" ? (
+            ) : step === "province" && !isLoading ? (
               <FlatList
-                data={getProvinces()}
-                keyExtractor={(item) => item}
+                data={provinces}
+                keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
                   <Pressable
                     style={[styles.listItem, { borderBottomColor: theme.glassBorder }]}
                     onPress={() => handleProvinceSelect(item)}
                   >
-                    <Feather name="map" size={18} color={theme.primary} />
-                    <ThemedText style={styles.itemName}>{item}</ThemedText>
+                    <ThemedText style={styles.flagEmoji}>{item.emoji || "🗺️"}</ThemedText>
+                    <ThemedText style={[styles.itemName, { flex: 1 }]}>{item.name}</ThemedText>
                     <Feather name="chevron-right" size={18} color={theme.textTertiary} />
                   </Pressable>
                 )}
+                ListEmptyComponent={<ThemedText style={styles.emptyText}>No provinces available</ThemedText>}
               />
-            ) : step === "city" ? (
+            ) : step === "city" && !isLoading ? (
               <FlatList
-                data={getCities()}
+                data={cities}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
                   <Pressable
                     style={[styles.listItem, { borderBottomColor: theme.glassBorder }]}
-                    onPress={() => handleCitySelect(item.city!)}
+                    onPress={() => handleCitySelect(item)}
                   >
                     <Feather name="home" size={18} color={theme.primary} />
-                    <ThemedText style={styles.itemName}>{item.city}</ThemedText>
+                    <ThemedText style={[styles.itemName, { flex: 1 }]}>{item.name}</ThemedText>
                     <Feather name="chevron-right" size={18} color={theme.textTertiary} />
                   </Pressable>
                 )}
+                ListEmptyComponent={<ThemedText style={styles.emptyText}>No cities in {selectedProvince?.name}</ThemedText>}
               />
-            ) : (
+            ) : step === "kasi" && !isLoading ? (
               <FlatList
-                data={getKasis()}
+                data={hoods}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
                   <Pressable
@@ -286,19 +278,13 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
                     onPress={() => handleKasiSelect(item)}
                   >
                     <Feather name="map-pin" size={18} color={theme.primary} />
-                    <View style={styles.itemContent}>
-                      <ThemedText style={styles.itemName}>{item.kasi}</ThemedText>
-                      {item.population ? (
-                        <ThemedText style={[styles.itemMeta, { color: theme.textTertiary }]}>
-                          Pop: {item.population.toLocaleString()}
-                        </ThemedText>
-                      ) : null}
-                    </View>
+                    <ThemedText style={[styles.itemName, { flex: 1 }]}>{item.name}</ThemedText>
                     <Feather name="check" size={18} color={theme.primary} />
                   </Pressable>
                 )}
+                ListEmptyComponent={<ThemedText style={styles.emptyText}>No kasis in {selectedCity?.name}</ThemedText>}
               />
-            )}
+            ) : null}
             </View>
           </View>
         </KeyboardAvoidingView>
