@@ -66,44 +66,25 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       const apiUrl = getApiUrl();
       const fullUrl = `${apiUrl}/api/gossip/v2/posts`;
       
-      // DEBUG: Show URL being used
-      Alert.alert("DEBUG: Fetch Starting", `URL: ${fullUrl}\nData: ${JSON.stringify(data).substring(0, 100)}`);
+      const response = await fetch(fullUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-device-id": deviceId,
+        },
+        body: JSON.stringify(data),
+      });
       
-      try {
-        const response = await fetch(fullUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-device-id": deviceId,
-          },
-          body: JSON.stringify(data),
-        });
-        
-        Alert.alert("DEBUG: Response", `Status: ${response.status} ${response.statusText}`);
-        
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({}));
-          throw new Error(err.message || err.error || "Failed to post");
-        }
-        
-        const responseText = await response.text();
-        Alert.alert("DEBUG: Raw Response", responseText.substring(0, 200));
-        
-        try {
-          const jsonData = JSON.parse(responseText);
-          return jsonData;
-        } catch (parseError: any) {
-          Alert.alert("DEBUG: JSON Parse Error", parseError.message);
-          throw new Error("Failed to parse response");
-        }
-      } catch (fetchError: any) {
-        Alert.alert("DEBUG: Fetch Error", `${fetchError.name}: ${fetchError.message}`);
-        throw fetchError;
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || err.error || "Failed to post");
       }
+      
+      return response.json();
     },
     onSuccess: (data) => {
       console.log("[GossipCompose] POST SUCCESS:", JSON.stringify(data));
-      Alert.alert("DEBUG: SUCCESS!", `Post created! ID: ${data?.id || 'unknown'}\nRefreshing feed...`);
+      Alert.alert("Posted!", "Your gossip has been posted successfully.");
       queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"], exact: false });
       queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/trending"], exact: false });
       resetForm();
@@ -233,22 +214,7 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   };
   
   const handleSubmit = () => {
-    // DEBUG: Show alert with current state
-    const debugState = `canSubmit: ${canSubmit()}\npresetLocation: ${presetLocation ? 'SET' : 'NULL'}\nzaLocationId: ${presetLocation?.zaLocationId || 'N/A'}\ndeviceId: ${deviceId ? 'SET' : 'NULL'}\ncontent: ${content.trim().length} chars`;
-    Alert.alert("DEBUG: Submit State", debugState);
-    
-    if (!canSubmit()) {
-      Alert.alert("BLOCKED", "canSubmit() returned false");
-      return;
-    }
-    if (!presetLocation) {
-      Alert.alert("BLOCKED", "presetLocation is null");
-      return;
-    }
-    if (!deviceId) {
-      Alert.alert("BLOCKED", "deviceId is null");
-      return;
-    }
+    if (!canSubmit() || !presetLocation || !deviceId) return;
     
     const data: any = {
       deviceHash: deviceId,
@@ -264,7 +230,6 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       data.content = content.trim();
     }
     
-    Alert.alert("DEBUG: Sending", `locationId: ${data.locationId}\ncontent: ${data.content?.substring(0, 30)}...`);
     createMutation.mutate(data);
   };
   
@@ -288,13 +253,6 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <Pressable style={styles.dismiss} onPress={() => { resetForm(); onClose(); }} />
         <View style={[styles.content, { backgroundColor: theme.backgroundRoot, paddingBottom: insets.bottom + Spacing.lg }]}>
-          {/* DEBUG BANNER v3 - visible proof of code update */}
-          <View style={{ backgroundColor: '#FF0000', padding: 8, marginBottom: 8 }}>
-            <ThemedText style={{ color: '#FFFFFF', fontSize: 10, textAlign: 'center' }}>
-              DEBUG v3 | Location: {presetLocation?.zaLocationId || 'NONE'} | Device: {deviceId ? 'OK' : 'NULL'} | canSubmit: {String(canSubmit())}
-            </ThemedText>
-          </View>
-          
           <View style={styles.header}>
             <Pressable onPress={() => { resetForm(); onClose(); }}>
               <ThemedText style={{ color: theme.textSecondary }}>Cancel</ThemedText>
