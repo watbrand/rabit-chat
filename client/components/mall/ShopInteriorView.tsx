@@ -18,7 +18,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
-import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 
@@ -126,9 +126,9 @@ function ProductCard({
               { backgroundColor: isDark ? "rgba(0,0,0,0.2)" : "rgba(139, 92, 246, 0.1)" },
             ]}
           >
-            <MaterialCommunityIcons
-              name="diamond-stone"
-              size={32}
+            <Feather
+              name="hexagon"
+              size={28}
               color={theme.primary}
             />
           </View>
@@ -221,7 +221,7 @@ export function ShopInteriorView({
         </View>
 
         <View style={[styles.walletBadge, { backgroundColor: theme.glassBackground }]}>
-          <MaterialCommunityIcons name="wallet" size={16} color={theme.gold} />
+          <Feather name="credit-card" size={16} color={theme.gold} />
           <ThemedText style={[styles.walletText, { color: theme.gold }]} weight="bold">
             {formatPrice(walletBalance)}
           </ThemedText>
@@ -271,9 +271,9 @@ export function ShopInteriorView({
         )}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons
-              name="shopping-outline"
-              size={48}
+            <Feather
+              name="shopping-bag"
+              size={40}
               color={theme.textTertiary}
             />
             <ThemedText style={[styles.emptyText, { color: theme.textSecondary }]}>
@@ -318,9 +318,9 @@ export function ShopInteriorView({
                       { backgroundColor: isDark ? "rgba(139, 92, 246, 0.2)" : "rgba(139, 92, 246, 0.1)" },
                     ]}
                   >
-                    <MaterialCommunityIcons
-                      name="diamond-stone"
-                      size={64}
+                    <Feather
+                      name="hexagon"
+                      size={56}
                       color={theme.primary}
                     />
                   </View>
@@ -367,7 +367,7 @@ export function ShopInteriorView({
                 </View>
 
                 <View style={styles.netWorthGain}>
-                  <MaterialCommunityIcons name="trending-up" size={16} color={theme.success} />
+                  <Feather name="trending-up" size={16} color={theme.success} />
                   <ThemedText style={[styles.netWorthGainText, { color: theme.success }]}>
                     +{formatPrice(selectedItem.value * quantity)} Net Worth
                   </ThemedText>

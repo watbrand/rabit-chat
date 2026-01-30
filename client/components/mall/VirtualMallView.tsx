@@ -17,7 +17,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { LinearGradient } from "expo-linear-gradient";
-import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -298,9 +298,9 @@ export function VirtualMallView({
           </View>
 
           <View style={styles.mallTitle}>
-            <MaterialCommunityIcons
-              name="crown"
-              size={28}
+            <Feather
+              name="award"
+              size={24}
               color={theme.gold}
             />
             <ThemedText style={styles.mallTitleText} weight="bold">
