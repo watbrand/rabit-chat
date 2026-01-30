@@ -87,7 +87,9 @@ export function AnonymousGossipTab() {
       return response.json();
     },
     enabled: !!deviceId,
-    staleTime: 30000,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   const { data: myReactionsData } = useQuery({
@@ -390,7 +392,7 @@ export function AnonymousGossipTab() {
         visible={showComposeModal}
         onClose={() => {
           setShowComposeModal(false);
-          refetchPosts();
+          setTimeout(() => refetchPosts(), 300);
         }}
         presetLocation={presetLocation}
       />
