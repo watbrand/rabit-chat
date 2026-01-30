@@ -479,11 +479,14 @@ const createPostSchema = z.object({
 );
 
 router.post("/posts", async (req: Request, res: Response) => {
+  console.log("[Gossip V2 POST] Received post request:", JSON.stringify(req.body, null, 2));
   try {
     const parsed = createPostSchema.safeParse(req.body);
     if (!parsed.success) {
+      console.log("[Gossip V2 POST] Validation failed:", JSON.stringify(parsed.error.errors, null, 2));
       return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
     }
+    console.log("[Gossip V2 POST] Validation passed, creating post...");
 
     const { 
       deviceHash, locationId, content, postType, isInsider, 
@@ -669,6 +672,7 @@ router.post("/posts", async (req: Request, res: Response) => {
     // Broadcast new post to all subscribers of this location
     broadcastNewGossipPost(locationId, responsePost);
 
+    console.log("[Gossip V2 POST] Post created successfully:", responsePost.id, "for location:", locationId);
     return res.status(201).json({ post: responsePost });
   } catch (error) {
     console.error("Error creating post:", error);
