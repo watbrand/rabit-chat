@@ -411,6 +411,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.backgroundRoot,
   },
   header: {
+    paddingTop: Spacing.lg,
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.sm,
   },
