@@ -78,7 +78,14 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       }
     },
     onError: (error: any) => {
-      Alert.alert("Error", error.message || "Failed to post gossip");
+      const msg = error.message || "Failed to post gossip";
+      if (msg.includes("Rate limited") || msg.includes("429")) {
+        Alert.alert("Slow Down!", "You can only post 5 times per hour. Take a break and try again later.");
+      } else if (msg.includes("min 10") || msg.includes("content")) {
+        Alert.alert("Too Short", "Your gossip needs at least 10 characters. Add more details!");
+      } else {
+        Alert.alert("Error", msg);
+      }
     },
   });
   
@@ -260,15 +267,25 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
           </View>
           
           {!isVoiceMode ? (
-            <TextInput
-              style={[styles.textInput, { color: theme.text, borderColor: theme.glassBorder }]}
-              placeholder="Spill the tea... (max 1000 chars)"
-              placeholderTextColor={theme.textTertiary}
-              value={content}
-              onChangeText={setContent}
-              multiline
-              maxLength={1000}
-            />
+            <View>
+              <TextInput
+                style={[styles.textInput, { color: theme.text, borderColor: theme.glassBorder }]}
+                placeholder="Spill the tea... (min 10 chars)"
+                placeholderTextColor={theme.textTertiary}
+                value={content}
+                onChangeText={setContent}
+                multiline
+                maxLength={1000}
+              />
+              <View style={styles.charCountContainer}>
+                <ThemedText style={[
+                  styles.charCount,
+                  { color: content.trim().length < 10 ? theme.error : theme.textTertiary }
+                ]}>
+                  {content.trim().length}/1000 {content.trim().length < 10 ? `(${10 - content.trim().length} more needed)` : ''}
+                </ThemedText>
+              </View>
+            </View>
           ) : (
             <View style={[styles.voiceContainer, { borderColor: theme.glassBorder }]}>
               {isRecording ? (
@@ -366,6 +383,14 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     fontSize: 15,
     textAlignVertical: "top",
+  },
+  charCountContainer: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingTop: Spacing.xs,
+  },
+  charCount: {
+    fontSize: 12,
   },
   voiceContainer: {
     minHeight: 160,

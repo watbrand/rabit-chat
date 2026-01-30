@@ -262,8 +262,6 @@ export function AnonymousGossipTab() {
   ), [handleReact, handleReply, handleReport, handleDM, handleShare, getMyReactions]);
 
   const canPost = selectedLocation?.level === 3;
-  const showCommunityContent = activeTab === "community" && selectedLocation?.level === 3;
-
   const renderEmptyState = useCallback(() => (
     <View style={styles.emptyContainer}>
       {canPost ? (
@@ -319,7 +317,7 @@ export function AnonymousGossipTab() {
           <Feather 
             name="users" 
             size={16} 
-            color={activeTab === "community" ? Colors.dark.primary : Colors.dark.textSecondary} 
+            color={activeTab === "community" ? Colors.light.primary : Colors.light.textSecondary} 
           />
           <ThemedText
             style={[
@@ -341,7 +339,7 @@ export function AnonymousGossipTab() {
           <Feather 
             name="trending-up" 
             size={16} 
-            color={activeTab === "trending" ? Colors.dark.primary : Colors.dark.textSecondary} 
+            color={activeTab === "trending" ? Colors.light.primary : Colors.light.textSecondary} 
           />
           <ThemedText
             style={[
@@ -370,7 +368,7 @@ export function AnonymousGossipTab() {
             <RefreshControl
               refreshing={false}
               onRefresh={() => refetchPosts()}
-              tintColor={Colors.dark.primary}
+              tintColor={Colors.light.primary}
             />
           }
           showsVerticalScrollIndicator={false}
@@ -503,10 +501,10 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: Colors.dark.primary,
+    backgroundColor: Colors.light.primary,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: Colors.dark.primary,
+    shadowColor: Colors.light.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 8,
