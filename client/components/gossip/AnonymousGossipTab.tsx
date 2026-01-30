@@ -303,8 +303,17 @@ export function AnonymousGossipTab() {
     </View>
   ), [canPost, activeTab]);
 
+  // Debug info
+  const locationName = selectedLocation ? (selectedLocation.kasi || selectedLocation.city || selectedLocation.province) : 'None';
+  const debugInfo = `DeviceID: ${deviceId ? 'SET' : 'NULL'} | Posts: ${posts.length} | Location: ${locationName} (L${selectedLocation?.level || 0}) | Error: ${postsIsError ? 'YES' : 'NO'}`;
+  console.log("[GossipTab DEBUG]", debugInfo);
+
   return (
     <View style={styles.container}>
+      {/* Debug banner - remove after fixing */}
+      <View style={{ backgroundColor: '#f0f0f0', padding: 8, borderBottomWidth: 1, borderBottomColor: '#ddd' }}>
+        <ThemedText style={{ fontSize: 10, color: '#666' }}>{debugInfo}</ThemedText>
+      </View>
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <ThemedText style={styles.title}>Local Gossip</ThemedText>
