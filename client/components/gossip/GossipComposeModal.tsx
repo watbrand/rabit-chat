@@ -77,7 +77,8 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log("[GossipCompose] POST SUCCESS:", JSON.stringify(data));
       queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"], exact: false });
       queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/trending"], exact: false });
       resetForm();
@@ -87,6 +88,7 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       }
     },
     onError: (error: any) => {
+      console.log("[GossipCompose] POST ERROR:", error.message, error);
       const msg = error.message || "Failed to post gossip";
       if (msg.includes("Rate limited") || msg.includes("429")) {
         Alert.alert("Slow Down!", "You can only post 5 times per hour. Take a break and try again later.");
@@ -206,7 +208,24 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   };
   
   const handleSubmit = () => {
-    if (!canSubmit() || !presetLocation || !deviceId) return;
+    console.log("[GossipCompose] handleSubmit called");
+    console.log("[GossipCompose] canSubmit:", canSubmit());
+    console.log("[GossipCompose] presetLocation:", JSON.stringify(presetLocation));
+    console.log("[GossipCompose] deviceId:", deviceId);
+    console.log("[GossipCompose] content length:", content.trim().length);
+    
+    if (!canSubmit()) {
+      console.log("[GossipCompose] BLOCKED: canSubmit() returned false");
+      return;
+    }
+    if (!presetLocation) {
+      console.log("[GossipCompose] BLOCKED: presetLocation is null");
+      return;
+    }
+    if (!deviceId) {
+      console.log("[GossipCompose] BLOCKED: deviceId is null");
+      return;
+    }
     
     const data: any = {
       deviceHash: deviceId,
@@ -222,6 +241,7 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       data.content = content.trim();
     }
     
+    console.log("[GossipCompose] Sending POST with data:", JSON.stringify(data));
     createMutation.mutate(data);
   };
   
