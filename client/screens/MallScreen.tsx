@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   FlatList,
@@ -31,6 +31,7 @@ import { Spacing, BorderRadius, Shadows } from "@/constants/theme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { MallGridSkeleton } from "@/components/ShimmerPlaceholder";
 import { GradientBackground } from "@/components/GradientBackground";
+import VirtualMallView from "@/components/mall/VirtualMallView";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 // 3-column compact grid for Instagram/TikTok shop style
@@ -96,6 +97,14 @@ export default function MallScreen() {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MallItem | null>(null);
   const [purchaseQuantity, setPurchaseQuantity] = useState(1);
+  const [viewMode, setViewMode] = useState<"list" | "virtual">("list");
+
+  const toggleViewMode = useCallback(() => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    setViewMode((prev) => (prev === "list" ? "virtual" : "list"));
+  }, []);
 
   const { data: top50, isLoading: top50Loading } = useQuery<WealthyUser[]>({
     queryKey: ["/api/mall/top50"],
@@ -719,6 +728,19 @@ export default function MallScreen() {
     );
   }
 
+  if (viewMode === "virtual") {
+    return (
+      <View style={styles.container}>
+        <VirtualMallView
+          categories={categories || []}
+          onExitTour={toggleViewMode}
+        />
+        {renderPurchaseModal()}
+        {renderDetailModal()}
+      </View>
+    );
+  }
+
   return (
     <GradientBackground variant="subtle">
       <FlatList
@@ -774,6 +796,16 @@ export default function MallScreen() {
         }
         ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
       />
+
+      <Pressable
+        style={[styles.virtualTourFab, { backgroundColor: theme.primary, bottom: tabBarHeight + Spacing.lg }]}
+        onPress={toggleViewMode}
+        testID="toggle-virtual-tour"
+      >
+        <Feather name="map" size={20} color="#FFFFFF" />
+        <ThemedText style={styles.virtualTourFabText} weight="semiBold">Virtual Tour</ThemedText>
+      </Pressable>
+
       {renderPurchaseModal()}
       {renderDetailModal()}
       
@@ -1437,5 +1469,20 @@ const styles = StyleSheet.create({
   },
   compactCategoryText: {
     fontSize: 11,
+  },
+  virtualTourFab: {
+    position: "absolute",
+    right: Spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    ...Shadows.medium,
+  },
+  virtualTourFabText: {
+    color: "#FFFFFF",
+    fontSize: 13,
   },
 });
