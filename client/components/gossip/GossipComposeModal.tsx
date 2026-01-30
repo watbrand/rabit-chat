@@ -78,8 +78,8 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/trending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/trending"], exact: false });
       resetForm();
       onClose();
       if (Platform.OS !== "web") {

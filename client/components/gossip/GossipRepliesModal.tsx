@@ -183,7 +183,7 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
     onSuccess: () => {
       setReplyText("");
       refetch();
-      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"], exact: false });
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -411,7 +411,7 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
         onRequestClose={() => setShowReportModal(false)}
       >
         <Pressable style={styles.reportModalOverlay} onPress={() => setShowReportModal(false)}>
-          <Pressable style={[styles.reportModalContent, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={[styles.reportModalContent, { backgroundColor: theme.backgroundRoot }]} onPress={(e) => e.stopPropagation()}>
             <ThemedText style={styles.reportModalTitle}>Report Reply</ThemedText>
             <ThemedText style={[styles.reportModalSubtitle, { color: theme.textSecondary }]}>
               Why are you reporting this reply?

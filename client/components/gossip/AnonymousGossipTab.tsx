@@ -119,8 +119,8 @@ export function AnonymousGossipTab() {
     },
     onSuccess: () => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/my-reactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/my-reactions"], exact: false });
     },
   });
 
