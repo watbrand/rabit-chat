@@ -5,6 +5,7 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
+  Platform,
 } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -196,7 +197,7 @@ export default function LoginHistoryScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <FlatList
         data={loginHistory}
         keyExtractor={(item) => item.id}
@@ -204,7 +205,7 @@ export default function LoginHistoryScreen() {
         contentContainerStyle={[
           styles.listContent,
           {
-            paddingTop: headerHeight + Spacing.lg,
+            paddingTop: Platform.OS === "android" ? Spacing.lg : headerHeight + Spacing.lg,
             paddingBottom: insets.bottom + Spacing.xl,
           },
         ]}

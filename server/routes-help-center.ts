@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import crypto from "node:crypto";
 import { db, pool } from "./db";
 import { storage } from "./storage";
 import { eq, and, desc, sql, inArray, isNull, or, ilike, asc, count, gt, lt, gte, lte, ne } from "drizzle-orm";
@@ -141,6 +142,9 @@ export function registerHelpCenterRoutes(app: Express) {
   // GET /api/help/categories - Get all categories (supports parentId filter for subcategories)
   app.get("/api/help/categories", async (req: Request, res: Response) => {
     try {
+      // Cache help categories for 5 minutes
+      res.set('Cache-Control', 'public, max-age=300');
+      
       const { parentId } = req.query;
       console.log("[Help Center] Fetching categories...", parentId ? `parentId=${parentId}` : "all");
       
@@ -189,7 +193,16 @@ export function registerHelpCenterRoutes(app: Express) {
       }
       
       console.log(`[Help Center] Found ${result.rows.length} categories`);
-      res.json({ categories: result.rows });
+      
+      // Add ETag for cache validation
+      const data = { categories: result.rows };
+      const etag = crypto.createHash('md5').update(JSON.stringify(data)).digest('hex');
+      res.set('ETag', `"${etag}"`);
+      if (req.headers['if-none-match'] === `"${etag}"`) {
+        return res.status(304).send();
+      }
+      
+      res.json(data);
     } catch (error: any) {
       console.error("Error fetching help categories:", error);
       res.status(500).json({ error: "Failed to fetch categories" });

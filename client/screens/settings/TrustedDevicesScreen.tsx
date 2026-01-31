@@ -7,6 +7,7 @@ import {
   RefreshControl,
   Alert,
   Modal,
+  Platform,
 } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -450,7 +451,7 @@ export default function TrustedDevicesScreen() {
         contentContainerStyle={[
           styles.listContent,
           {
-            paddingTop: headerHeight + Spacing.lg,
+            paddingTop: Platform.OS === "android" ? Spacing.lg : headerHeight + Spacing.lg,
             paddingBottom: insets.bottom + Spacing.xl,
           },
         ]}

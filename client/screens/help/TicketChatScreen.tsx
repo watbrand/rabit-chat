@@ -640,7 +640,7 @@ export default function TicketChatScreen() {
           contentContainerStyle={[
             styles.listContent,
             {
-              paddingTop: headerHeight,
+              paddingTop: Platform.OS === "android" ? Spacing.md : headerHeight,
               paddingBottom: Spacing.md,
             },
           ]}

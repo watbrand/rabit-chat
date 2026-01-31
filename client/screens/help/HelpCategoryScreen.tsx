@@ -344,7 +344,7 @@ export default function HelpCategoryScreen() {
         contentContainerStyle={[
           styles.listContent,
           { 
-            paddingTop: headerHeight + Spacing.md,
+            paddingTop: Platform.OS === "android" ? Spacing.md : headerHeight + Spacing.md,
             paddingBottom: insets.bottom + Spacing.xl,
           },
         ]}

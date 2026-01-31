@@ -1,6 +1,7 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
+import compression from "compression";
 import { registerRoutes } from "./routes";
 import { validateEnvironment } from "./validate-env";
 import { apiError, ErrorCodes } from "./validation";
@@ -360,6 +361,20 @@ function setupErrorHandler(app: express.Application) {
   
   app.use(sentryRequestHandler());
   setupSecurityHeaders(app);
+  
+  // Enable gzip compression for all responses
+  app.use(compression({
+    filter: (req, res) => {
+      // Skip compression for already compressed responses or uploads
+      if (req.headers['x-no-compression'] || req.path.startsWith('/api/upload')) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+    level: 6, // Balanced compression level (1-9, where 9 is max compression)
+    threshold: 1024, // Only compress responses larger than 1KB
+  }));
+  
   setupCors(app);
   setupBodyParsing(app);
   setupRateLimiting(app);

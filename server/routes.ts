@@ -1510,6 +1510,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== LOCATIONS ENDPOINT =====
   app.get("/api/locations", async (req, res) => {
     try {
+      // Cache static location data for 5 minutes
+      res.set('Cache-Control', 'public, max-age=300');
+      
       // Comprehensive location data for South Africa (primary market) and other countries
       const locationData = {
         countries: [
@@ -1602,6 +1605,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ]
       };
 
+      // Add ETag for cache validation
+      const etag = crypto.createHash('md5').update(JSON.stringify(locationData)).digest('hex');
+      res.set('ETag', `"${etag}"`);
+      if (req.headers['if-none-match'] === `"${etag}"`) {
+        return res.status(304).send();
+      }
+      
       res.json(locationData);
     } catch (error) {
       console.error("Locations error:", error);
@@ -1612,6 +1622,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== ELITE LEADERBOARD ENDPOINT =====
   app.get("/api/leaderboard/elite", async (req, res) => {
     try {
+      // Cache leaderboard data for 2 minutes (changes less frequently)
+      res.set('Cache-Control', 'public, max-age=120');
+      
       // Get top 5 users by net worth (updated in real-time from Mall purchases)
       const topUsers = await db.select({
         id: users.id,
@@ -1637,6 +1650,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rank: index + 1,
         ...user,
       }));
+
+      // Add ETag for cache validation
+      const etag = crypto.createHash('md5').update(JSON.stringify(rankedUsers)).digest('hex');
+      res.set('ETag', `"${etag}"`);
+      if (req.headers['if-none-match'] === `"${etag}"`) {
+        return res.status(304).send();
+      }
 
       res.json(rankedUsers);
     } catch (error) {
@@ -12204,7 +12224,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/mall/categories", requireAuth, async (req, res) => {
     try {
+      // Cache mall categories for 5 minutes
+      res.set('Cache-Control', 'public, max-age=300');
+      
       const categories = await storage.getMallCategories();
+      
+      // Add ETag for cache validation
+      const etag = crypto.createHash('md5').update(JSON.stringify(categories)).digest('hex');
+      res.set('ETag', `"${etag}"`);
+      if (req.headers['if-none-match'] === `"${etag}"`) {
+        return res.status(304).send();
+      }
+      
       res.json(categories);
     } catch (error) {
       console.error("Failed to get mall categories:", error);
@@ -12256,8 +12287,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/mall/items", requireAuth, async (req, res) => {
     try {
+      // Cache mall items for 5 minutes
+      res.set('Cache-Control', 'public, max-age=300');
+      
       const categoryId = req.query.categoryId as string | undefined;
-      console.log("[Mall] Fetching items, categoryId:", categoryId || "all");
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      console.log("[Mall] Fetching items, categoryId:", categoryId || "all", "limit:", limit);
       let items = await storage.getMallItems(categoryId);
       
       // Check ALL items (including inactive) to see if we need to refresh
@@ -12274,11 +12309,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log("[Mall] Refreshed, now have", items.length, "active items");
       }
       
-      console.log("[Mall] Returning", items.length, "items");
-      if (items.length > 0) {
-        console.log("[Mall] Sample item:", JSON.stringify({ id: items[0].id, name: items[0].name, value: items[0].value, coinPrice: items[0].coinPrice }));
+      // Apply limit to items
+      const limitedItems = items.slice(0, limit);
+      console.log("[Mall] Returning", limitedItems.length, "items");
+      if (limitedItems.length > 0) {
+        console.log("[Mall] Sample item:", JSON.stringify({ id: limitedItems[0].id, name: limitedItems[0].name, value: limitedItems[0].value, coinPrice: limitedItems[0].coinPrice }));
       }
-      res.json(items);
+      
+      // Add ETag for cache validation
+      const etag = crypto.createHash('md5').update(JSON.stringify(limitedItems)).digest('hex');
+      res.set('ETag', `"${etag}"`);
+      if (req.headers['if-none-match'] === `"${etag}"`) {
+        return res.status(304).send();
+      }
+      
+      res.json(limitedItems);
     } catch (error) {
       console.error("Failed to get mall items:", error);
       res.status(500).json({ message: "Failed to get mall items" });

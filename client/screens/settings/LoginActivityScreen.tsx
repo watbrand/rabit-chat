@@ -6,6 +6,7 @@ import {
   Pressable,
   RefreshControl,
   Alert,
+  Platform,
 } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -468,7 +469,7 @@ export default function LoginActivityScreen() {
         contentContainerStyle={[
           styles.listContent,
           {
-            paddingTop: headerHeight + Spacing.lg,
+            paddingTop: Platform.OS === "android" ? Spacing.lg : headerHeight + Spacing.lg,
             paddingBottom: insets.bottom + Spacing.xl,
           },
         ]}
