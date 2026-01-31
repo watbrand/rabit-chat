@@ -223,7 +223,7 @@ export default function MallScreen() {
     if (selectedItem) {
       const totalCost = getItemCoinPrice(selectedItem) * purchaseQuantity;
       if (wallet && wallet.coinBalance < totalCost) {
-        setPurchaseError("Insufficient coins. Please top up your wallet.");
+        setPurchaseError("Insufficient Rabit Coins. Please top up your wallet.");
         return;
       }
       if (wallet?.isFrozen) {
@@ -581,7 +581,7 @@ export default function MallScreen() {
                 <ThemedText type="subhead">Total:</ThemedText>
                 <View style={[styles.totalBadge, { backgroundColor: theme.goldLight }]}>
                   <ThemedText style={[styles.totalValue, { color: theme.gold }]} weight="bold">
-                    {(getItemCoinPrice(selectedItem) * purchaseQuantity).toLocaleString()} coins
+                    {(getItemCoinPrice(selectedItem) * purchaseQuantity).toLocaleString()} Rabit Coins
                   </ThemedText>
                 </View>
               </View>
@@ -593,7 +593,7 @@ export default function MallScreen() {
                     Your Balance:
                   </ThemedText>
                   <ThemedText style={[styles.walletBalanceValue, { color: wallet && wallet.coinBalance >= getItemCoinPrice(selectedItem) * purchaseQuantity ? theme.success : theme.error }]} weight="bold">
-                    {wallet?.coinBalance?.toLocaleString() || 0} coins
+                    {wallet?.coinBalance?.toLocaleString() || 0} Rabit Coins
                   </ThemedText>
                 </View>
                 <View style={styles.netWorthGainRow}>
@@ -690,7 +690,7 @@ export default function MallScreen() {
 
               <View style={[styles.detailValueContainer, { backgroundColor: theme.goldLight }]}>
                 <ThemedText style={[styles.detailValue, { color: theme.gold }]} weight="bold">
-                  {getItemCoinPrice(selectedItem).toLocaleString()} coins
+                  {getItemCoinPrice(selectedItem).toLocaleString()} Rabit Coins
                 </ThemedText>
               </View>
 
