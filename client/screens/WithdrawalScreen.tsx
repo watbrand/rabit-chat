@@ -210,6 +210,7 @@ export default function WithdrawalScreen({ navigation }: any) {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <View style={styles.header}>
           <ThemedText type="title2" style={styles.title}>Withdraw Coins</ThemedText>

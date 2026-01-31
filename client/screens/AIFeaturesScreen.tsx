@@ -382,6 +382,7 @@ export function AIFeaturesScreen() {
             paddingBottom: insets.bottom + Spacing["2xl"],
           },
         ]}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />

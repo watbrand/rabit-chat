@@ -273,6 +273,7 @@ export default function ProfilePageScreen() {
           tintColor={theme.primary}
         />
       }
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <ProfileHeader
         profile={profile}

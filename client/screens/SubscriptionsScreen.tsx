@@ -498,6 +498,7 @@ export function SubscriptionsScreen() {
             tintColor={theme.primary}
           />
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         {!selectedCreator ? (
           <View style={styles.tabsContainer}>

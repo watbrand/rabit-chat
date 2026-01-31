@@ -285,6 +285,7 @@ export default function CreatorDashboardScreen({ navigation }: any) {
           />
         }
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <View style={styles.summaryRow}>
           <SummaryCard

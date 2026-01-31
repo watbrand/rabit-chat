@@ -263,6 +263,7 @@ export default function MessageSearchScreen() {
           ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
         />
       </KeyboardAvoidingView>
     </GradientBackground>

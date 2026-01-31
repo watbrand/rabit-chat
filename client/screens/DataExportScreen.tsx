@@ -147,6 +147,7 @@ export function DataExportScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <Animated.View entering={FadeInUp.delay(0)}>
           <Card style={styles.card}>

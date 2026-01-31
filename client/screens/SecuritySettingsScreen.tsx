@@ -329,6 +329,7 @@ export function SecuritySettingsScreen() {
             tintColor={theme.primary}
           />
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <Animated.View entering={FadeInUp.delay(0)}>
           <Card style={styles.sectionCard}>

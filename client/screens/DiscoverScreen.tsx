@@ -568,6 +568,7 @@ function NewPeopleTab() {
           { paddingBottom: tabBarHeight + Spacing.xl },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         scrollEventThrottle={16}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
@@ -1282,6 +1283,7 @@ function TrendsTab() {
           styles.listContent,
           { paddingBottom: tabBarHeight + Spacing.xl },
         ]}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         ListHeaderComponent={renderSuggestedPeopleHeader}
         ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
         refreshControl={

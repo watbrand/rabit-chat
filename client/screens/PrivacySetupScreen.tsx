@@ -315,6 +315,7 @@ export default function PrivacySetupScreen() {
           { paddingBottom: insets.bottom + 120 },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <PrivacySection
           title="Net Worth Visibility"

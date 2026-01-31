@@ -307,6 +307,7 @@ export function SocialFeaturesScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <View style={styles.tabsContainer}>
           <Pressable

@@ -634,6 +634,7 @@ export default function CreatePostScreen() {
         paddingBottom: insets.bottom + Spacing["4xl"],
         flexGrow: 1,
       }}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
       extraKeyboardSpace={100}
     >
       <View style={[styles.composerCard, { backgroundColor: theme.backgroundDefault }]}>

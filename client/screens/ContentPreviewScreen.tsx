@@ -260,6 +260,7 @@ export default function ContentPreviewScreen() {
           renderItem={renderEliteUser}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Feather name="users" size={48} color={theme.textSecondary} />

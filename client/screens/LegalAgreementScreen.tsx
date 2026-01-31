@@ -205,6 +205,7 @@ function DocumentModal({ visible, onClose, document, isLoading }: DocumentModalP
             style={styles.modalScroll}
             contentContainerStyle={[styles.modalContent, { paddingBottom: insets.bottom + 40 }]}
             showsVerticalScrollIndicator
+            scrollIndicatorInsets={{ bottom: insets.bottom }}
           >
             <View style={styles.documentMeta}>
               <ThemedText style={[styles.documentVersion, { color: theme.textSecondary }]}>
@@ -407,6 +408,7 @@ export function LegalAgreementScreen() {
           },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <Animated.View entering={FadeInUp.delay(100).springify()}>
           <View style={styles.header}>
