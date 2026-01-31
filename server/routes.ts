@@ -1296,6 +1296,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Email/username and password required" });
       }
 
+      // Parse User-Agent for device info
+      const userAgent = req.headers["user-agent"] || "";
+      const ipAddress = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "Unknown";
+      
+      // Parse device info from User-Agent
+      const parseDeviceInfo = (ua: string) => {
+        let deviceType = "desktop";
+        let browser = "Unknown";
+        let os = "Unknown";
+        let deviceName = "Unknown Device";
+        
+        // Device type detection
+        if (/mobile|android|iphone|ipad|ipod/i.test(ua)) {
+          deviceType = /ipad|tablet/i.test(ua) ? "tablet" : "mobile";
+        }
+        
+        // OS detection
+        if (/windows/i.test(ua)) os = "Windows";
+        else if (/macintosh|mac os x/i.test(ua)) os = "macOS";
+        else if (/linux/i.test(ua)) os = "Linux";
+        else if (/android/i.test(ua)) os = "Android";
+        else if (/iphone|ipad|ipod/i.test(ua)) os = "iOS";
+        
+        // Browser detection
+        if (/expo/i.test(ua)) browser = "Expo Go";
+        else if (/chrome/i.test(ua) && !/edg/i.test(ua)) browser = "Chrome";
+        else if (/firefox/i.test(ua)) browser = "Firefox";
+        else if (/safari/i.test(ua) && !/chrome/i.test(ua)) browser = "Safari";
+        else if (/edg/i.test(ua)) browser = "Edge";
+        
+        deviceName = `${browser} on ${os}`;
+        
+        return { deviceType, browser, os, deviceName };
+      };
+      
+      const deviceInfo = parseDeviceInfo(userAgent);
+
       // Try to find user by email first, then by username
       let user = await storage.getUserByEmail(email);
       if (!user) {
@@ -1307,10 +1344,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validPassword = await bcrypt.compare(password, user.password);
       if (!validPassword) {
+        // Record failed login attempt
+        await storage.createLoginSession(user.id, {
+          sessionToken: crypto.randomBytes(16).toString("hex"),
+          deviceName: deviceInfo.deviceName,
+          deviceType: deviceInfo.deviceType,
+          browser: deviceInfo.browser,
+          os: deviceInfo.os,
+          ipAddress,
+          success: false,
+        });
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
       req.session.userId = user.id;
+      
+      // Record successful login attempt
+      await storage.createLoginSession(user.id, {
+        sessionToken: req.session.id || crypto.randomBytes(16).toString("hex"),
+        deviceName: deviceInfo.deviceName,
+        deviceType: deviceInfo.deviceType,
+        browser: deviceInfo.browser,
+        os: deviceInfo.os,
+        ipAddress,
+        success: true,
+      });
+      
       const { password: _, ...safeUser } = user;
       res.json(safeUser);
     } catch (error) {
@@ -9327,6 +9386,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Failed to revoke sessions:", error);
       res.status(500).json({ message: "Failed to revoke sessions" });
+    }
+  });
+
+  // Get login history (last 30 days or 50 entries)
+  app.get("/api/me/login-history", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      
+      const loginHistory = await storage.getLoginHistory(userId, limit);
+      
+      // Transform for frontend
+      const history = loginHistory.map((entry) => ({
+        id: entry.id,
+        timestamp: entry.createdAt,
+        ipAddress: entry.ipAddress,
+        deviceName: entry.deviceName,
+        deviceType: entry.deviceType,
+        browser: entry.browser,
+        os: entry.os,
+        location: entry.location,
+        success: entry.success,
+      }));
+      
+      res.json(history);
+    } catch (error) {
+      console.error("Failed to get login history:", error);
+      res.status(500).json({ message: "Failed to get login history" });
     }
   });
 

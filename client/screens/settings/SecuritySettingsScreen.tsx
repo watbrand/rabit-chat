@@ -19,6 +19,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as Clipboard from "expo-clipboard";
 
+import { useNavigation } from "@react-navigation/native";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -82,6 +83,7 @@ export default function SecuritySettingsScreen() {
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const queryClient = useQueryClient();
+  const navigation = useNavigation<any>();
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -1091,6 +1093,22 @@ export default function SecuritySettingsScreen() {
                 No login sessions available
               </ThemedText>
             )}
+            <Pressable
+              style={[
+                styles.viewHistoryButton,
+                { backgroundColor: theme.glassLight, borderColor: theme.glassBorder },
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                navigation.navigate("LoginHistory");
+              }}
+            >
+              <Feather name="clock" size={18} color={theme.primary} />
+              <ThemedText style={[styles.viewHistoryText, { color: theme.primary }]}>
+                View Login History
+              </ThemedText>
+              <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+            </Pressable>
           </View>
         </View>
 
@@ -1324,6 +1342,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     paddingVertical: Spacing.lg,
+  },
+  viewHistoryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    marginTop: Spacing.md,
+    gap: Spacing.sm,
+  },
+  viewHistoryText: {
+    fontSize: 14,
+    fontWeight: "600",
+    flex: 1,
   },
   twoFactorContainer: {
     borderRadius: BorderRadius.md,

@@ -1885,6 +1885,7 @@ export const loginSessions = pgTable("login_sessions", {
   location: text("location"), // City, Country
   isTrusted: boolean("is_trusted").default(false).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
+  success: boolean("success").default(true).notNull(),
   lastActiveAt: timestamp("last_active_at").defaultNow().notNull(),
   expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

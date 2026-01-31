@@ -446,8 +446,9 @@ export interface IStorage {
   updateLastActive(userId: string): Promise<void>;
 
   // ===== LOGIN SESSIONS =====
-  createLoginSession(userId: string, data: { sessionToken: string; deviceName?: string; deviceType?: string; browser?: string; os?: string; ipAddress?: string; location?: string }): Promise<LoginSession>;
+  createLoginSession(userId: string, data: { sessionToken: string; deviceName?: string; deviceType?: string; browser?: string; os?: string; ipAddress?: string; location?: string; success?: boolean }): Promise<LoginSession>;
   getLoginSessions(userId: string): Promise<LoginSession[]>;
+  getLoginHistory(userId: string, limit?: number): Promise<LoginSession[]>;
   getActiveLoginSessions(userId: string): Promise<LoginSession[]>;
   getLoginSessionByToken(token: string): Promise<LoginSession | undefined>;
   getLoginSession(sessionId: string): Promise<LoginSession | undefined>;
@@ -3991,7 +3992,7 @@ export class DatabaseStorage implements IStorage {
 
   // ===== LOGIN SESSIONS =====
 
-  async createLoginSession(userId: string, data: { sessionToken: string; deviceName?: string; deviceType?: string; browser?: string; os?: string; ipAddress?: string; location?: string }): Promise<LoginSession> {
+  async createLoginSession(userId: string, data: { sessionToken: string; deviceName?: string; deviceType?: string; browser?: string; os?: string; ipAddress?: string; location?: string; success?: boolean }): Promise<LoginSession> {
     const [session] = await db.insert(loginSessions).values({
       userId,
       sessionToken: data.sessionToken,
@@ -4001,8 +4002,22 @@ export class DatabaseStorage implements IStorage {
       os: data.os,
       ipAddress: data.ipAddress,
       location: data.location,
+      success: data.success ?? true,
     }).returning();
     return session;
+  }
+
+  async getLoginHistory(userId: string, limit: number = 50): Promise<LoginSession[]> {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    return db.select().from(loginSessions)
+      .where(and(
+        eq(loginSessions.userId, userId),
+        gte(loginSessions.createdAt, thirtyDaysAgo)
+      ))
+      .orderBy(desc(loginSessions.createdAt))
+      .limit(limit);
   }
 
   async getLoginSessions(userId: string): Promise<LoginSession[]> {
