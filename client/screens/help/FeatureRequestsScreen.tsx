@@ -63,10 +63,14 @@ function FeatureCard({
   feature,
   onVote,
   isVoting,
+  expandedItems,
+  setExpandedItems,
 }: {
   feature: FeatureRequest;
   onVote: (id: string, direction: 1 | -1) => void;
   isVoting: boolean;
+  expandedItems: Record<string, boolean>;
+  setExpandedItems: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 }) {
   const { theme, isDark } = useTheme();
   const scale = useSharedValue(1);
@@ -181,12 +185,19 @@ function FeatureCard({
           {feature.title}
         </ThemedText>
 
-        <ThemedText
-          style={[styles.featureDescription, { color: theme.textSecondary }]}
-          numberOfLines={2}
-        >
-          {feature.description}
-        </ThemedText>
+        <Pressable onPress={() => setExpandedItems(prev => ({ ...prev, [feature.id]: !prev[feature.id] }))}>
+          <ThemedText
+            style={[styles.featureDescription, { color: theme.textSecondary }]}
+            numberOfLines={expandedItems[feature.id] ? undefined : 2}
+          >
+            {feature.description}
+          </ThemedText>
+          {feature.description.length > 80 ? (
+            <ThemedText style={[styles.seeMoreText, { color: theme.primary }]}>
+              {expandedItems[feature.id] ? "See less" : "See more"}
+            </ThemedText>
+          ) : null}
+        </Pressable>
 
         <View style={styles.featureFooter}>
           {feature.author ? (
@@ -218,6 +229,7 @@ export default function FeatureRequestsScreen() {
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [votingIds, setVotingIds] = useState<Set<string>>(new Set());
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   const { data: features, isLoading, refetch } = useQuery<FeatureRequest[]>({
     queryKey: ["/api/help/feature-requests", { sort: sortBy }],
@@ -320,10 +332,12 @@ export default function FeatureRequestsScreen() {
           feature={item}
           onVote={handleVote}
           isVoting={votingIds.has(item.id)}
+          expandedItems={expandedItems}
+          setExpandedItems={setExpandedItems}
         />
       </Animated.View>
     ),
-    [handleVote, votingIds]
+    [handleVote, votingIds, expandedItems]
   );
 
   const ListHeader = () => (
@@ -590,6 +604,11 @@ const styles = StyleSheet.create({
   featureDescription: {
     fontSize: 13,
     lineHeight: 18,
+    marginBottom: Spacing.xs,
+  },
+  seeMoreText: {
+    fontSize: 11,
+    fontWeight: "500",
     marginBottom: Spacing.sm,
   },
   featureFooter: {

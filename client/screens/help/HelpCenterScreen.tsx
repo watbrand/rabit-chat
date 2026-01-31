@@ -76,6 +76,7 @@ export default function HelpCenterScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   const { data: categoriesResponse, isLoading: categoriesLoading, isError: categoriesError, error: categoriesErrorMsg, refetch: refetchCategories } = useQuery<{ categories: HelpCategory[] }>({
     queryKey: ["/api/help/categories"],
@@ -230,9 +231,11 @@ export default function HelpCenterScreen() {
         <View style={[styles.quickActionIconWrap, { backgroundColor: theme.primary + "20" }]}>
           <Feather name={icon} size={20} color={theme.primary} />
         </View>
-        <ThemedText style={styles.quickActionLabel} numberOfLines={2}>
-          {label}
-        </ThemedText>
+        <Pressable onPress={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [`quick-${action}`]: !prev[`quick-${action}`] })); }}>
+          <ThemedText style={styles.quickActionLabel} numberOfLines={expandedItems[`quick-${action}`] ? undefined : 2}>
+            {label}
+          </ThemedText>
+        </Pressable>
       </AnimatedPressable>
     );
   };
@@ -285,12 +288,19 @@ export default function HelpCenterScreen() {
             {category.name}
           </ThemedText>
           {category.description ? (
-            <ThemedText 
-              style={[styles.categoryDescription, { color: theme.textSecondary }]} 
-              numberOfLines={2}
-            >
-              {category.description}
-            </ThemedText>
+            <Pressable onPress={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [`cat-${category.id}`]: !prev[`cat-${category.id}`] })); }}>
+              <ThemedText 
+                style={[styles.categoryDescription, { color: theme.textSecondary }]} 
+                numberOfLines={expandedItems[`cat-${category.id}`] ? undefined : 2}
+              >
+                {category.description}
+              </ThemedText>
+              {category.description.length > 50 ? (
+                <ThemedText style={[styles.seeMoreText, { color: theme.primary }]}>
+                  {expandedItems[`cat-${category.id}`] ? "See less" : "See more"}
+                </ThemedText>
+              ) : null}
+            </Pressable>
           ) : null}
           <View style={styles.categoryArrow}>
             <Feather name="chevron-right" size={16} color={theme.textTertiary} />
@@ -344,16 +354,25 @@ export default function HelpCenterScreen() {
             </View>
           ) : null}
         </View>
-        <ThemedText type="headline" style={styles.articleTitle} numberOfLines={2}>
-          {article.title}
-        </ThemedText>
-        {article.summary ? (
-          <ThemedText 
-            style={[styles.articleSummary, { color: theme.textSecondary }]} 
-            numberOfLines={2}
-          >
-            {article.summary}
+        <Pressable onPress={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [`art-title-${article.id}`]: !prev[`art-title-${article.id}`] })); }}>
+          <ThemedText type="headline" style={styles.articleTitle} numberOfLines={expandedItems[`art-title-${article.id}`] ? undefined : 2}>
+            {article.title}
           </ThemedText>
+        </Pressable>
+        {article.summary ? (
+          <Pressable onPress={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [`art-sum-${article.id}`]: !prev[`art-sum-${article.id}`] })); }}>
+            <ThemedText 
+              style={[styles.articleSummary, { color: theme.textSecondary }]} 
+              numberOfLines={expandedItems[`art-sum-${article.id}`] ? undefined : 2}
+            >
+              {article.summary}
+            </ThemedText>
+            {article.summary.length > 60 ? (
+              <ThemedText style={[styles.seeMoreText, { color: theme.primary }]}>
+                {expandedItems[`art-sum-${article.id}`] ? "See less" : "See more"}
+              </ThemedText>
+            ) : null}
+          </Pressable>
         ) : null}
         <View style={styles.articleFooter}>
           {article.estimated_read_time ? (
@@ -459,15 +478,24 @@ export default function HelpCenterScreen() {
                     onPress={() => handleArticlePress(article)}
                   >
                     <View style={styles.searchResultContent}>
-                      <ThemedText style={styles.searchResultTitle} numberOfLines={1}>
-                        {article.title}
-                      </ThemedText>
-                      <ThemedText 
-                        style={[styles.searchResultSummary, { color: theme.textSecondary }]} 
-                        numberOfLines={2}
-                      >
-                        {article.summary || "Tap to read more..."}
-                      </ThemedText>
+                      <Pressable onPress={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [`search-title-${article.id}`]: !prev[`search-title-${article.id}`] })); }}>
+                        <ThemedText style={styles.searchResultTitle} numberOfLines={expandedItems[`search-title-${article.id}`] ? undefined : 1}>
+                          {article.title}
+                        </ThemedText>
+                      </Pressable>
+                      <Pressable onPress={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [`search-sum-${article.id}`]: !prev[`search-sum-${article.id}`] })); }}>
+                        <ThemedText 
+                          style={[styles.searchResultSummary, { color: theme.textSecondary }]} 
+                          numberOfLines={expandedItems[`search-sum-${article.id}`] ? undefined : 2}
+                        >
+                          {article.summary || "Tap to read more..."}
+                        </ThemedText>
+                        {(article.summary || "").length > 60 ? (
+                          <ThemedText style={[styles.seeMoreText, { color: theme.primary }]}>
+                            {expandedItems[`search-sum-${article.id}`] ? "See less" : "See more"}
+                          </ThemedText>
+                        ) : null}
+                      </Pressable>
                     </View>
                     <Feather name="chevron-right" size={18} color={theme.textSecondary} />
                   </Pressable>
@@ -1010,6 +1038,11 @@ const styles = StyleSheet.create({
   searchResultSummary: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  seeMoreText: {
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 2,
   },
   noResults: {
     padding: Spacing.xl,

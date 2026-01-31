@@ -58,6 +58,7 @@ export default function StudioContentScreen() {
   const navigation = useNavigation<any>();
   const [sortBy, setSortBy] = useState<SortOption>("views");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const endDate = new Date();
@@ -155,9 +156,16 @@ export default function StudioContentScreen() {
               </View>
             )}
             <View style={styles.contentInfo}>
-              <ThemedText numberOfLines={2} style={styles.contentTitle}>
-                {item.post.caption || item.post.content || "Untitled"}
-              </ThemedText>
+              <Pressable onPress={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [item.post.id]: !prev[item.post.id] })); }}>
+                <ThemedText numberOfLines={expandedItems[item.post.id] ? undefined : 2} style={styles.contentTitle}>
+                  {item.post.caption || item.post.content || "Untitled"}
+                </ThemedText>
+                {(item.post.caption || item.post.content || "").length > 50 ? (
+                  <ThemedText style={[styles.seeMoreText, { color: theme.primary }]}>
+                    {expandedItems[item.post.id] ? "See less" : "See more"}
+                  </ThemedText>
+                ) : null}
+              </Pressable>
               <View style={styles.contentMeta}>
                 <Feather name={POST_TYPE_ICONS[item.post.type] as any} size={12} color={theme.textSecondary} />
                 <ThemedText style={[styles.contentMetaText, { color: theme.textSecondary }]}>
@@ -319,6 +327,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     marginBottom: Spacing.xs,
+  },
+  seeMoreText: {
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 2,
   },
   contentMeta: {
     flexDirection: "row",

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, StyleSheet, FlatList, Pressable, Alert, Platform } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +29,7 @@ export default function DraftsScreen() {
   const { theme } = useTheme();
   const queryClient = useQueryClient();
   const navigation = useNavigation<any>();
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   const { data: drafts, isLoading } = useQuery<Draft[]>({
     queryKey: ["/api/drafts"],
@@ -172,9 +173,16 @@ export default function DraftsScreen() {
         </View>
       </View>
       {item.content ? (
-        <ThemedText style={styles.draftContent} numberOfLines={3}>
-          {item.content}
-        </ThemedText>
+        <Pressable onPress={() => setExpandedItems(prev => ({ ...prev, [item.id]: !prev[item.id] }))}>
+          <ThemedText style={styles.draftContent} numberOfLines={expandedItems[item.id] ? undefined : 3}>
+            {item.content}
+          </ThemedText>
+          {item.content.length > 100 ? (
+            <ThemedText style={[styles.seeMoreText, { color: theme.primary }]}>
+              {expandedItems[item.id] ? "See less" : "See more"}
+            </ThemedText>
+          ) : null}
+        </Pressable>
       ) : null}
       {item.mediaUrls && item.mediaUrls.length > 0 ? (
         <ThemedText style={[styles.mediaCount, { color: theme.textSecondary }]}>
@@ -281,6 +289,11 @@ const styles = StyleSheet.create({
   draftContent: {
     fontSize: 14,
     lineHeight: 20,
+    marginBottom: Spacing.xs,
+  },
+  seeMoreText: {
+    fontSize: 12,
+    fontWeight: "500",
     marginBottom: Spacing.sm,
   },
   mediaCount: {

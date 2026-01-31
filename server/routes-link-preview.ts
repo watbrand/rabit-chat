@@ -199,7 +199,9 @@ function extractImage(html: string, baseUrl: string): string | null {
     if (sanitized) return sanitized;
     try {
       return new URL(ogImage, baseUrl).href;
-    } catch {}
+    } catch (error) {
+      console.error("Failed to parse og:image URL:", error);
+    }
   }
   
   const twitterImage = extractMetaContent(html, "twitter:image");
@@ -208,7 +210,9 @@ function extractImage(html: string, baseUrl: string): string | null {
     if (sanitized) return sanitized;
     try {
       return new URL(twitterImage, baseUrl).href;
-    } catch {}
+    } catch (error) {
+      console.error("Failed to parse twitter:image URL:", error);
+    }
   }
   
   return null;

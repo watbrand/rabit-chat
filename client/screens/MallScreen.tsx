@@ -1307,7 +1307,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   compactCardInfo: {
-    paddingTop: 6,
+    paddingTop: Spacing.xs,
     paddingHorizontal: 2,
   },
   compactItemName: {

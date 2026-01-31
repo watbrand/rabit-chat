@@ -425,7 +425,7 @@ export default function ExplorePicturesScreen() {
               keyExtractor={(item) => item.id}
               renderItem={renderComment}
               style={styles.commentsList}
-              contentContainerStyle={{ paddingBottom: 10 }}
+              contentContainerStyle={{ paddingBottom: Spacing.sm }}
               keyboardShouldPersistTaps="handled"
               scrollIndicatorInsets={{ bottom: insets.bottom }}
               ListEmptyComponent={

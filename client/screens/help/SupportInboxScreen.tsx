@@ -83,6 +83,7 @@ export default function SupportInboxScreen() {
   const queryClient = useQueryClient();
   const [activeFilter, setActiveFilter] = useState<FilterTab>("ALL");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   const statusParam = activeFilter === "ALL" ? undefined : activeFilter;
   
@@ -250,16 +251,18 @@ export default function SupportInboxScreen() {
               {!ticket.is_read ? (
                 <View style={[styles.unreadDot, { backgroundColor: theme.primary }]} />
               ) : null}
-              <ThemedText
-                type="headline"
-                style={[
-                  styles.ticketSubject,
-                  !ticket.is_read && styles.ticketSubjectUnread,
-                ]}
-                numberOfLines={1}
-              >
-                {ticket.subject}
-              </ThemedText>
+              <Pressable onPress={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [`subject-${ticket.id}`]: !prev[`subject-${ticket.id}`] })); }}>
+                <ThemedText
+                  type="headline"
+                  style={[
+                    styles.ticketSubject,
+                    !ticket.is_read && styles.ticketSubjectUnread,
+                  ]}
+                  numberOfLines={expandedItems[`subject-${ticket.id}`] ? undefined : 1}
+                >
+                  {ticket.subject}
+                </ThemedText>
+              </Pressable>
             </View>
             <View style={styles.ticketMeta}>
               {priorityColor ? (
@@ -279,12 +282,19 @@ export default function SupportInboxScreen() {
           </View>
 
           {ticket.last_message_preview ? (
-            <ThemedText
-              style={[styles.ticketPreview, { color: theme.textSecondary }]}
-              numberOfLines={2}
-            >
-              {ticket.last_message_preview}
-            </ThemedText>
+            <Pressable onPress={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [`preview-${ticket.id}`]: !prev[`preview-${ticket.id}`] })); }}>
+              <ThemedText
+                style={[styles.ticketPreview, { color: theme.textSecondary }]}
+                numberOfLines={expandedItems[`preview-${ticket.id}`] ? undefined : 2}
+              >
+                {ticket.last_message_preview}
+              </ThemedText>
+              {ticket.last_message_preview.length > 80 ? (
+                <ThemedText style={[styles.seeMoreText, { color: theme.primary }]}>
+                  {expandedItems[`preview-${ticket.id}`] ? "See less" : "See more"}
+                </ThemedText>
+              ) : null}
+            </Pressable>
           ) : null}
 
           <View style={styles.ticketFooter}>
@@ -604,6 +614,11 @@ const styles = StyleSheet.create({
   ticketPreview: {
     fontSize: 14,
     lineHeight: 20,
+  },
+  seeMoreText: {
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 2,
   },
   ticketFooter: {
     flexDirection: "row",

@@ -1332,7 +1332,7 @@ const styles = StyleSheet.create({
   },
   inputMultiline: {
     minHeight: 80,
-    paddingTop: 0,
+    paddingTop: Spacing.sm,
   },
   pickerText: {
     flex: 1,

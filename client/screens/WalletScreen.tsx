@@ -300,7 +300,8 @@ export default function WalletScreen({ navigation }: any) {
     try {
       const perks = JSON.parse(perksJson);
       return Array.isArray(perks) ? perks : [];
-    } catch {
+    } catch (error) {
+      console.error("Failed to parse perks JSON:", error);
       return [];
     }
   };
@@ -924,8 +925,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
   },
   title: {
     fontSize: 28,
@@ -1078,7 +1079,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   wealthClubPerks: {
-    paddingTop: 12,
+    paddingTop: Spacing.sm,
     borderTopWidth: 1,
     borderTopColor: "rgba(255,255,255,0.1)",
   },
@@ -1315,8 +1316,8 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 40,
-    gap: 12,
+    paddingTop: Spacing.xl,
+    gap: Spacing.sm,
   },
   emptyText: {
     fontSize: 14,
@@ -1327,8 +1328,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   customAmountSection: {
-    marginTop: 20,
-    paddingTop: 20,
+    marginTop: Spacing.lg,
+    paddingTop: Spacing.lg,
     borderTopWidth: 1,
   },
   customAmountTitle: {
@@ -1414,8 +1415,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 12,
-    paddingTop: 12,
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.sm,
     borderTopWidth: 1,
     borderTopColor: "rgba(255,255,255,0.3)",
   },

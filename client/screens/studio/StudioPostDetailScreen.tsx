@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, RefreshControl, Platform } from "react-native";
+import { View, StyleSheet, ScrollView, RefreshControl, Platform, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useRoute } from "@react-navigation/native";
@@ -64,6 +64,8 @@ export default function StudioPostDetailScreen() {
   const { theme } = useTheme();
   const route = useRoute<any>();
   const postId = route.params?.postId;
+
+  const [expandedTitle, setExpandedTitle] = useState(false);
 
   const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const endDate = new Date();
@@ -158,9 +160,16 @@ export default function StudioPostDetailScreen() {
             </View>
           )}
           <View style={styles.postInfo}>
-            <ThemedText numberOfLines={2} style={styles.postTitle}>
-              {detail?.post.caption || detail?.post.content || "Untitled"}
-            </ThemedText>
+            <Pressable onPress={() => setExpandedTitle(!expandedTitle)}>
+              <ThemedText numberOfLines={expandedTitle ? undefined : 2} style={styles.postTitle}>
+                {detail?.post.caption || detail?.post.content || "Untitled"}
+              </ThemedText>
+              {(detail?.post.caption || detail?.post.content || "").length > 50 ? (
+                <ThemedText style={[styles.seeMoreText, { color: theme.primary }]}>
+                  {expandedTitle ? "See less" : "See more"}
+                </ThemedText>
+              ) : null}
+            </Pressable>
             <View style={styles.postMeta}>
               <Feather name={POST_TYPE_ICONS[detail?.post.type || "TEXT"] as any} size={12} color={theme.textSecondary} />
               <ThemedText style={[styles.postMetaText, { color: theme.textSecondary }]}>
@@ -267,6 +276,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginBottom: Spacing.xs,
+  },
+  seeMoreText: {
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 2,
   },
   postMeta: {
     flexDirection: "row",

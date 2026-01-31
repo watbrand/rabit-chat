@@ -322,8 +322,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 100,
-    gap: 16,
+    paddingTop: Spacing.xl,
+    gap: Spacing.md,
   },
   emptyText: {
     fontSize: 14,

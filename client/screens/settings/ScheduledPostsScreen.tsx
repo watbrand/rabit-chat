@@ -36,6 +36,7 @@ export default function ScheduledPostsScreen() {
 
   const [rescheduleModalVisible, setRescheduleModalVisible] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   const deleteMutation = useMutation({
     mutationFn: async (postId: string) => {
@@ -238,9 +239,16 @@ export default function ScheduledPostsScreen() {
         ) : null}
       </View>
       {item.content ? (
-        <ThemedText style={styles.postContent} numberOfLines={3}>
-          {item.content}
-        </ThemedText>
+        <Pressable onPress={() => setExpandedItems(prev => ({ ...prev, [item.id]: !prev[item.id] }))}>
+          <ThemedText style={styles.postContent} numberOfLines={expandedItems[item.id] ? undefined : 3}>
+            {item.content}
+          </ThemedText>
+          {item.content.length > 100 ? (
+            <ThemedText style={[styles.seeMoreText, { color: theme.primary }]}>
+              {expandedItems[item.id] ? "See less" : "See more"}
+            </ThemedText>
+          ) : null}
+        </Pressable>
       ) : null}
       {item.mediaUrls && item.mediaUrls.length > 0 ? (
         <ThemedText style={[styles.mediaCount, { color: theme.textSecondary }]}>
@@ -440,6 +448,11 @@ const styles = StyleSheet.create({
   postContent: {
     fontSize: 14,
     lineHeight: 20,
+    marginBottom: Spacing.xs,
+  },
+  seeMoreText: {
+    fontSize: 12,
+    fontWeight: "500",
     marginBottom: Spacing.sm,
   },
   mediaCount: {

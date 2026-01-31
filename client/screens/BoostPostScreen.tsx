@@ -108,7 +108,8 @@ export default function BoostPostScreen() {
     try {
       const parsed = new URL(url);
       return parsed.protocol === 'https:' || parsed.protocol === 'http:';
-    } catch {
+    } catch (error) {
+      console.error("URL validation failed:", error);
       return false;
     }
   };

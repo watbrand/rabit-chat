@@ -147,7 +147,8 @@ export default function StoryComposerScreen() {
         try {
           const errorJson = JSON.parse(responseText);
           errorMessage = errorJson.message || errorMessage;
-        } catch {
+        } catch (error) {
+          console.error("Failed to parse error response:", error);
           errorMessage = responseText || errorMessage;
         }
         throw new Error(errorMessage);

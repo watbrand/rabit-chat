@@ -26,6 +26,7 @@ import Animated, {
   withSequence,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
+import { Spacing } from "@/constants/theme";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -799,7 +800,7 @@ const styles = StyleSheet.create({
   },
   topSection: {
     alignItems: "center",
-    paddingTop: 8,
+    paddingTop: Spacing.sm,
   },
   ongoingBadge: {
     flexDirection: "row",

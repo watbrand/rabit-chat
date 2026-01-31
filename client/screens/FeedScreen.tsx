@@ -811,7 +811,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: Spacing.xl,
-    paddingTop: 60,
+    paddingTop: Spacing.xl,
   },
   emptyIconContainer: {
     width: 100,

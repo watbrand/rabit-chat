@@ -439,8 +439,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
   },
   title: {
     fontSize: 28,
@@ -542,8 +542,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 100,
-    gap: 16,
+    paddingTop: Spacing.xl,
+    gap: Spacing.md,
   },
   emptyText: {
     fontSize: 16,

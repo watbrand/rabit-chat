@@ -511,8 +511,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingBottom: 16,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
@@ -683,8 +683,8 @@ const styles = StyleSheet.create({
     right: 0,
   },
   footerBlur: {
-    paddingTop: 16,
-    paddingHorizontal: 24,
+    paddingTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
   },
   footerContent: {
     flexDirection: "row",

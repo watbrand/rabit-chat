@@ -4629,7 +4629,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Notify story owner
       try {
         await storage.createNotification(story.userId, req.session.userId!, "LIKE", req.params.id);
-      } catch (e) {}
+      } catch (error) {
+        console.error("Failed to create tip notification:", error);
+      }
       
       res.status(201).json(tip);
     } catch (error) {
@@ -4721,7 +4723,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (originalStory.userId !== req.session.userId) {
         try {
           await storage.createNotification(originalStory.userId, req.session.userId!, "LIKE", req.params.id);
-        } catch (e) {}
+        } catch (error) {
+          console.error("Failed to create reshare notification:", error);
+        }
       }
       
       const storyWithUser = await storage.getStory(resharedStory.id);

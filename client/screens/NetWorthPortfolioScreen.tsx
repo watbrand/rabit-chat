@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 100,
+    paddingTop: Spacing.xl,
   },
   emptyText: {
     ...Typography.body,

@@ -214,6 +214,7 @@ export default function SafetyCenterScreen() {
   const navigation = useNavigation<any>();
   const [expandedTipId, setExpandedTipId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 
   const { data: safetyResources, isLoading, refetch } = useQuery({
     queryKey: ["/api/help/safety-resources"],
@@ -303,12 +304,21 @@ export default function SafetyCenterScreen() {
         <View style={[styles.resourceIconWrap, { backgroundColor: EMERGENCY_RED_LIGHT }]}>
           <Feather name={resource.icon} size={22} color={EMERGENCY_RED} />
         </View>
-        <ThemedText type="headline" style={styles.resourceTitle} numberOfLines={1}>
-          {resource.title}
-        </ThemedText>
-        <ThemedText style={[styles.resourceDescription, { color: theme.textSecondary }]} numberOfLines={2}>
-          {resource.description}
-        </ThemedText>
+        <Pressable onPress={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [`title-${resource.id}`]: !prev[`title-${resource.id}`] })); }}>
+          <ThemedText type="headline" style={styles.resourceTitle} numberOfLines={expandedItems[`title-${resource.id}`] ? undefined : 1}>
+            {resource.title}
+          </ThemedText>
+        </Pressable>
+        <Pressable onPress={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [`desc-${resource.id}`]: !prev[`desc-${resource.id}`] })); }}>
+          <ThemedText style={[styles.resourceDescription, { color: theme.textSecondary }]} numberOfLines={expandedItems[`desc-${resource.id}`] ? undefined : 2}>
+            {resource.description}
+          </ThemedText>
+          {resource.description.length > 40 ? (
+            <ThemedText style={[styles.seeMoreText, { color: EMERGENCY_RED }]}>
+              {expandedItems[`desc-${resource.id}`] ? "See less" : "See more"}
+            </ThemedText>
+          ) : null}
+        </Pressable>
       </AnimatedPressable>
     );
   };
@@ -604,6 +614,11 @@ const styles = StyleSheet.create({
   resourceDescription: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  seeMoreText: {
+    fontSize: 10,
+    fontWeight: "500",
+    marginTop: 2,
   },
   hotlineCard: {
     flexDirection: "row",
