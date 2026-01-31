@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect, useEffect, useRef } from "react";
+import React, { useState, useLayoutEffect, useEffect, useRef, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -9,7 +9,7 @@ import {
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, EventArg } from "@react-navigation/native";
 import { useMutation } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { Feather } from "@expo/vector-icons";
@@ -24,6 +24,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography } from "@/constants/theme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { validateUrl } from "@/lib/validation";
 import { pickImage, uploadFile } from "@/lib/upload";
 
 export default function EditProfileScreen() {
@@ -42,11 +43,63 @@ export default function EditProfileScreen() {
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || "");
   const [coverUrl, setCoverUrl] = useState(user?.coverUrl || "");
   const [linkUrl, setLinkUrl] = useState(user?.linkUrl || "");
+  const [linkUrlError, setLinkUrlError] = useState<string | null>(null);
   const [location, setLocation] = useState(user?.location || "");
   const [pronouns, setPronouns] = useState(user?.pronouns || "");
   const [category, setCategory] = useState<"PERSONAL" | "CREATOR" | "BUSINESS">(user?.category || "PERSONAL");
   const [isUploading, setIsUploading] = useState(false);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
+
+  const hasUnsavedChanges = useCallback(() => {
+    if (!user) return false;
+    return (
+      displayName !== (user.displayName || "") ||
+      username !== (user.username || "") ||
+      bio !== (user.bio || "") ||
+      avatarUrl !== (user.avatarUrl || "") ||
+      coverUrl !== (user.coverUrl || "") ||
+      linkUrl !== (user.linkUrl || "") ||
+      location !== (user.location || "") ||
+      pronouns !== (user.pronouns || "") ||
+      category !== (user.category || "PERSONAL")
+    );
+  }, [user, displayName, username, bio, avatarUrl, coverUrl, linkUrl, location, pronouns, category]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e: EventArg<'beforeRemove', true, { action: any }>) => {
+      if (!hasUnsavedChanges()) return;
+
+      e.preventDefault();
+
+      Alert.alert(
+        'Unsaved Changes',
+        'You have unsaved changes. Save before leaving?',
+        [
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => navigation.dispatch(e.data.action),
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Save',
+            onPress: () => {
+              updateMutation.mutate(undefined, {
+                onSuccess: () => {
+                  navigation.dispatch(e.data.action);
+                },
+              });
+            },
+          },
+        ]
+      );
+    });
+
+    return unsubscribe;
+  }, [navigation, hasUnsavedChanges]);
 
   const validateUsername = (value: string): string | null => {
     if (value.length < 3) return "Username must be at least 3 characters";
@@ -171,7 +224,8 @@ export default function EditProfileScreen() {
   });
 
   const usernameValid = username === user?.username || (usernameAvailable === true && !usernameError);
-  const canSave = displayName.trim().length > 0 && username.length >= 3 && usernameValid && !usernameChecking;
+  const urlValid = !linkUrlError;
+  const canSave = displayName.trim().length > 0 && username.length >= 3 && usernameValid && !usernameChecking && urlValid;
   const isSaving = updateMutation.isPending;
 
   useLayoutEffect(() => {
@@ -396,18 +450,28 @@ export default function EditProfileScreen() {
             styles.input,
             {
               backgroundColor: theme.glassBackground,
-              borderColor: theme.glassBorder,
+              borderColor: linkUrlError ? "#EF4444" : theme.glassBorder,
               color: theme.text,
             },
           ]}
           placeholder="https://your-website.com"
           placeholderTextColor={theme.textSecondary}
           value={linkUrl}
-          onChangeText={setLinkUrl}
+          onChangeText={(text) => {
+            setLinkUrl(text);
+            if (text && !validateUrl(text)) {
+              setLinkUrlError("URL must start with http:// or https://");
+            } else {
+              setLinkUrlError(null);
+            }
+          }}
           autoCapitalize="none"
           keyboardType="url"
           testID="input-link-url"
         />
+        {linkUrlError ? (
+          <ThemedText style={styles.urlErrorText}>{linkUrlError}</ThemedText>
+        ) : null}
       </View>
 
       <View style={styles.field}>
@@ -653,6 +717,11 @@ const styles = StyleSheet.create({
   },
   usernameSuccessText: {
     color: "#10B981",
+    fontSize: 12,
+    marginTop: Spacing.xs,
+  },
+  urlErrorText: {
+    color: "#EF4444",
     fontSize: 12,
     marginTop: Spacing.xs,
   },

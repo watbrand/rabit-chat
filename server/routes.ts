@@ -8478,6 +8478,346 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Change email (requires password verification)
+  app.patch("/api/me/email", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { currentPassword, newEmail } = req.body;
+
+      if (!currentPassword) {
+        return res.status(400).json({ message: "Current password is required" });
+      }
+
+      if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+        return res.status(400).json({ message: "Valid email address required" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const validPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!validPassword) {
+        return res.status(400).json({ message: "Current password is incorrect" });
+      }
+
+      const existingUser = await storage.getUserByEmail(newEmail);
+      if (existingUser && existingUser.id !== userId) {
+        return res.status(400).json({ message: "Email already in use by another account" });
+      }
+
+      if (user.email === newEmail) {
+        return res.status(400).json({ message: "New email is the same as current email" });
+      }
+
+      const verificationCode = generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      await db.insert(emailVerificationTokens).values({
+        userId,
+        email: newEmail,
+        token: verificationCode,
+        expiresAt,
+      });
+
+      sendVerificationEmail(newEmail, user.displayName || user.username, verificationCode).catch((err) => {
+        console.error("[Email] Failed to send email change verification:", err);
+      });
+
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "settings.email_change_requested",
+        targetType: "user",
+        targetId: userId,
+        details: { newEmail: newEmail.substring(0, 3) + "***" },
+      });
+
+      res.json({ 
+        success: true, 
+        message: "Verification code sent to your new email address",
+        requiresVerification: true,
+        expiresIn: 600 
+      });
+    } catch (error) {
+      console.error("Failed to change email:", error);
+      res.status(500).json({ message: "Failed to change email" });
+    }
+  });
+
+  // Verify email change code
+  app.post("/api/me/email/verify", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { code, newEmail } = req.body;
+
+      if (!code || !newEmail) {
+        return res.status(400).json({ message: "Verification code and new email are required" });
+      }
+
+      const [token] = await db
+        .select()
+        .from(emailVerificationTokens)
+        .where(
+          and(
+            eq(emailVerificationTokens.userId, userId),
+            eq(emailVerificationTokens.token, code),
+            eq(emailVerificationTokens.email, newEmail),
+            isNull(emailVerificationTokens.verifiedAt),
+            gt(emailVerificationTokens.expiresAt, new Date())
+          )
+        )
+        .limit(1);
+
+      if (!token) {
+        return res.status(400).json({ message: "Invalid or expired verification code" });
+      }
+
+      await db
+        .update(emailVerificationTokens)
+        .set({ verifiedAt: new Date() })
+        .where(eq(emailVerificationTokens.id, token.id));
+
+      const oldEmail = (await storage.getUser(userId))?.email;
+
+      await storage.updateUser(userId, {
+        email: newEmail,
+        emailVerified: true,
+      });
+
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "settings.email_changed",
+        targetType: "user",
+        targetId: userId,
+        details: { 
+          oldEmail: oldEmail ? oldEmail.substring(0, 3) + "***" : null,
+          newEmail: newEmail.substring(0, 3) + "***"
+        },
+      });
+
+      res.json({ success: true, message: "Email updated successfully" });
+    } catch (error) {
+      console.error("Email change verification error:", error);
+      res.status(500).json({ message: "Failed to verify email change" });
+    }
+  });
+
+  // Change phone number (requires password verification)
+  app.patch("/api/me/phone", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { currentPassword, newPhone } = req.body;
+
+      if (!currentPassword) {
+        return res.status(400).json({ message: "Current password is required" });
+      }
+
+      if (!newPhone) {
+        return res.status(400).json({ message: "Phone number is required" });
+      }
+
+      let formattedPhone = newPhone.trim();
+      if (formattedPhone.startsWith("0")) {
+        formattedPhone = "+27" + formattedPhone.substring(1);
+      }
+      if (!formattedPhone.startsWith("+")) {
+        formattedPhone = "+" + formattedPhone;
+      }
+
+      if (!/^\+[1-9]\d{9,14}$/.test(formattedPhone)) {
+        return res.status(400).json({ 
+          message: "Invalid phone number format. Use +27XXXXXXXXX or 0XXXXXXXXX format" 
+        });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const validPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!validPassword) {
+        return res.status(400).json({ message: "Current password is incorrect" });
+      }
+
+      const existingUser = await db
+        .select()
+        .from(users)
+        .where(and(eq(users.phoneNumber, formattedPhone), sql`${users.id} != ${userId}`))
+        .limit(1);
+      
+      if (existingUser.length > 0) {
+        return res.status(400).json({ message: "Phone number already in use by another account" });
+      }
+
+      if (user.phoneNumber === formattedPhone) {
+        return res.status(400).json({ message: "New phone number is the same as current" });
+      }
+
+      if (isSMSConfigured()) {
+        const verificationCode = generateVerificationCode();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+        await db.insert(phoneVerificationTokens).values({
+          userId,
+          phoneNumber: formattedPhone,
+          token: verificationCode,
+          expiresAt,
+        });
+
+        await sendSMS(
+          formattedPhone,
+          `Your RabitChat verification code is: ${verificationCode}. This code expires in 10 minutes.`
+        );
+
+        await storage.createAuditLog({
+          actorId: userId,
+          action: "settings.phone_change_requested",
+          targetType: "user",
+          targetId: userId,
+          details: { phoneLastDigits: formattedPhone.slice(-4) },
+        });
+
+        res.json({ 
+          success: true, 
+          message: "Verification code sent to your new phone number",
+          requiresVerification: true,
+          expiresIn: 600 
+        });
+      } else {
+        await storage.updateUser(userId, {
+          phoneNumber: formattedPhone,
+          phoneVerified: false,
+        });
+
+        await storage.createAuditLog({
+          actorId: userId,
+          action: "settings.phone_changed",
+          targetType: "user",
+          targetId: userId,
+          details: { phoneLastDigits: formattedPhone.slice(-4) },
+        });
+
+        res.json({ 
+          success: true, 
+          message: "Phone number updated successfully",
+          requiresVerification: false
+        });
+      }
+    } catch (error) {
+      console.error("Failed to change phone:", error);
+      res.status(500).json({ message: "Failed to change phone number" });
+    }
+  });
+
+  // Verify phone change code
+  app.post("/api/me/phone/verify", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { code, newPhone } = req.body;
+
+      if (!code || !newPhone) {
+        return res.status(400).json({ message: "Verification code and phone number are required" });
+      }
+
+      let formattedPhone = newPhone.trim();
+      if (formattedPhone.startsWith("0")) {
+        formattedPhone = "+27" + formattedPhone.substring(1);
+      }
+      if (!formattedPhone.startsWith("+")) {
+        formattedPhone = "+" + formattedPhone;
+      }
+
+      const [token] = await db
+        .select()
+        .from(phoneVerificationTokens)
+        .where(
+          and(
+            eq(phoneVerificationTokens.userId, userId),
+            eq(phoneVerificationTokens.token, code),
+            eq(phoneVerificationTokens.phoneNumber, formattedPhone),
+            isNull(phoneVerificationTokens.verifiedAt),
+            gt(phoneVerificationTokens.expiresAt, new Date())
+          )
+        )
+        .limit(1);
+
+      if (!token) {
+        return res.status(400).json({ message: "Invalid or expired verification code" });
+      }
+
+      await db
+        .update(phoneVerificationTokens)
+        .set({ verifiedAt: new Date() })
+        .where(eq(phoneVerificationTokens.id, token.id));
+
+      const oldPhone = (await storage.getUser(userId))?.phoneNumber;
+
+      await storage.updateUser(userId, {
+        phoneNumber: formattedPhone,
+        phoneVerified: true,
+      });
+
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "settings.phone_changed",
+        targetType: "user",
+        targetId: userId,
+        details: { 
+          oldPhoneLastDigits: oldPhone ? oldPhone.slice(-4) : null,
+          newPhoneLastDigits: formattedPhone.slice(-4)
+        },
+      });
+
+      res.json({ success: true, message: "Phone number updated and verified successfully" });
+    } catch (error) {
+      console.error("Phone change verification error:", error);
+      res.status(500).json({ message: "Failed to verify phone change" });
+    }
+  });
+
+  // Get current contact info
+  app.get("/api/me/contact-info", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const maskEmail = (email: string) => {
+        const [local, domain] = email.split("@");
+        if (!domain) return email;
+        const maskedLocal = local.length > 3 
+          ? local.substring(0, 3) + "***" 
+          : local.substring(0, 1) + "***";
+        return `${maskedLocal}@${domain}`;
+      };
+
+      const maskPhone = (phone: string) => {
+        if (!phone) return null;
+        if (phone.length > 6) {
+          return phone.substring(0, 4) + "****" + phone.slice(-3);
+        }
+        return "****" + phone.slice(-3);
+      };
+
+      res.json({
+        email: maskEmail(user.email),
+        emailVerified: user.emailVerified,
+        phone: user.phoneNumber ? maskPhone(user.phoneNumber) : null,
+        phoneVerified: user.phoneVerified,
+        hasEmail: !!user.email && !user.email.endsWith("@phone.local"),
+        hasPhone: !!user.phoneNumber,
+      });
+    } catch (error) {
+      console.error("Failed to get contact info:", error);
+      res.status(500).json({ message: "Failed to get contact info" });
+    }
+  });
+
   // ===== TWO-FACTOR AUTHENTICATION (2FA) ENDPOINTS =====
 
   // TOTP helper functions

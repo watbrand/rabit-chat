@@ -35,6 +35,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
+import { validateEmail, validatePhone, formatPhoneAsTyping, validatePassword } from "@/lib/validation";
 
 interface UsernameCheckResult {
   available: boolean;
@@ -233,21 +234,24 @@ export default function CreatorSignupScreen() {
     if (useEmail) {
       if (!email.trim()) {
         newErrors.email = "Email is required";
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      } else if (!validateEmail(email)) {
         newErrors.email = "Please enter a valid email";
       }
     } else {
       if (!phoneNumber.trim()) {
         newErrors.phoneNumber = "Phone number is required";
-      } else if (!/^\+?[0-9]{10,15}$/.test(phoneNumber.replace(/\s/g, ""))) {
-        newErrors.phoneNumber = "Please enter a valid phone number";
+      } else if (!validatePhone(phoneNumber).isValid) {
+        newErrors.phoneNumber = "Please enter a valid South African phone number (+27 or 0xx)";
       }
     }
 
     if (!password) {
       newErrors.password = "Password is required";
-    } else if (password.length < 8) {
-      newErrors.password = "Password must be at least 8 characters";
+    } else {
+      const passwordValidation = validatePassword(password);
+      if (!passwordValidation.isValid) {
+        newErrors.password = passwordValidation.errors[0];
+      }
     }
 
     if (!creatorCategory) {
@@ -769,7 +773,7 @@ export default function CreatorSignupScreen() {
                 "Phone Number",
                 phoneNumber,
                 (text) => {
-                  setPhoneNumber(text);
+                  setPhoneNumber(formatPhoneAsTyping(text));
                   setErrors((prev) => ({ ...prev, phoneNumber: "" }));
                 },
                 "input-phone",

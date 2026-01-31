@@ -24,6 +24,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
+import { validatePassword, PASSWORD_STRENGTH_COLORS } from "@/lib/validation";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 
@@ -272,8 +273,9 @@ export default function SecuritySettingsScreen() {
       Alert.alert("Error", "Please enter a new password");
       return;
     }
-    if (newPassword.length < 8) {
-      Alert.alert("Error", "New password must be at least 8 characters");
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+      Alert.alert("Error", "Password does not meet requirements:\n" + passwordValidation.errors.join("\n"));
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -837,6 +839,43 @@ export default function SecuritySettingsScreen() {
                   />
                 </Pressable>
               </View>
+              {newPassword.length > 0 ? (
+                <View style={styles.passwordStrengthContainer}>
+                  <View style={styles.strengthBarContainer}>
+                    <View
+                      style={[
+                        styles.strengthBar,
+                        {
+                          backgroundColor: PASSWORD_STRENGTH_COLORS[validatePassword(newPassword).strength],
+                          width: validatePassword(newPassword).strength === 'weak' ? '33%' :
+                                 validatePassword(newPassword).strength === 'medium' ? '66%' : '100%',
+                        },
+                      ]}
+                    />
+                  </View>
+                  <ThemedText
+                    style={[
+                      styles.strengthLabel,
+                      { color: PASSWORD_STRENGTH_COLORS[validatePassword(newPassword).strength] },
+                    ]}
+                  >
+                    {validatePassword(newPassword).strength.charAt(0).toUpperCase() + 
+                     validatePassword(newPassword).strength.slice(1)}
+                  </ThemedText>
+                  {validatePassword(newPassword).errors.length > 0 ? (
+                    <View style={styles.passwordErrorsList}>
+                      {validatePassword(newPassword).errors.map((error, idx) => (
+                        <View key={idx} style={styles.passwordErrorRow}>
+                          <Feather name="x" size={12} color={theme.error} />
+                          <ThemedText style={[styles.passwordErrorText, { color: theme.error }]}>
+                            {error}
+                          </ThemedText>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.inputGroup}>
@@ -1479,5 +1518,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: Spacing.sm,
+  },
+  passwordStrengthContainer: {
+    marginTop: Spacing.sm,
+  },
+  strengthBarContainer: {
+    height: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 2,
+    overflow: "hidden",
+    marginBottom: Spacing.xs,
+  },
+  strengthBar: {
+    height: "100%",
+    borderRadius: 2,
+  },
+  strengthLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: Spacing.xs,
+  },
+  passwordErrorsList: {
+    marginTop: Spacing.xs,
+    gap: 4,
+  },
+  passwordErrorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  passwordErrorText: {
+    fontSize: 12,
   },
 });

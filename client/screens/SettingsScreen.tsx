@@ -284,6 +284,13 @@ export default function SettingsScreen() {
             description="Change password, manage active sessions"
             onPress={() => navigation.navigate("SecuritySettings")}
           />
+          <View style={{ height: Spacing.sm }} />
+          <SettingsRow
+            icon="mail"
+            label="Contact Info"
+            description="Change email and phone number"
+            onPress={() => navigation.navigate("ContactInfoSettings")}
+          />
         </View>
       </View>
 

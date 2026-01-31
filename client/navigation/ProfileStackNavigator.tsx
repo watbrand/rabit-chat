@@ -12,6 +12,7 @@ import BlockedAccountsScreen from "@/screens/settings/BlockedAccountsScreen";
 import SecuritySettingsScreen from "@/screens/settings/SecuritySettingsScreen";
 import DataAccountScreen from "@/screens/settings/DataAccountScreen";
 import VerificationScreen from "@/screens/settings/VerificationScreen";
+import ContactInfoSettingsScreen from "@/screens/settings/ContactInfoSettingsScreen";
 import DraftsScreen from "@/screens/settings/DraftsScreen";
 import ScheduledPostsScreen from "@/screens/settings/ScheduledPostsScreen";
 import AlgorithmSettingsScreen from "@/screens/settings/AlgorithmSettingsScreen";
@@ -42,6 +43,7 @@ export type ProfileStackParamList = {
   MediaSettings: undefined;
   BlockedAccounts: undefined;
   SecuritySettings: undefined;
+  ContactInfoSettings: undefined;
   DataAccount: undefined;
   Verification: undefined;
   AlgorithmSettings: undefined;
@@ -171,6 +173,13 @@ export default function ProfileStackNavigator() {
         component={SecuritySettingsScreen}
         options={{
           title: "Security",
+        }}
+      />
+      <Stack.Screen
+        name="ContactInfoSettings"
+        component={ContactInfoSettingsScreen}
+        options={{
+          title: "Contact Info",
         }}
       />
       <Stack.Screen
