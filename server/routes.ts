@@ -40,7 +40,7 @@ import {
   hasPermission,
   createPolicyError,
 } from "./policy";
-import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, liveStreamComments, liveStreamReactions, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, keywordFilters, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, giftStakes, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes, userSettings, venues, checkIns, userLocations, chatFolders, chatFolderConversations, usageStats, focusModeSettings, pokes, bffStatus, closeFriends, webhooks, webhookDeliveries, postThreads, threadPosts, duetStitchPosts, arFilters, aiAvatars, aiTranslations, videoCalls } from "@shared/schema";
+import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, liveStreamComments, liveStreamReactions, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, keywordFilters, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, giftStakes, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes, userSettings, venues, checkIns, userLocations, chatFolders, chatFolderConversations, usageStats, focusModeSettings, pokes, bffStatus, closeFriends, webhooks, webhookDeliveries, postThreads, threadPosts, duetStitchPosts, arFilters, aiAvatars, aiTranslations, videoCalls, gossipDMConversations, gossipDMMessages, anonGossipPosts, adCampaigns } from "@shared/schema";
 import cloudinary, {
   uploadToCloudinary,
   uploadToCloudinaryFromFile,
@@ -24782,6 +24782,307 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===== ADMIN: LIVE STREAMS MANAGEMENT =====
+
+  // GET /api/admin/live-streams - Get all live streams with user info
+  app.get("/api/admin/live-streams", requireAdmin, async (req, res) => {
+    try {
+      const { page = "1", limit = "20", status } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
+      const offset = (pageNum - 1) * limitNum;
+
+      let conditions: SQL[] = [];
+      
+      if (status && typeof status === "string") {
+        conditions.push(eq(liveStreams.status, status as any));
+      }
+
+      const streams = await db.select({
+        id: liveStreams.id,
+        hostId: liveStreams.hostId,
+        coHostId: liveStreams.coHostId,
+        title: liveStreams.title,
+        description: liveStreams.description,
+        thumbnailUrl: liveStreams.thumbnailUrl,
+        status: liveStreams.status,
+        viewerCount: liveStreams.viewerCount,
+        peakViewerCount: liveStreams.peakViewerCount,
+        totalViews: liveStreams.totalViews,
+        totalGiftsReceived: liveStreams.totalGiftsReceived,
+        totalCoinsReceived: liveStreams.totalCoinsReceived,
+        likesCount: liveStreams.likesCount,
+        commentsCount: liveStreams.commentsCount,
+        sharesCount: liveStreams.sharesCount,
+        durationSeconds: liveStreams.durationSeconds,
+        startedAt: liveStreams.startedAt,
+        endedAt: liveStreams.endedAt,
+        createdAt: liveStreams.createdAt,
+      })
+        .from(liveStreams)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(liveStreams.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const hostIds = [...new Set(streams.map(s => s.hostId).filter(Boolean))];
+      const hostUsers = hostIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+      })
+        .from(users)
+        .where(inArray(users.id, hostIds)) : [];
+
+      const hostMap = new Map(hostUsers.map(u => [u.id, u]));
+
+      const streamsWithUsers = streams.map(stream => ({
+        ...stream,
+        host: hostMap.get(stream.hostId) || null,
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      })
+        .from(liveStreams)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({
+        streams: streamsWithUsers,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching live streams:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch live streams" });
+    }
+  });
+
+  // POST /api/admin/live-streams/:id/end - Force end a live stream
+  app.post("/api/admin/live-streams/:id/end", requireAdmin, async (req, res) => {
+    try {
+      const [stream] = await db.select()
+        .from(liveStreams)
+        .where(eq(liveStreams.id, req.params.id))
+        .limit(1);
+
+      if (!stream) {
+        return res.status(404).json({ message: "Live stream not found" });
+      }
+
+      if (stream.status === "ENDED" || stream.status === "CANCELLED") {
+        return res.status(400).json({ message: "Live stream is already ended" });
+      }
+
+      const now = new Date();
+      const durationSeconds = stream.startedAt 
+        ? Math.floor((now.getTime() - new Date(stream.startedAt).getTime()) / 1000)
+        : 0;
+
+      const [updatedStream] = await db.update(liveStreams)
+        .set({
+          status: "ENDED",
+          endedAt: now,
+          durationSeconds: durationSeconds > 0 ? durationSeconds : stream.durationSeconds,
+        })
+        .where(eq(liveStreams.id, req.params.id))
+        .returning();
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "live_stream",
+        req.params.id,
+        { action: "force_end", hostId: stream.hostId },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "Live stream ended successfully", stream: updatedStream });
+    } catch (error: any) {
+      console.error("Error ending live stream:", error);
+      res.status(500).json({ message: error?.message || "Failed to end live stream" });
+    }
+  });
+
+  // ===== ADMIN: ELITE CIRCLE MANAGEMENT =====
+
+  // GET /api/admin/elite-circle - Get elite circle members (groups with net worth requirements)
+  app.get("/api/admin/elite-circle", requireAdmin, async (req, res) => {
+    try {
+      const { page = "1", limit = "20" } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
+      const offset = (pageNum - 1) * limitNum;
+
+      const eliteGroups = await db.select({
+        id: groups.id,
+        name: groups.name,
+        description: groups.description,
+        coverUrl: groups.coverUrl,
+        iconUrl: groups.iconUrl,
+        privacy: groups.privacy,
+        ownerId: groups.ownerId,
+        memberCount: groups.memberCount,
+        netWorthRequirement: groups.netWorthRequirement,
+        isVerified: groups.isVerified,
+        createdAt: groups.createdAt,
+      })
+        .from(groups)
+        .where(gt(groups.netWorthRequirement, 0))
+        .orderBy(desc(groups.memberCount))
+        .limit(limitNum)
+        .offset(offset);
+
+      const ownerIds = [...new Set(eliteGroups.map(g => g.ownerId).filter(Boolean))];
+      const ownerUsers = ownerIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+        netWorth: users.netWorth,
+      })
+        .from(users)
+        .where(inArray(users.id, ownerIds)) : [];
+
+      const ownerMap = new Map(ownerUsers.map(u => [u.id, u]));
+
+      const groupIds = eliteGroups.map(g => g.id);
+      const members = groupIds.length > 0 ? await db.select({
+        groupId: groupMembers.groupId,
+        userId: groupMembers.userId,
+        role: groupMembers.role,
+        joinedAt: groupMembers.joinedAt,
+      })
+        .from(groupMembers)
+        .where(inArray(groupMembers.groupId, groupIds))
+        .orderBy(desc(groupMembers.joinedAt)) : [];
+
+      const memberUserIds = [...new Set(members.map(m => m.userId))];
+      const memberUsers = memberUserIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+        netWorth: users.netWorth,
+      })
+        .from(users)
+        .where(inArray(users.id, memberUserIds)) : [];
+
+      const memberUserMap = new Map(memberUsers.map(u => [u.id, u]));
+
+      const groupMembersMap = new Map<string, any[]>();
+      members.forEach(m => {
+        if (!groupMembersMap.has(m.groupId)) {
+          groupMembersMap.set(m.groupId, []);
+        }
+        groupMembersMap.get(m.groupId)!.push({
+          ...m,
+          user: memberUserMap.get(m.userId) || null,
+        });
+      });
+
+      const eliteGroupsWithDetails = eliteGroups.map(group => ({
+        ...group,
+        owner: ownerMap.get(group.ownerId) || null,
+        members: groupMembersMap.get(group.id) || [],
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      })
+        .from(groups)
+        .where(gt(groups.netWorthRequirement, 0));
+
+      res.json({
+        eliteGroups: eliteGroupsWithDetails,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching elite circles:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch elite circles" });
+    }
+  });
+
+  // POST /api/admin/elite-circle/:userId/revoke - Revoke elite status (remove from all elite groups)
+  app.post("/api/admin/elite-circle/:userId/revoke", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      const [user] = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+      })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const eliteGroupIds = await db.select({ id: groups.id })
+        .from(groups)
+        .where(gt(groups.netWorthRequirement, 0));
+
+      const groupIdList = eliteGroupIds.map(g => g.id);
+
+      if (groupIdList.length === 0) {
+        return res.json({ message: "No elite circles exist", revokedFromGroups: 0 });
+      }
+
+      const membershipResult = await db.delete(groupMembers)
+        .where(and(
+          eq(groupMembers.userId, userId),
+          inArray(groupMembers.groupId, groupIdList)
+        ))
+        .returning();
+
+      for (const membership of membershipResult) {
+        await db.update(groups)
+          .set({ memberCount: sql`GREATEST(0, member_count - 1)` })
+          .where(eq(groups.id, membership.groupId));
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "elite_circle_membership",
+        userId,
+        { 
+          action: "revoke_elite_status", 
+          revokedFromGroups: membershipResult.length,
+          groupIds: membershipResult.map(m => m.groupId)
+        },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ 
+        message: `Elite status revoked from ${membershipResult.length} group(s)`, 
+        revokedFromGroups: membershipResult.length,
+        user 
+      });
+    } catch (error: any) {
+      console.error("Error revoking elite status:", error);
+      res.status(500).json({ message: error?.message || "Failed to revoke elite status" });
+    }
+  });
+
   // ===== ADMIN: STAKING ENDPOINTS =====
 
   // GET /api/admin/staking - List all stakes
@@ -24804,18 +25105,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stakes = await db.select({
         id: giftStakes.id,
         userId: giftStakes.userId,
-        tierId: giftStakes.tierId,
-        coinsStaked: giftStakes.coinsStaked,
-        bonusCoins: giftStakes.bonusCoins,
+        giftTransactionId: giftStakes.giftTransactionId,
+        stakedCoins: giftStakes.stakedCoins,
+        expectedReturn: giftStakes.expectedReturn,
+        bonusPercent: giftStakes.bonusPercent,
         status: giftStakes.status,
         stakedAt: giftStakes.stakedAt,
         maturesAt: giftStakes.maturesAt,
-        unlockedAt: giftStakes.unlockedAt,
-        createdAt: giftStakes.createdAt,
+        claimedAt: giftStakes.claimedAt,
       })
         .from(giftStakes)
         .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(desc(giftStakes.createdAt))
+        .orderBy(desc(giftStakes.stakedAt))
         .limit(limitNum)
         .offset(offset);
 
@@ -24863,10 +25164,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(users.id, stake.userId))
         .limit(1);
 
-      // Get tier info
+      // Get staking tier based on duration
       const [tier] = await db.select()
         .from(stakingTiers)
-        .where(eq(stakingTiers.id, stake.tierId))
+        .where(eq(stakingTiers.durationDays, stake.stakeDurationDays))
         .limit(1);
 
       res.json({
@@ -24892,21 +25193,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Stake not found" });
       }
 
-      if (stake.status === "UNLOCKED" || stake.status === "CANCELLED") {
-        return res.status(400).json({ message: "Stake is already unlocked or cancelled" });
+      if (stake.status === "CLAIMED" || stake.status === "CANCELLED") {
+        return res.status(400).json({ message: "Stake is already claimed or cancelled" });
       }
 
       const now = new Date();
       const [updatedStake] = await db.update(giftStakes)
         .set({
-          status: "UNLOCKED",
-          unlockedAt: now,
+          status: "CLAIMED",
+          claimedAt: now,
         })
         .where(eq(giftStakes.id, req.params.id))
         .returning();
 
-      // Add coins back to user's wallet (staked + bonus)
-      const totalCoins = stake.coinsStaked + (stake.bonusCoins || 0);
+      // Add coins back to user's wallet (expectedReturn includes bonus)
+      const totalCoins = stake.expectedReturn;
       await db.update(wallets)
         .set({
           coinBalance: sql`${wallets.coinBalance} + ${totalCoins}`,
@@ -24933,7 +25234,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // PUT /api/admin/staking/:id - Update stake parameters
   app.put("/api/admin/staking/:id", requireAdmin, async (req, res) => {
     try {
-      const { status, bonusCoins, maturesAt } = req.body;
+      const { status, expectedReturn, maturesAt } = req.body;
 
       const [stake] = await db.select()
         .from(giftStakes)
@@ -24945,14 +25246,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updates: Record<string, any> = {};
-      if (status && ["ACTIVE", "UNLOCKED", "CANCELLED"].includes(status)) {
+      if (status && ["ACTIVE", "MATURED", "CLAIMED", "CANCELLED"].includes(status)) {
         updates.status = status;
-        if (status === "UNLOCKED") {
-          updates.unlockedAt = new Date();
+        if (status === "CLAIMED") {
+          updates.claimedAt = new Date();
         }
       }
-      if (bonusCoins !== undefined && typeof bonusCoins === "number") {
-        updates.bonusCoins = bonusCoins;
+      if (expectedReturn !== undefined && typeof expectedReturn === "number") {
+        updates.expectedReturn = expectedReturn;
       }
       if (maturesAt) {
         updates.maturesAt = new Date(maturesAt);
@@ -25127,11 +25428,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(withdrawalRequests.id, req.params.id))
         .returning();
 
-      // Create notification for user
+      // Create notification for user (using FOLLOW as generic admin action notification)
       await storage.createNotification(
         withdrawal.userId,
         req.session.userId!,
-        "WITHDRAWAL_APPROVED",
+        "FOLLOW",
         withdrawal.id
       );
 
@@ -25194,11 +25495,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .where(eq(wallets.userId, withdrawal.userId));
 
-      // Create notification for user
+      // Create notification for user (using FOLLOW as generic admin action notification)
       await storage.createNotification(
         withdrawal.userId,
         req.session.userId!,
-        "WITHDRAWAL_REJECTED",
+        "FOLLOW",
         withdrawal.id
       );
 
@@ -25368,7 +25669,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.createNotification(
         kyc.userId,
         req.session.userId!,
-        "KYC_APPROVED",
+        "VERIFICATION_APPROVED",
         kyc.id
       );
 
@@ -25427,7 +25728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.createNotification(
         kyc.userId,
         req.session.userId!,
-        "KYC_REJECTED",
+        "VERIFICATION_DENIED",
         kyc.id
       );
 
@@ -25445,6 +25746,689 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error rejecting KYC:", error);
       res.status(500).json({ message: error?.message || "Failed to reject KYC" });
+    }
+  });
+
+  // ===== ADMIN: ACHIEVEMENTS MANAGEMENT =====
+
+  // GET /api/admin/achievements - Get all achievements and claim stats
+  app.get("/api/admin/achievements", requireAdmin, async (req, res) => {
+    try {
+      const { page = "1", limit = "20", category, isActive } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
+      const offset = (pageNum - 1) * limitNum;
+
+      let conditions: SQL[] = [];
+      
+      if (category && typeof category === "string") {
+        conditions.push(eq(achievements.category, category as any));
+      }
+      if (isActive !== undefined && typeof isActive === "string") {
+        conditions.push(eq(achievements.isActive, isActive === "true"));
+      }
+
+      const achievementsList = await db.select({
+        id: achievements.id,
+        name: achievements.name,
+        description: achievements.description,
+        iconUrl: achievements.iconUrl,
+        category: achievements.category,
+        requirement: achievements.requirement,
+        rewardCoins: achievements.rewardCoins,
+        isActive: achievements.isActive,
+        sortOrder: achievements.sortOrder,
+        createdAt: achievements.createdAt,
+      })
+        .from(achievements)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(asc(achievements.sortOrder), desc(achievements.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const achievementIds = achievementsList.map(a => a.id);
+      
+      const claimStats = achievementIds.length > 0 ? await db.select({
+        achievementId: userAchievements.achievementId,
+        totalClaims: sql<number>`count(*)::int`,
+        completedClaims: sql<number>`count(*) filter (where ${userAchievements.isCompleted} = true)::int`,
+      })
+        .from(userAchievements)
+        .where(inArray(userAchievements.achievementId, achievementIds))
+        .groupBy(userAchievements.achievementId) : [];
+
+      const statsMap = new Map(claimStats.map(s => [s.achievementId, { totalClaims: s.totalClaims, completedClaims: s.completedClaims }]));
+
+      const achievementsWithStats = achievementsList.map(achievement => ({
+        ...achievement,
+        stats: statsMap.get(achievement.id) || { totalClaims: 0, completedClaims: 0 },
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      })
+        .from(achievements)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const [globalStats] = await db.select({
+        totalAchievements: sql<number>`count(*)::int`,
+        activeAchievements: sql<number>`count(*) filter (where ${achievements.isActive} = true)::int`,
+      }).from(achievements);
+
+      const [claimSummary] = await db.select({
+        totalUserClaims: sql<number>`count(*)::int`,
+        totalCompletedClaims: sql<number>`count(*) filter (where ${userAchievements.isCompleted} = true)::int`,
+        uniqueUsers: sql<number>`count(distinct ${userAchievements.userId})::int`,
+      }).from(userAchievements);
+
+      res.json({
+        achievements: achievementsWithStats,
+        summary: {
+          totalAchievements: globalStats?.totalAchievements || 0,
+          activeAchievements: globalStats?.activeAchievements || 0,
+          totalUserClaims: claimSummary?.totalUserClaims || 0,
+          totalCompletedClaims: claimSummary?.totalCompletedClaims || 0,
+          uniqueUsersWithAchievements: claimSummary?.uniqueUsers || 0,
+        },
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching achievements:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch achievements" });
+    }
+  });
+
+  // POST /api/admin/achievements/:id/toggle - Enable/disable an achievement
+  app.post("/api/admin/achievements/:id/toggle", requireAdmin, async (req, res) => {
+    try {
+      const [achievement] = await db.select()
+        .from(achievements)
+        .where(eq(achievements.id, req.params.id))
+        .limit(1);
+
+      if (!achievement) {
+        return res.status(404).json({ message: "Achievement not found" });
+      }
+
+      const newIsActive = !achievement.isActive;
+      const [updatedAchievement] = await db.update(achievements)
+        .set({ isActive: newIsActive })
+        .where(eq(achievements.id, req.params.id))
+        .returning();
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "achievement",
+        req.params.id,
+        { action: newIsActive ? "enabled" : "disabled", previousState: achievement.isActive },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ 
+        message: `Achievement ${newIsActive ? "enabled" : "disabled"} successfully`, 
+        achievement: updatedAchievement 
+      });
+    } catch (error: any) {
+      console.error("Error toggling achievement:", error);
+      res.status(500).json({ message: error?.message || "Failed to toggle achievement" });
+    }
+  });
+
+  // ===== ADMIN: BROADCAST CHANNELS MANAGEMENT =====
+
+  // GET /api/admin/broadcast-channels - Get all broadcast channels
+  app.get("/api/admin/broadcast-channels", requireAdmin, async (req, res) => {
+    try {
+      const { page = "1", limit = "20", search } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
+      const offset = (pageNum - 1) * limitNum;
+
+      let conditions: SQL[] = [];
+      
+      if (search && typeof search === "string") {
+        conditions.push(or(
+          ilike(broadcastChannels.name, `%${search}%`),
+          ilike(broadcastChannels.description, `%${search}%`)
+        )!);
+      }
+
+      const channels = await db.select({
+        id: broadcastChannels.id,
+        name: broadcastChannels.name,
+        description: broadcastChannels.description,
+        avatarUrl: broadcastChannels.avatarUrl,
+        ownerId: broadcastChannels.ownerId,
+        subscriberCount: broadcastChannels.subscriberCount,
+        isActive: broadcastChannels.isActive,
+        createdAt: broadcastChannels.createdAt,
+      })
+        .from(broadcastChannels)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(broadcastChannels.subscriberCount), desc(broadcastChannels.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const ownerIds = [...new Set(channels.map(c => c.ownerId).filter(Boolean))];
+      const creators = ownerIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+      })
+        .from(users)
+        .where(inArray(users.id, ownerIds)) : [];
+
+      const ownerMap = new Map(creators.map(c => [c.id, c]));
+
+      const channelIds = channels.map(c => c.id);
+      const messageStats = channelIds.length > 0 ? await db.select({
+        channelId: broadcastMessages.channelId,
+        messageCount: sql<number>`count(*)::int`,
+        lastMessageAt: sql<Date>`max(${broadcastMessages.createdAt})`,
+      })
+        .from(broadcastMessages)
+        .where(inArray(broadcastMessages.channelId, channelIds))
+        .groupBy(broadcastMessages.channelId) : [];
+
+      const messageMap = new Map(messageStats.map(m => [m.channelId, { messageCount: m.messageCount, lastMessageAt: m.lastMessageAt }]));
+
+      const channelsWithDetails = channels.map(channel => ({
+        ...channel,
+        owner: ownerMap.get(channel.ownerId) || null,
+        stats: messageMap.get(channel.id) || { messageCount: 0, lastMessageAt: null },
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      })
+        .from(broadcastChannels)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const [globalStats] = await db.select({
+        totalChannels: sql<number>`count(*)::int`,
+        totalSubscribers: sql<number>`sum(${broadcastChannels.subscriberCount})::int`,
+        activeChannels: sql<number>`count(*) filter (where ${broadcastChannels.isActive} = true)::int`,
+      }).from(broadcastChannels);
+
+      res.json({
+        channels: channelsWithDetails,
+        summary: {
+          totalChannels: globalStats?.totalChannels || 0,
+          totalSubscribers: globalStats?.totalSubscribers || 0,
+          activeChannels: globalStats?.activeChannels || 0,
+        },
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching broadcast channels:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch broadcast channels" });
+    }
+  });
+
+  // DELETE /api/admin/broadcast-channels/:id - Delete a broadcast channel
+  app.delete("/api/admin/broadcast-channels/:id", requireAdmin, async (req, res) => {
+    try {
+      const [channel] = await db.select()
+        .from(broadcastChannels)
+        .where(eq(broadcastChannels.id, req.params.id))
+        .limit(1);
+
+      if (!channel) {
+        return res.status(404).json({ message: "Broadcast channel not found" });
+      }
+
+      await db.delete(broadcastChannelSubscribers)
+        .where(eq(broadcastChannelSubscribers.channelId, req.params.id));
+
+      await db.delete(broadcastMessages)
+        .where(eq(broadcastMessages.channelId, req.params.id));
+
+      await db.delete(broadcastChannels)
+        .where(eq(broadcastChannels.id, req.params.id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "broadcast_channel",
+        req.params.id,
+        { 
+          channelName: channel.name, 
+          ownerId: channel.ownerId,
+          subscriberCount: channel.subscriberCount 
+        },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "Broadcast channel deleted successfully" });
+    } catch (error: any) {
+      console.error("Error deleting broadcast channel:", error);
+      res.status(500).json({ message: error?.message || "Failed to delete broadcast channel" });
+    }
+  });
+
+  // ===== ADMIN: NET WORTH PORTFOLIO AUDIT =====
+
+  // GET /api/admin/portfolios - Get all user portfolios for auditing
+  app.get("/api/admin/portfolios", requireAdmin, async (req, res) => {
+    try {
+      const { page = "1", limit = "20", minNetWorth, maxNetWorth, sortBy = "netWorth", sortOrder = "desc", search } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
+      const offset = (pageNum - 1) * limitNum;
+
+      let conditions: SQL[] = [];
+      
+      if (minNetWorth && typeof minNetWorth === "string") {
+        conditions.push(gte(users.netWorth, parseInt(minNetWorth)));
+      }
+      if (maxNetWorth && typeof maxNetWorth === "string") {
+        conditions.push(lte(users.netWorth, parseInt(maxNetWorth)));
+      }
+      if (search && typeof search === "string") {
+        conditions.push(or(
+          ilike(users.username, `%${search}%`),
+          ilike(users.displayName, `%${search}%`)
+        )!);
+      }
+
+      const orderByColumn = sortBy === "influenceScore" ? users.influenceScore : users.netWorth;
+      const orderDirection = sortOrder === "asc" ? asc : desc;
+
+      const portfolios = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+        netWorth: users.netWorth,
+        netWorthTier: users.netWorthTier,
+        influenceScore: users.influenceScore,
+        industry: users.industry,
+        category: users.category,
+        createdAt: users.createdAt,
+        lastActiveAt: users.lastActiveAt,
+      })
+        .from(users)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(orderDirection(orderByColumn))
+        .limit(limitNum)
+        .offset(offset);
+
+      const userIds = portfolios.map(p => p.id);
+      
+      const walletData = userIds.length > 0 ? await db.select({
+        userId: wallets.userId,
+        coinBalance: wallets.coinBalance,
+        lifetimeEarned: wallets.lifetimeEarned,
+        lifetimeSpent: wallets.lifetimeSpent,
+        isFrozen: wallets.isFrozen,
+      })
+        .from(wallets)
+        .where(inArray(wallets.userId, userIds)) : [];
+
+      const walletMap = new Map(walletData.map(w => [w.userId, w]));
+
+      const recentLedgerEntries = userIds.length > 0 ? await db.select({
+        userId: netWorthLedger.userId,
+        totalTransactions: sql<number>`count(*)::int`,
+        totalEarned: sql<number>`sum(case when ${netWorthLedger.delta} > 0 then ${netWorthLedger.delta} else 0 end)::int`,
+        totalSpent: sql<number>`sum(case when ${netWorthLedger.delta} < 0 then abs(${netWorthLedger.delta}) else 0 end)::int`,
+        lastTransaction: sql<Date>`max(${netWorthLedger.createdAt})`,
+      })
+        .from(netWorthLedger)
+        .where(inArray(netWorthLedger.userId, userIds))
+        .groupBy(netWorthLedger.userId) : [];
+
+      const ledgerMap = new Map(recentLedgerEntries.map(l => [l.userId, l]));
+
+      const portfoliosWithDetails = portfolios.map(portfolio => ({
+        ...portfolio,
+        wallet: walletMap.get(portfolio.id) || null,
+        ledgerSummary: ledgerMap.get(portfolio.id) || { totalTransactions: 0, totalEarned: 0, totalSpent: 0, lastTransaction: null },
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      })
+        .from(users)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const [globalStats] = await db.select({
+        totalNetWorth: sql<number>`sum(${users.netWorth})::bigint`,
+        avgNetWorth: sql<number>`avg(${users.netWorth})::int`,
+        medianNetWorth: sql<number>`percentile_cont(0.5) within group (order by ${users.netWorth})::int`,
+        topTierUsers: sql<number>`count(*) filter (where ${users.netWorthTier} in ('DIAMOND', 'PLATINUM'))::int`,
+      }).from(users);
+
+      res.json({
+        portfolios: portfoliosWithDetails,
+        summary: {
+          totalNetWorth: globalStats?.totalNetWorth || 0,
+          avgNetWorth: globalStats?.avgNetWorth || 0,
+          medianNetWorth: globalStats?.medianNetWorth || 0,
+          topTierUsers: globalStats?.topTierUsers || 0,
+        },
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching portfolios:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch portfolios" });
+    }
+  });
+
+  // ===== ADMIN: GOSSIP DMS VISIBILITY =====
+
+  // GET /api/admin/gossip-dms - Get anonymous DM conversations for moderation
+  app.get("/api/admin/gossip-dms", requireAdmin, async (req, res) => {
+    try {
+      const { page = "1", limit = "20", isBlocked, postId } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
+      const offset = (pageNum - 1) * limitNum;
+
+      let conditions: SQL[] = [];
+      
+      if (isBlocked !== undefined && typeof isBlocked === "string") {
+        conditions.push(eq(gossipDMConversations.isBlocked, isBlocked === "true"));
+      }
+      if (postId && typeof postId === "string") {
+        conditions.push(eq(gossipDMConversations.postId, postId));
+      }
+
+      const conversations = await db.select({
+        id: gossipDMConversations.id,
+        postId: gossipDMConversations.postId,
+        participant1Hash: gossipDMConversations.participant1Hash,
+        participant2Hash: gossipDMConversations.participant2Hash,
+        participant1Alias: gossipDMConversations.participant1Alias,
+        participant2Alias: gossipDMConversations.participant2Alias,
+        lastMessageAt: gossipDMConversations.lastMessageAt,
+        isBlocked: gossipDMConversations.isBlocked,
+        createdAt: gossipDMConversations.createdAt,
+      })
+        .from(gossipDMConversations)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(gossipDMConversations.lastMessageAt), desc(gossipDMConversations.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const conversationIds = conversations.map(c => c.id);
+      const postIds = [...new Set(conversations.map(c => c.postId).filter(Boolean))] as string[];
+
+      const messageCounts = conversationIds.length > 0 ? await db.select({
+        conversationId: gossipDMMessages.conversationId,
+        messageCount: sql<number>`count(*)::int`,
+        unreadCount: sql<number>`count(*) filter (where ${gossipDMMessages.isRead} = false)::int`,
+      })
+        .from(gossipDMMessages)
+        .where(inArray(gossipDMMessages.conversationId, conversationIds))
+        .groupBy(gossipDMMessages.conversationId) : [];
+
+      const messageMap = new Map(messageCounts.map(m => [m.conversationId, { messageCount: m.messageCount, unreadCount: m.unreadCount }]));
+
+      const relatedPosts = postIds.length > 0 ? await db.select({
+        id: anonGossipPosts.id,
+        content: anonGossipPosts.content,
+        locationDisplay: anonGossipPosts.locationDisplay,
+        createdAt: anonGossipPosts.createdAt,
+      })
+        .from(anonGossipPosts)
+        .where(inArray(anonGossipPosts.id, postIds)) : [];
+
+      const postMap = new Map(relatedPosts.map(p => [p.id, p]));
+
+      const recentMessages = conversationIds.length > 0 ? await db.select({
+        id: gossipDMMessages.id,
+        conversationId: gossipDMMessages.conversationId,
+        senderHash: gossipDMMessages.senderHash,
+        content: gossipDMMessages.content,
+        isRead: gossipDMMessages.isRead,
+        createdAt: gossipDMMessages.createdAt,
+      })
+        .from(gossipDMMessages)
+        .where(inArray(gossipDMMessages.conversationId, conversationIds))
+        .orderBy(desc(gossipDMMessages.createdAt))
+        .limit(conversationIds.length * 3) : [];
+
+      const messagesGrouped = new Map<string, typeof recentMessages>();
+      recentMessages.forEach(msg => {
+        if (!messagesGrouped.has(msg.conversationId)) {
+          messagesGrouped.set(msg.conversationId, []);
+        }
+        const arr = messagesGrouped.get(msg.conversationId)!;
+        if (arr.length < 3) {
+          arr.push(msg);
+        }
+      });
+
+      const conversationsWithDetails = conversations.map(conv => ({
+        ...conv,
+        relatedPost: conv.postId ? postMap.get(conv.postId) || null : null,
+        stats: messageMap.get(conv.id) || { messageCount: 0, unreadCount: 0 },
+        recentMessages: messagesGrouped.get(conv.id) || [],
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      })
+        .from(gossipDMConversations)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const [globalStats] = await db.select({
+        totalConversations: sql<number>`count(*)::int`,
+        blockedConversations: sql<number>`count(*) filter (where ${gossipDMConversations.isBlocked} = true)::int`,
+        activeToday: sql<number>`count(*) filter (where ${gossipDMConversations.lastMessageAt} > now() - interval '24 hours')::int`,
+      }).from(gossipDMConversations);
+
+      const [messageStats] = await db.select({
+        totalMessages: sql<number>`count(*)::int`,
+      }).from(gossipDMMessages);
+
+      res.json({
+        conversations: conversationsWithDetails,
+        summary: {
+          totalConversations: globalStats?.totalConversations || 0,
+          blockedConversations: globalStats?.blockedConversations || 0,
+          activeToday: globalStats?.activeToday || 0,
+          totalMessages: messageStats?.totalMessages || 0,
+        },
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching gossip DMs:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch gossip DMs" });
+    }
+  });
+
+  // DELETE /api/admin/gossip-dms/:id - Delete violating DM conversation
+  app.delete("/api/admin/gossip-dms/:id", requireAdmin, async (req, res) => {
+    try {
+      const [conversation] = await db.select()
+        .from(gossipDMConversations)
+        .where(eq(gossipDMConversations.id, req.params.id))
+        .limit(1);
+
+      if (!conversation) {
+        return res.status(404).json({ message: "Gossip DM conversation not found" });
+      }
+
+      const [deletedMessages] = await db.select({
+        count: sql<number>`count(*)::int`
+      })
+        .from(gossipDMMessages)
+        .where(eq(gossipDMMessages.conversationId, req.params.id));
+
+      await db.delete(gossipDMMessages)
+        .where(eq(gossipDMMessages.conversationId, req.params.id));
+
+      await db.delete(gossipDMConversations)
+        .where(eq(gossipDMConversations.id, req.params.id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "gossip_dm_conversation",
+        req.params.id,
+        { 
+          participant1Alias: conversation.participant1Alias,
+          participant2Alias: conversation.participant2Alias,
+          postId: conversation.postId,
+          messagesDeleted: deletedMessages?.count || 0,
+        },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ 
+        message: "Gossip DM conversation deleted successfully",
+        messagesDeleted: deletedMessages?.count || 0 
+      });
+    } catch (error: any) {
+      console.error("Error deleting gossip DM conversation:", error);
+      res.status(500).json({ message: error?.message || "Failed to delete gossip DM conversation" });
+    }
+  });
+
+  // ===== ADMIN: BOOST ANALYTICS =====
+
+  // GET /api/admin/boosts - Get all active boosts (BOOST_POST campaigns)
+  app.get("/api/admin/boosts", requireAdmin, async (req, res) => {
+    try {
+      const { page = "1", limit = "20", status, advertiserId } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
+      const offset = (pageNum - 1) * limitNum;
+
+      let conditions: SQL[] = [eq(adCampaigns.objective, "BOOST_POST")];
+      
+      if (status && typeof status === "string") {
+        conditions.push(eq(adCampaigns.status, status as any));
+      }
+      if (advertiserId && typeof advertiserId === "string") {
+        conditions.push(eq(adCampaigns.advertiserId, advertiserId));
+      }
+
+      const boosts = await db.select({
+        id: adCampaigns.id,
+        name: adCampaigns.name,
+        advertiserId: adCampaigns.advertiserId,
+        objective: adCampaigns.objective,
+        status: adCampaigns.status,
+        budgetAmount: adCampaigns.budgetAmount,
+        budgetSpent: adCampaigns.budgetSpent,
+        budgetRemaining: adCampaigns.budgetRemaining,
+        startDate: adCampaigns.startDate,
+        endDate: adCampaigns.endDate,
+        impressions: adCampaigns.impressions,
+        clicks: adCampaigns.clicks,
+        conversions: adCampaigns.conversions,
+        ctr: adCampaigns.ctr,
+        cpc: adCampaigns.cpc,
+        cpm: adCampaigns.cpm,
+        reach: adCampaigns.reach,
+        frequency: adCampaigns.frequency,
+        createdAt: adCampaigns.createdAt,
+        updatedAt: adCampaigns.updatedAt,
+      })
+        .from(adCampaigns)
+        .where(and(...conditions))
+        .orderBy(desc(adCampaigns.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const advertiserIds = [...new Set(boosts.map(b => b.advertiserId).filter(Boolean))];
+      
+      const advertiserUsers = advertiserIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+      })
+        .from(users)
+        .where(inArray(users.id, advertiserIds)) : [];
+
+      const advertiserMap = new Map(advertiserUsers.map(u => [u.id, u]));
+
+      const boostsWithDetails = boosts.map(boost => ({
+        ...boost,
+        advertiser: advertiserMap.get(boost.advertiserId) || null,
+        performance: {
+          impressions: boost.impressions || 0,
+          clicks: boost.clicks || 0,
+          conversions: boost.conversions || 0,
+          ctr: boost.ctr || 0,
+          cpc: boost.cpc || 0,
+          cpm: boost.cpm || 0,
+          reach: boost.reach || 0,
+          budgetUtilization: boost.budgetAmount > 0 ? ((boost.budgetSpent || 0) / boost.budgetAmount * 100).toFixed(2) : 0,
+        },
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      })
+        .from(adCampaigns)
+        .where(and(...conditions));
+
+      const [globalStats] = await db.select({
+        totalBoosts: sql<number>`count(*)::int`,
+        activeBoosts: sql<number>`count(*) filter (where ${adCampaigns.status} = 'ACTIVE')::int`,
+        totalBudget: sql<number>`sum(${adCampaigns.budgetAmount})::bigint`,
+        totalSpent: sql<number>`sum(${adCampaigns.budgetSpent})::bigint`,
+        totalImpressions: sql<number>`sum(${adCampaigns.impressions})::bigint`,
+        totalClicks: sql<number>`sum(${adCampaigns.clicks})::bigint`,
+        avgCtr: sql<number>`avg(${adCampaigns.ctr})`,
+      })
+        .from(adCampaigns)
+        .where(eq(adCampaigns.objective, "BOOST_POST"));
+
+      res.json({
+        boosts: boostsWithDetails,
+        summary: {
+          totalBoosts: globalStats?.totalBoosts || 0,
+          activeBoosts: globalStats?.activeBoosts || 0,
+          totalBudget: globalStats?.totalBudget || 0,
+          totalSpent: globalStats?.totalSpent || 0,
+          totalImpressions: globalStats?.totalImpressions || 0,
+          totalClicks: globalStats?.totalClicks || 0,
+          avgCtr: globalStats?.avgCtr ? parseFloat(globalStats.avgCtr.toFixed(4)) : 0,
+        },
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching boosts:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch boosts" });
     }
   });
 

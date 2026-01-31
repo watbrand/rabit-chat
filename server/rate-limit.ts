@@ -154,6 +154,66 @@ export const reportsLimiter = rateLimit({
   skip: (req) => !req.session?.userId,
 });
 
+// Voice call initiation limiter: 5 per minute per user
+export const voiceCallLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: "Too many call attempts. Please wait a moment." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: (req) => req.session?.userId || 'anonymous',
+  skip: (req) => !req.session?.userId,
+});
+
+// Video call initiation limiter: 5 per minute per user
+export const videoCallLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: "Too many video call attempts. Please wait a moment." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: (req) => req.session?.userId || 'anonymous',
+  skip: (req) => !req.session?.userId,
+});
+
+// Live stream creation limiter: 3 per hour per user
+export const liveStreamLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  message: { error: "Too many live stream attempts. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: (req) => req.session?.userId || 'anonymous',
+  skip: (req) => !req.session?.userId,
+});
+
+// Battle creation limiter: 5 per hour per user
+export const battleLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: "Too many battle creation attempts. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: (req) => req.session?.userId || 'anonymous',
+  skip: (req) => !req.session?.userId,
+});
+
+// Broadcast channel creation limiter: 5 per hour per user
+export const broadcastChannelLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: "Too many channel creation attempts. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: (req) => req.session?.userId || 'anonymous',
+  skip: (req) => !req.session?.userId,
+});
+
 interface RateLimitOptions {
   windowMs: number;
   max: number;

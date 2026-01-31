@@ -582,6 +582,147 @@ export const storyReactionSchema = z.object({
   reactionType: storyReactionTypeEnum,
 });
 
+// ===== VOICE/VIDEO CALL SCHEMAS =====
+
+export const voiceCallSchema = z.object({
+  targetUserId: z.string().uuid("Invalid target user ID"),
+  callType: z.enum(["audio", "video"]).optional().default("audio"),
+});
+
+export const videoCallSchema = z.object({
+  targetUserId: z.string().uuid("Invalid target user ID"),
+  callType: z.enum(["audio", "video"]).optional().default("video"),
+});
+
+export const callIdSchema = z.object({
+  callId: z.string().uuid("Invalid call ID"),
+});
+
+export const callActionSchema = z.object({
+  callId: z.string().uuid("Invalid call ID"),
+  action: z.enum(["accept", "reject", "end"]),
+});
+
+// ===== LIVE STREAM SCHEMAS =====
+
+export const liveStreamSchema = z.object({
+  title: z.string()
+    .min(1, "Title is required")
+    .max(100, "Title cannot exceed 100 characters"),
+  description: z.string()
+    .max(500, "Description cannot exceed 500 characters")
+    .optional()
+    .nullable(),
+  isPrivate: z.boolean().optional().default(false),
+  scheduledAt: z.string()
+    .refine(val => !val || !isNaN(new Date(val).getTime()), "Invalid scheduled date")
+    .optional()
+    .nullable(),
+});
+
+export const updateLiveStreamSchema = z.object({
+  title: z.string()
+    .min(1, "Title is required")
+    .max(100, "Title cannot exceed 100 characters")
+    .optional(),
+  description: z.string()
+    .max(500, "Description cannot exceed 500 characters")
+    .optional()
+    .nullable(),
+});
+
+export const liveStreamCommentSchema = z.object({
+  content: z.string()
+    .min(1, "Comment is required")
+    .max(500, "Comment cannot exceed 500 characters"),
+});
+
+export const liveStreamReactionSchema = z.object({
+  reactionType: z.enum(["HEART", "FIRE", "CLAP", "WOW", "LAUGH"]),
+});
+
+// ===== BATTLE SCHEMAS =====
+
+const battleTypeEnum = z.enum(["likes", "comments", "shares", "views", "gifts"]);
+const battleStatusEnum = z.enum(["pending", "active", "completed", "cancelled"]);
+
+export const battleSchema = z.object({
+  title: z.string()
+    .min(1, "Title is required")
+    .max(100, "Title cannot exceed 100 characters"),
+  type: battleTypeEnum.optional().default("likes"),
+  duration: z.number()
+    .int("Duration must be a whole number")
+    .min(60, "Minimum duration is 60 seconds")
+    .max(86400, "Maximum duration is 24 hours")
+    .optional()
+    .default(3600),
+  description: z.string()
+    .max(500, "Description cannot exceed 500 characters")
+    .optional()
+    .nullable(),
+  entryFee: z.number()
+    .int("Entry fee must be a whole number")
+    .min(0, "Entry fee cannot be negative")
+    .optional()
+    .default(0),
+  prizePool: z.number()
+    .int("Prize pool must be a whole number")
+    .min(0, "Prize pool cannot be negative")
+    .optional()
+    .default(0),
+});
+
+export const updateBattleSchema = z.object({
+  title: z.string()
+    .min(1, "Title is required")
+    .max(100, "Title cannot exceed 100 characters")
+    .optional(),
+  description: z.string()
+    .max(500, "Description cannot exceed 500 characters")
+    .optional()
+    .nullable(),
+  status: battleStatusEnum.optional(),
+});
+
+export const battleParticipationSchema = z.object({
+  battleId: z.string().uuid("Invalid battle ID"),
+});
+
+// ===== BROADCAST CHANNEL SCHEMAS =====
+
+export const broadcastChannelSchema = z.object({
+  name: z.string()
+    .min(1, "Name is required")
+    .max(100, "Name cannot exceed 100 characters"),
+  description: z.string()
+    .max(500, "Description cannot exceed 500 characters")
+    .optional()
+    .nullable(),
+  isPrivate: z.boolean().optional().default(false),
+  avatarUrl: z.string().url("Invalid avatar URL").optional().nullable(),
+});
+
+export const updateBroadcastChannelSchema = z.object({
+  name: z.string()
+    .min(1, "Name is required")
+    .max(100, "Name cannot exceed 100 characters")
+    .optional(),
+  description: z.string()
+    .max(500, "Description cannot exceed 500 characters")
+    .optional()
+    .nullable(),
+  avatarUrl: z.string().url("Invalid avatar URL").optional().nullable(),
+});
+
+export const broadcastMessageSchema = z.object({
+  content: z.string()
+    .min(1, "Message is required")
+    .max(2000, "Message cannot exceed 2000 characters"),
+  mediaUrl: z.string().url("Invalid media URL").optional().nullable(),
+  mediaType: z.enum(["image", "video", "audio"]).optional().nullable(),
+});
+
 export const dataImportSchema = z.object({
   data: z.object({
     users: z.array(z.any()).optional(),
