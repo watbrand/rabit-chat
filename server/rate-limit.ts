@@ -87,3 +87,14 @@ export const uploadLimiter = rateLimit({
   handler: rateLimitHandler,
   skip: (req) => !req.session?.userId,
 });
+
+// Rate limit for mall position updates - 10 updates per second max
+export const mallMoveLimiter = rateLimit({
+  windowMs: 1000,
+  max: 10,
+  message: "Moving too fast. Please slow down.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skip: (req) => !req.session?.userId,
+});

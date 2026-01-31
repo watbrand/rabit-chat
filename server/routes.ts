@@ -66,6 +66,7 @@ import {
   messageLimiter,
   uploadLimiter,
   apiLimiter,
+  mallMoveLimiter,
 } from "./rate-limit";
 import {
   sendWelcomeEmail,
@@ -10788,7 +10789,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/mall/presence/enter", requireAuth, async (req, res) => {
     try {
       const userId = req.session.userId!;
-      const { positionX = 50, positionY = 85 } = req.body;
+      let { positionX = 50, positionY = 85 } = req.body;
+
+      // Validate and clamp position values to 0-100 range
+      positionX = Math.max(0, Math.min(100, Number(positionX) || 50));
+      positionY = Math.max(0, Math.min(100, Number(positionY) || 85));
 
       await db.insert(mallPresence).values({
         userId,
@@ -10832,10 +10837,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/mall/presence/move", requireAuth, async (req, res) => {
+  app.post("/api/mall/presence/move", mallMoveLimiter, requireAuth, async (req, res) => {
     try {
       const userId = req.session.userId!;
-      const { positionX, positionY, currentShopId } = req.body;
+      let { positionX, positionY, currentShopId } = req.body;
+
+      // Validate position values exist and are numbers
+      if (typeof positionX !== 'number' || typeof positionY !== 'number') {
+        return res.status(400).json({ message: "Invalid position values" });
+      }
+
+      // Clamp position values to 0-100 range
+      positionX = Math.max(0, Math.min(100, positionX));
+      positionY = Math.max(0, Math.min(100, positionY));
 
       await db.update(mallPresence)
         .set({
