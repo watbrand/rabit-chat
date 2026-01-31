@@ -215,7 +215,20 @@ export default function MallScreen() {
         setPurchaseError("Your wallet is frozen. Please contact support.");
         return;
       }
-      purchaseMutation.mutate({ itemId: selectedItem.id, quantity: purchaseQuantity });
+      const netWorthGain = selectedItem.value * 10 * purchaseQuantity;
+      Alert.alert(
+        "Confirm Purchase",
+        `Are you sure you want to purchase ${purchaseQuantity}x ${selectedItem.name} for ${totalCost.toLocaleString()} coins?\n\nNet Worth Gain: +R${netWorthGain.toLocaleString()}`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Purchase",
+            onPress: () => {
+              purchaseMutation.mutate({ itemId: selectedItem.id, quantity: purchaseQuantity });
+            },
+          },
+        ]
+      );
     }
   };
 

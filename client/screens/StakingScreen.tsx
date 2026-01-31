@@ -47,6 +47,8 @@ const STAKING_TIERS: StakingTier[] = [
   { days: 365, bonusPercent: 50, label: "1 Year", icon: "award" },
 ];
 
+const MINIMUM_STAKE_AMOUNT = 100;
+
 interface ActiveStake {
   id: string;
   amount: number;
@@ -307,6 +309,20 @@ export default function StakingScreen() {
       }
       queryClient.invalidateQueries({ queryKey: ["/api/staking/active"] });
       queryClient.invalidateQueries({ queryKey: ["/api/wallet"] });
+      Alert.alert(
+        "Rewards Claimed!",
+        "Your staked coins and bonus have been added to your wallet.",
+        [{ text: "OK" }]
+      );
+    },
+    onError: (error: any) => {
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      Alert.alert(
+        "Claim Failed",
+        error.message || "Failed to claim your staked coins. Please try again."
+      );
     },
   });
 
@@ -321,16 +337,58 @@ export default function StakingScreen() {
       Alert.alert("Invalid Amount", "Please enter a valid amount to stake");
       return;
     }
+    if (amount < MINIMUM_STAKE_AMOUNT) {
+      Alert.alert(
+        "Minimum Stake Required",
+        `The minimum stake amount is ${MINIMUM_STAKE_AMOUNT.toLocaleString()} coins`
+      );
+      return;
+    }
+    const coinBalance = wallet?.coinBalance || 0;
+    if (amount > coinBalance) {
+      Alert.alert(
+        "Insufficient Balance",
+        `You only have ${coinBalance.toLocaleString()} coins available to stake`
+      );
+      return;
+    }
     if (selectedTier) {
-      stakeMutation.mutate({ amount, days: selectedTier.days });
+      Alert.alert(
+        "Confirm Stake",
+        `Are you sure you want to stake ${amount.toLocaleString()} coins for ${selectedTier.label}?\n\nExpected return: ${expectedReturn.toLocaleString()} coins (+${selectedTier.bonusPercent}% bonus)`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Stake",
+            onPress: () => stakeMutation.mutate({ amount, days: selectedTier.days }),
+          },
+        ]
+      );
     }
   };
 
   const handleClaimStake = (stakeId: string) => {
-    if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-    claimMutation.mutate(stakeId);
+    const stake = activeStakes.find((s) => s.id === stakeId);
+    if (!stake) return;
+
+    const expectedAmount = Math.floor(stake.amount * (1 + stake.bonusPercent / 100));
+
+    Alert.alert(
+      "Claim Rewards",
+      `Are you sure you want to claim your staked coins?\n\nYou will receive ${expectedAmount.toLocaleString()} coins (original ${stake.amount.toLocaleString()} + ${stake.bonusPercent}% bonus)`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Claim",
+          onPress: () => {
+            if (Platform.OS !== "web") {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            }
+            claimMutation.mutate(stakeId);
+          },
+        },
+      ]
+    );
   };
 
   const expectedReturn = selectedTier && stakeAmount

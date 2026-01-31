@@ -259,8 +259,12 @@ export default function WalletScreen({ navigation }: any) {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               }
             }
-          } catch (err) {
+          } catch (err: any) {
             console.error("[Wallet] Auto-recovery failed for purchase:", purchase.id, err);
+            Alert.alert(
+              "Recovery Issue",
+              `Could not auto-recover purchase. Please try manually or contact support. Error: ${err?.message || "Unknown error"}`
+            );
           }
         }
       }
@@ -496,8 +500,12 @@ export default function WalletScreen({ navigation }: any) {
                   [{ text: "OK" }]
                 );
               }
-            } catch {
-              Alert.alert("Error", "Could not check payment status. Please try again.");
+            } catch (err: any) {
+              console.error("[Wallet] Check payments failed:", err);
+              Alert.alert(
+                "Connection Error",
+                err?.message || "Could not check payment status. Please check your internet connection and try again."
+              );
             }
           }}
         >
@@ -768,13 +776,25 @@ export default function WalletScreen({ navigation }: any) {
                   { backgroundColor: theme.backgroundSecondary },
                   bundle.isFeatured ? { borderColor: theme.primary, borderWidth: 2 } : {},
                 ]}
-                onPress={() => purchaseBundleMutation.mutate(bundle.id)}
+                onPress={() => {
+                  Alert.alert(
+                    "Confirm Purchase",
+                    `Buy ${bundle.coinAmount.toLocaleString()}${bundle.bonusCoins > 0 ? ` (+${bundle.bonusCoins.toLocaleString()} bonus)` : ""} Rabit Coins for R${bundle.priceRands}?`,
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      { text: "Buy Now", onPress: () => purchaseBundleMutation.mutate(bundle.id) },
+                    ]
+                  );
+                }}
                 disabled={purchaseBundleMutation.isPending}
               >
                 {bundle.isFeatured ? (
                   <View style={[styles.featuredBadge, { backgroundColor: theme.primary }]}>
                     <Text style={styles.featuredText}>Best Value</Text>
                   </View>
+                ) : null}
+                {purchaseBundleMutation.isPending ? (
+                  <LoadingIndicator size="small" />
                 ) : null}
                 <Text style={[styles.packageCoins, { color: theme.text }]}>
                   {bundle.coinAmount.toLocaleString()}
@@ -829,9 +849,22 @@ export default function WalletScreen({ navigation }: any) {
               ]}
               onPress={() => {
                 const amount = parseInt(customCoinAmount || "0", 10);
-                if (amount >= 10) {
-                  customPurchaseMutation.mutate(amount);
+                if (amount < 10) {
+                  Alert.alert("Invalid Amount", "Minimum purchase is 10 coins.");
+                  return;
                 }
+                if (amount > 1000000) {
+                  Alert.alert("Invalid Amount", "Maximum purchase is 1,000,000 coins per transaction.");
+                  return;
+                }
+                Alert.alert(
+                  "Confirm Purchase",
+                  `Buy ${amount.toLocaleString()} Rabit Coins for R${amount.toLocaleString()}?`,
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Buy Now", onPress: () => customPurchaseMutation.mutate(amount) },
+                  ]
+                );
               }}
               disabled={!customCoinAmount || parseInt(customCoinAmount, 10) < 10 || customPurchaseMutation.isPending}
             >

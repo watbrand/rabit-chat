@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Modal,
   Platform,
+  Alert,
 } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
@@ -23,6 +24,11 @@ import { Feather } from "@expo/vector-icons";
 import { Avatar } from "@/components/Avatar";
 import { GlassButton } from "@/components/GlassButton";
 import { GlassInput } from "@/components/GlassInput";
+
+const GROUP_NAME_MIN_LENGTH = 3;
+const GROUP_NAME_MAX_LENGTH = 50;
+const GROUP_DESCRIPTION_MAX_LENGTH = 500;
+const REFRESH_THROTTLE_MS = 2000;
 
 interface Group {
   id: string;
@@ -42,20 +48,45 @@ export default function GroupsScreen({ navigation }: any) {
   const headerHeight = useHeaderHeight();
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [selectedGroupForLeave, setSelectedGroupForLeave] = useState<Group | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDescription, setNewGroupDescription] = useState("");
   const [newGroupPrivacy, setNewGroupPrivacy] = useState<"PUBLIC" | "PRIVATE">("PUBLIC");
   const [refreshing, setRefreshing] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<{ name?: string; description?: string }>({});
+  const lastRefreshTime = useRef<number>(0);
 
   const { data: groups = [], isLoading, refetch } = useQuery<Group[]>({
     queryKey: ["/api/groups"],
   });
 
+  const showError = (title: string, message: string) => {
+    Alert.alert(title, message, [{ text: "OK" }]);
+  };
+
+  const validateGroupForm = (): boolean => {
+    const errors: { name?: string; description?: string } = {};
+
+    if (newGroupName.trim().length < GROUP_NAME_MIN_LENGTH) {
+      errors.name = `Name must be at least ${GROUP_NAME_MIN_LENGTH} characters`;
+    } else if (newGroupName.trim().length > GROUP_NAME_MAX_LENGTH) {
+      errors.name = `Name must be less than ${GROUP_NAME_MAX_LENGTH} characters`;
+    }
+
+    if (newGroupDescription.length > GROUP_DESCRIPTION_MAX_LENGTH) {
+      errors.description = `Description must be less than ${GROUP_DESCRIPTION_MAX_LENGTH} characters`;
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const createGroupMutation = useMutation({
     mutationFn: async () => {
       return apiRequest("POST", "/api/groups", {
-        name: newGroupName,
-        description: newGroupDescription,
+        name: newGroupName.trim(),
+        description: newGroupDescription.trim(),
         privacy: newGroupPrivacy,
       });
     },
@@ -64,6 +95,10 @@ export default function GroupsScreen({ navigation }: any) {
       setShowCreateModal(false);
       setNewGroupName("");
       setNewGroupDescription("");
+      setValidationErrors({});
+    },
+    onError: (error: any) => {
+      showError("Failed to Create Circle", error?.message || "Unable to create the circle. Please try again.");
     },
   });
 
@@ -74,13 +109,64 @@ export default function GroupsScreen({ navigation }: any) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
     },
+    onError: (error: any) => {
+      showError("Failed to Join Circle", error?.message || "Unable to join the circle. Please try again.");
+    },
   });
 
-  const onRefresh = async () => {
+  const leaveGroupMutation = useMutation({
+    mutationFn: async (groupId: string) => {
+      return apiRequest("POST", `/api/groups/${groupId}/leave`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
+      setShowLeaveModal(false);
+      setSelectedGroupForLeave(null);
+    },
+    onError: (error: any) => {
+      showError("Failed to Leave Circle", error?.message || "Unable to leave the circle. Please try again.");
+    },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (groupId: string) => {
+      return apiRequest("DELETE", `/api/groups/${groupId}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
+    },
+    onError: (error: any) => {
+      showError("Failed to Delete Circle", error?.message || "Unable to delete the circle. Please try again.");
+    },
+  });
+
+  const handleLeaveGroup = (group: Group) => {
+    setSelectedGroupForLeave(group);
+    setShowLeaveModal(true);
+  };
+
+  const confirmLeaveGroup = () => {
+    if (selectedGroupForLeave) {
+      leaveGroupMutation.mutate(selectedGroupForLeave.id);
+    }
+  };
+
+  const handleCreateGroup = () => {
+    if (validateGroupForm()) {
+      createGroupMutation.mutate();
+    }
+  };
+
+  const onRefresh = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastRefreshTime.current < REFRESH_THROTTLE_MS) {
+      return;
+    }
+    lastRefreshTime.current = now;
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
-  };
+  }, [refetch]);
 
   const renderGroup = ({ item }: { item: Group }) => (
     <Pressable
@@ -188,21 +274,53 @@ export default function GroupsScreen({ navigation }: any) {
               </Pressable>
             </View>
 
-            <GlassInput
-              placeholder="Circle Name"
-              value={newGroupName}
-              onChangeText={setNewGroupName}
-              containerStyle={styles.input}
-            />
+            <View style={styles.inputWrapper}>
+              <GlassInput
+                placeholder="Circle Name"
+                value={newGroupName}
+                onChangeText={(text) => {
+                  setNewGroupName(text);
+                  if (validationErrors.name) {
+                    setValidationErrors((prev) => ({ ...prev, name: undefined }));
+                  }
+                }}
+                maxLength={GROUP_NAME_MAX_LENGTH}
+                containerStyle={styles.input}
+              />
+              {validationErrors.name ? (
+                <Text style={[styles.errorText, { color: theme.error || "#EF4444" }]}>
+                  {validationErrors.name}
+                </Text>
+              ) : null}
+              <Text style={[styles.charCount, { color: theme.textSecondary }]}>
+                {newGroupName.length}/{GROUP_NAME_MAX_LENGTH}
+              </Text>
+            </View>
 
-            <GlassInput
-              placeholder="Description (optional)"
-              value={newGroupDescription}
-              onChangeText={setNewGroupDescription}
-              multiline
-              numberOfLines={3}
-              containerStyle={StyleSheet.flatten([styles.input, styles.textArea])}
-            />
+            <View style={styles.inputWrapper}>
+              <GlassInput
+                placeholder="Description (optional)"
+                value={newGroupDescription}
+                onChangeText={(text) => {
+                  setNewGroupDescription(text);
+                  if (validationErrors.description) {
+                    setValidationErrors((prev) => ({ ...prev, description: undefined }));
+                  }
+                }}
+                maxLength={GROUP_DESCRIPTION_MAX_LENGTH}
+                multiline
+                numberOfLines={3}
+                containerStyle={StyleSheet.flatten([styles.input, styles.textArea])}
+              />
+              {validationErrors.description ? (
+                <Text style={[styles.errorText, { color: theme.error || "#EF4444" }]}>
+                  {validationErrors.description}
+                </Text>
+              ) : null}
+              <Text style={[styles.charCount, { color: theme.textSecondary }]}>
+                {newGroupDescription.length}/{GROUP_DESCRIPTION_MAX_LENGTH}
+              </Text>
+            </View>
 
             <View style={styles.privacyOptions}>
               <Pressable
@@ -235,12 +353,53 @@ export default function GroupsScreen({ navigation }: any) {
 
             <GlassButton
               title={createGroupMutation.isPending ? "Creating..." : "Create Circle"}
-              onPress={() => createGroupMutation.mutate()}
-              disabled={!newGroupName.trim() || createGroupMutation.isPending}
+              onPress={handleCreateGroup}
+              disabled={newGroupName.trim().length < GROUP_NAME_MIN_LENGTH || createGroupMutation.isPending}
               style={styles.createModalButton}
             />
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={showLeaveModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowLeaveModal(false)}
+      >
+        <View style={styles.confirmOverlay}>
+          <View style={[styles.confirmContent, { backgroundColor: theme.backgroundSecondary }]}>
+            <View style={styles.confirmIconContainer}>
+              <Feather name="log-out" size={32} color={theme.error || "#EF4444"} />
+            </View>
+            <Text style={[styles.confirmTitle, { color: theme.text }]}>
+              Leave Circle?
+            </Text>
+            <Text style={[styles.confirmMessage, { color: theme.textSecondary }]}>
+              Are you sure you want to leave "{selectedGroupForLeave?.name}"? You'll need to request to join again if it's a private circle.
+            </Text>
+            <View style={styles.confirmButtons}>
+              <Pressable
+                style={[styles.confirmButton, styles.cancelButton, { borderColor: theme.border }]}
+                onPress={() => {
+                  setShowLeaveModal(false);
+                  setSelectedGroupForLeave(null);
+                }}
+              >
+                <Text style={[styles.cancelButtonText, { color: theme.text }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.confirmButton, styles.leaveButton, { backgroundColor: theme.error || "#EF4444" }]}
+                onPress={confirmLeaveGroup}
+                disabled={leaveGroupMutation.isPending}
+              >
+                <Text style={styles.leaveButtonText}>
+                  {leaveGroupMutation.isPending ? "Leaving..." : "Leave"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -379,7 +538,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   input: {
-    marginBottom: 16,
+    marginBottom: 0,
   },
   textArea: {
     height: 80,
@@ -406,5 +565,80 @@ const styles = StyleSheet.create({
   },
   createModalButton: {
     marginTop: 8,
+  },
+  inputWrapper: {
+    marginBottom: 16,
+  },
+  errorText: {
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  charCount: {
+    fontSize: 11,
+    textAlign: "right",
+    marginTop: 4,
+    marginRight: 4,
+  },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  confirmContent: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+  },
+  confirmIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  confirmTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  confirmMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  confirmButtons: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  confirmButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelButton: {
+    borderWidth: 1,
+    backgroundColor: "transparent",
+  },
+  cancelButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  leaveButton: {},
+  leaveButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

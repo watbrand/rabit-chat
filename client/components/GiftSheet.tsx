@@ -123,11 +123,30 @@ export function GiftSheet({
       Alert.alert("Select a Gift", "Please select a gift to send");
       return;
     }
+    if (quantity < 1) {
+      Alert.alert("Invalid Quantity", "Please select at least 1 gift to send");
+      return;
+    }
     if (!canAfford) {
       Alert.alert("Insufficient Coins", "You don't have enough Rabit Coins for this gift");
       return;
     }
-    sendGiftMutation.mutate();
+    Alert.alert(
+      "Confirm Gift",
+      `Are you sure you want to send ${quantity}x ${selectedGift.name} to ${recipientName}?\n\nTotal Cost: ${totalCost.toLocaleString()} Rabit Coins`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Send Gift",
+          onPress: () => {
+            if (Platform.OS !== "web") {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            }
+            sendGiftMutation.mutate();
+          },
+        },
+      ]
+    );
   };
 
   const renderGiftItem = ({ item }: { item: GiftType }) => {

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Modal,
   Platform,
+  Alert,
 } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
@@ -43,11 +44,21 @@ interface Event {
   };
 }
 
+interface ValidationErrors {
+  title?: string;
+  description?: string;
+  startTime?: string;
+}
+
 const RSVP_OPTIONS = [
   { status: "GOING", icon: "check-circle", label: "Going", color: "#4caf50" },
   { status: "INTERESTED", icon: "star", label: "Interested", color: "#ff9800" },
   { status: "NOT_GOING", icon: "x-circle", label: "Can't Go", color: "#f44336" },
 ];
+
+const MIN_TITLE_LENGTH = 3;
+const MAX_TITLE_LENGTH = 100;
+const MAX_DESCRIPTION_LENGTH = 1000;
 
 export default function EventsScreen({ navigation }: any) {
   const { theme } = useTheme();
@@ -55,14 +66,33 @@ export default function EventsScreen({ navigation }: any) {
   const headerHeight = useHeaderHeight();
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [newEventTitle, setNewEventTitle] = useState("");
   const [newEventDescription, setNewEventDescription] = useState("");
   const [newEventLocation, setNewEventLocation] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
 
   const { data: events = [], isLoading, refetch } = useQuery<Event[]>({
     queryKey: ["/api/events"],
   });
+
+  const validateEventData = useCallback((title: string, description: string): ValidationErrors => {
+    const errors: ValidationErrors = {};
+    
+    if (title.trim().length < MIN_TITLE_LENGTH) {
+      errors.title = `Title must be at least ${MIN_TITLE_LENGTH} characters`;
+    } else if (title.trim().length > MAX_TITLE_LENGTH) {
+      errors.title = `Title must be less than ${MAX_TITLE_LENGTH} characters`;
+    }
+    
+    if (description.length > MAX_DESCRIPTION_LENGTH) {
+      errors.description = `Description must be less than ${MAX_DESCRIPTION_LENGTH} characters`;
+    }
+    
+    return errors;
+  }, []);
 
   const rsvpMutation = useMutation({
     mutationFn: async ({ eventId, status }: { eventId: string; status: string }) => {
@@ -71,6 +101,9 @@ export default function EventsScreen({ navigation }: any) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/events"] });
     },
+    onError: (error: Error) => {
+      Alert.alert("RSVP Failed", error.message || "Failed to update RSVP. Please try again.");
+    },
   });
 
   const createEventMutation = useMutation({
@@ -78,20 +111,106 @@ export default function EventsScreen({ navigation }: any) {
       const startTime = new Date();
       startTime.setDate(startTime.getDate() + 7);
       return apiRequest("POST", "/api/events", {
-        title: newEventTitle,
-        description: newEventDescription,
-        location: newEventLocation,
+        title: newEventTitle.trim(),
+        description: newEventDescription.trim(),
+        location: newEventLocation.trim(),
         startTime: startTime.toISOString(),
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/events"] });
       setShowCreateModal(false);
-      setNewEventTitle("");
-      setNewEventDescription("");
-      setNewEventLocation("");
+      resetCreateForm();
+    },
+    onError: (error: Error) => {
+      Alert.alert("Create Failed", error.message || "Failed to create event. Please try again.");
     },
   });
+
+  const updateEventMutation = useMutation({
+    mutationFn: async ({ eventId, data }: { eventId: string; data: Partial<Event> }) => {
+      return apiRequest("PATCH", `/api/events/${eventId}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+      setShowEditModal(false);
+      setEditingEvent(null);
+      resetCreateForm();
+    },
+    onError: (error: Error) => {
+      Alert.alert("Update Failed", error.message || "Failed to update event. Please try again.");
+    },
+  });
+
+  const deleteEventMutation = useMutation({
+    mutationFn: async (eventId: string) => {
+      return apiRequest("DELETE", `/api/events/${eventId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+    },
+    onError: (error: Error) => {
+      Alert.alert("Delete Failed", error.message || "Failed to delete event. Please try again.");
+    },
+  });
+
+  const resetCreateForm = () => {
+    setNewEventTitle("");
+    setNewEventDescription("");
+    setNewEventLocation("");
+    setValidationErrors({});
+  };
+
+  const handleCreateEvent = () => {
+    const errors = validateEventData(newEventTitle, newEventDescription);
+    setValidationErrors(errors);
+    
+    if (Object.keys(errors).length === 0) {
+      createEventMutation.mutate();
+    }
+  };
+
+  const handleEditEvent = (event: Event) => {
+    setEditingEvent(event);
+    setNewEventTitle(event.title);
+    setNewEventDescription(event.description || "");
+    setNewEventLocation(event.location || "");
+    setValidationErrors({});
+    setShowEditModal(true);
+  };
+
+  const handleUpdateEvent = () => {
+    if (!editingEvent) return;
+    
+    const errors = validateEventData(newEventTitle, newEventDescription);
+    setValidationErrors(errors);
+    
+    if (Object.keys(errors).length === 0) {
+      updateEventMutation.mutate({
+        eventId: editingEvent.id,
+        data: {
+          title: newEventTitle.trim(),
+          description: newEventDescription.trim(),
+          location: newEventLocation.trim(),
+        },
+      });
+    }
+  };
+
+  const handleDeleteEvent = (event: Event) => {
+    Alert.alert(
+      "Delete Event",
+      `Are you sure you want to delete "${event.title}"? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteEventMutation.mutate(event.id),
+        },
+      ]
+    );
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -114,6 +233,7 @@ export default function EventsScreen({ navigation }: any) {
     <Pressable
       style={[styles.eventCard, { backgroundColor: theme.backgroundSecondary }]}
       onPress={() => navigation.navigate("EventDetail", { eventId: item.id })}
+      onLongPress={() => handleEditEvent(item)}
     >
       {item.coverImageUrl ? (
         <Image source={{ uri: item.coverImageUrl }} style={styles.eventCover} />
@@ -130,6 +250,23 @@ export default function EventsScreen({ navigation }: any) {
         <Text style={styles.dateDay}>
           {new Date(item.startTime).getDate()}
         </Text>
+      </View>
+
+      <View style={styles.eventActionsOverlay}>
+        <Pressable
+          style={[styles.eventActionButton, { backgroundColor: theme.primary }]}
+          onPress={() => handleEditEvent(item)}
+          hitSlop={8}
+        >
+          <Feather name="edit-2" size={14} color="#fff" />
+        </Pressable>
+        <Pressable
+          style={[styles.eventActionButton, { backgroundColor: "#EF4444" }]}
+          onPress={() => handleDeleteEvent(item)}
+          hitSlop={8}
+        >
+          <Feather name="trash-2" size={14} color="#fff" />
+        </Pressable>
       </View>
 
       <View style={styles.eventInfo}>
@@ -178,6 +315,7 @@ export default function EventsScreen({ navigation }: any) {
                   item.userRsvp?.status === option.status && { backgroundColor: option.color },
                 ]}
                 onPress={() => rsvpMutation.mutate({ eventId: item.id, status: option.status })}
+                disabled={rsvpMutation.isPending}
               >
                 <Feather
                   name={option.icon as any}
@@ -191,6 +329,115 @@ export default function EventsScreen({ navigation }: any) {
       </View>
     </Pressable>
   );
+
+  const renderEventModal = (isEdit: boolean) => {
+    const isVisible = isEdit ? showEditModal : showCreateModal;
+    const title = isEdit ? "Edit Event" : "Create Event";
+    const buttonTitle = isEdit
+      ? updateEventMutation.isPending ? "Saving..." : "Save Changes"
+      : createEventMutation.isPending ? "Creating..." : "Create Event";
+    const isPending = isEdit ? updateEventMutation.isPending : createEventMutation.isPending;
+    const handleSubmit = isEdit ? handleUpdateEvent : handleCreateEvent;
+    const handleClose = () => {
+      if (isEdit) {
+        setShowEditModal(false);
+        setEditingEvent(null);
+      } else {
+        setShowCreateModal(false);
+      }
+      resetCreateForm();
+    };
+
+    return (
+      <Modal
+        visible={isVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={handleClose}
+      >
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: theme.backgroundSecondary }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>
+                  {title}
+                </Text>
+                <Pressable onPress={handleClose}>
+                  <Feather name="x" size={24} color={theme.textSecondary} />
+                </Pressable>
+              </View>
+
+              <GlassInput
+                placeholder="Event Title (3-100 characters)"
+                value={newEventTitle}
+                onChangeText={(text) => {
+                  setNewEventTitle(text);
+                  if (validationErrors.title) {
+                    setValidationErrors(prev => ({ ...prev, title: undefined }));
+                  }
+                }}
+                containerStyle={styles.input}
+                maxLength={MAX_TITLE_LENGTH}
+              />
+              {validationErrors.title ? (
+                <Text style={styles.errorText}>{validationErrors.title}</Text>
+              ) : null}
+
+              <GlassInput
+                placeholder="Description (optional, max 1000 characters)"
+                value={newEventDescription}
+                onChangeText={(text) => {
+                  setNewEventDescription(text);
+                  if (validationErrors.description) {
+                    setValidationErrors(prev => ({ ...prev, description: undefined }));
+                  }
+                }}
+                multiline
+                numberOfLines={3}
+                containerStyle={styles.input}
+                maxLength={MAX_DESCRIPTION_LENGTH}
+              />
+              {validationErrors.description ? (
+                <Text style={styles.errorText}>{validationErrors.description}</Text>
+              ) : null}
+              <Text style={[styles.charCount, { color: theme.textSecondary }]}>
+                {newEventDescription.length}/{MAX_DESCRIPTION_LENGTH}
+              </Text>
+
+              <GlassInput
+                placeholder="Location (optional)"
+                value={newEventLocation}
+                onChangeText={setNewEventLocation}
+                containerStyle={styles.input}
+              />
+
+              <GlassButton
+                title={buttonTitle}
+                onPress={handleSubmit}
+                disabled={newEventTitle.trim().length < MIN_TITLE_LENGTH || isPending}
+                style={styles.createModalButton}
+              />
+
+              {isEdit ? (
+                <Pressable
+                  style={styles.deleteButtonContainer}
+                  onPress={() => {
+                    if (editingEvent) {
+                      handleClose();
+                      setTimeout(() => handleDeleteEvent(editingEvent), 300);
+                    }
+                  }}
+                >
+                  <Feather name="trash-2" size={16} color="#EF4444" />
+                  <Text style={styles.deleteButtonText}>Delete Event</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
@@ -230,57 +477,8 @@ export default function EventsScreen({ navigation }: any) {
         />
       )}
 
-      <Modal
-        visible={showCreateModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowCreateModal(false)}
-      >
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: theme.backgroundSecondary }]}>
-              <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>
-                Create Event
-              </Text>
-              <Pressable onPress={() => setShowCreateModal(false)}>
-                <Feather name="x" size={24} color={theme.textSecondary} />
-              </Pressable>
-            </View>
-
-            <GlassInput
-              placeholder="Event Title"
-              value={newEventTitle}
-              onChangeText={setNewEventTitle}
-              containerStyle={styles.input}
-            />
-
-            <GlassInput
-              placeholder="Description"
-              value={newEventDescription}
-              onChangeText={setNewEventDescription}
-              multiline
-              numberOfLines={3}
-              containerStyle={styles.input}
-            />
-
-            <GlassInput
-              placeholder="Location"
-              value={newEventLocation}
-              onChangeText={setNewEventLocation}
-              containerStyle={styles.input}
-            />
-
-            <GlassButton
-              title={createEventMutation.isPending ? "Creating..." : "Create Event"}
-              onPress={() => createEventMutation.mutate()}
-              disabled={!newEventTitle.trim() || createEventMutation.isPending}
-              style={styles.createModalButton}
-            />
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      {renderEventModal(false)}
+      {renderEventModal(true)}
     </View>
   );
 }
@@ -350,6 +548,20 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "bold",
     color: "#333",
+  },
+  eventActionsOverlay: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    flexDirection: "row",
+    gap: 8,
+  },
+  eventActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
   eventInfo: {
     padding: 16,
@@ -446,7 +658,18 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   input: {
-    marginBottom: 16,
+    marginBottom: 8,
+  },
+  errorText: {
+    color: "#EF4444",
+    fontSize: 12,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  charCount: {
+    fontSize: 12,
+    textAlign: "right",
+    marginBottom: 8,
   },
   textArea: {
     height: 80,
@@ -454,5 +677,20 @@ const styles = StyleSheet.create({
   },
   createModalButton: {
     marginTop: 8,
+  },
+  deleteButtonContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
+    gap: 8,
+  },
+  deleteButtonText: {
+    color: "#EF4444",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });
