@@ -25,7 +25,7 @@ import { registerApiUsageRoutes } from "./routes-api-usage";
 import { registerHelpCenterRoutes } from "./routes-help-center";
 import { adsEngine, type AuctionResult } from "./ads-engine";
 import { pool, db } from "./db";
-import { sql, and, eq, gt, gte, isNull, isNotNull, inArray, desc, or, like, asc, ilike } from "drizzle-orm";
+import { sql, and, eq, gt, gte, lt, isNull, isNotNull, inArray, desc, or, like, asc, ilike } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
   getViewerContext,
@@ -10953,6 +10953,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Failed to broadcast mall presence:", error);
     }
   }
+
+  // Cleanup stale mall presence entries (users inactive for more than 2 minutes)
+  async function cleanupStaleMallPresence() {
+    try {
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+      const result = await db.update(mallPresence)
+        .set({ isActive: false })
+        .where(and(
+          eq(mallPresence.isActive, true),
+          lt(mallPresence.lastActiveAt, twoMinutesAgo)
+        ));
+      
+      // Broadcast updated presence if any were cleaned up
+      broadcastMallPresence();
+    } catch (error) {
+      console.error("Failed to cleanup stale mall presence:", error);
+    }
+  }
+
+  // Run cleanup every 30 seconds
+  setInterval(cleanupStaleMallPresence, 30 * 1000);
 
   app.get("/api/net-worth/history", requireAuth, async (req, res) => {
     try {
