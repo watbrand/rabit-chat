@@ -8,6 +8,7 @@ import Animated, {
   withSequence,
   withTiming,
   Easing,
+  cancelAnimation,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -65,7 +66,10 @@ export function UserMallAvatar({
     );
     
     return () => {
-      bounce.value = 0;
+      cancelAnimation(bounce);
+      cancelAnimation(scale);
+      cancelAnimation(animatedX);
+      cancelAnimation(animatedY);
     };
   }, []);
 

@@ -479,6 +479,9 @@ export function VirtualMallView({
                 ]}
                 onPress={() => onShopEnter(category.id)}
                 testID={`shop-${category.id}`}
+                accessibilityLabel={`Enter ${category.name} shop`}
+                accessibilityRole="button"
+                accessibilityHint="Double tap to browse items in this shop"
               >
                 <LinearGradient
                   colors={isDark
