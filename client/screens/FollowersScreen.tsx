@@ -195,9 +195,10 @@ export default function FollowersScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.listContent,
-          { paddingBottom: insets.bottom + Spacing.lg },
+          { paddingBottom: insets.bottom + Spacing.xl },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         ListEmptyComponent={renderEmpty}
         refreshControl={
           <RefreshControl

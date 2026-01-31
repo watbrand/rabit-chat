@@ -9,6 +9,7 @@ import {
   Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { BlurView } from "expo-blur";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -237,6 +238,7 @@ function EmptyState() {
 export function EliteCircleScreen() {
   const { theme, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const crownRotation = useSharedValue(0);
@@ -297,11 +299,12 @@ export function EliteCircleScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: insets.top + Spacing.xl,
+            paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.lg,
             paddingBottom: insets.bottom + 120,
           },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <Animated.View entering={FadeInUp.delay(100).springify()}>
           <View style={styles.header}>

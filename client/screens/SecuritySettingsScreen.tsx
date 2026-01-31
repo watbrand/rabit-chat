@@ -318,7 +318,7 @@ export function SecuritySettingsScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: headerHeight + Spacing.lg,
+            paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.lg,
             paddingBottom: insets.bottom + Spacing["2xl"],
           },
         ]}

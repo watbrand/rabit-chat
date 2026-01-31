@@ -395,10 +395,11 @@ export default function BattlesScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: headerHeight + Spacing.lg,
+            paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.lg,
             paddingBottom: insets.bottom + Spacing.xl,
           },
         ]}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}

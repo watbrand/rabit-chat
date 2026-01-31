@@ -162,10 +162,11 @@ export function DeveloperToolsScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: headerHeight + Spacing.lg,
-            paddingBottom: insets.bottom + Spacing["2xl"],
+            paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.lg,
+            paddingBottom: insets.bottom + Spacing.xl,
           },
         ]}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />

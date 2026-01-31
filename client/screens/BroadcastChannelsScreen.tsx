@@ -7,9 +7,11 @@ import {
   Pressable,
   RefreshControl,
   Modal,
+  Platform,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { useTheme } from "@/hooks/useTheme";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
@@ -18,6 +20,7 @@ import { Avatar } from "@/components/Avatar";
 import { GlassButton } from "@/components/GlassButton";
 import { GlassInput } from "@/components/GlassInput";
 import { LoadingIndicator } from "@/components/animations";
+import { Spacing } from "@/constants/theme";
 
 interface BroadcastChannel {
   id: string;
@@ -40,6 +43,7 @@ interface BroadcastChannel {
 export default function BroadcastChannelsScreen({ navigation }: any) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
@@ -161,16 +165,6 @@ export default function BroadcastChannelsScreen({ navigation }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Text style={[styles.title, { color: theme.text }]}>Channels</Text>
-        <Pressable
-          style={[styles.createButton, { backgroundColor: theme.primary }]}
-          onPress={() => setShowCreateModal(true)}
-        >
-          <Feather name="plus" size={20} color="#fff" />
-        </Pressable>
-      </View>
-
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <LoadingIndicator size="large" />
@@ -180,10 +174,28 @@ export default function BroadcastChannelsScreen({ navigation }: any) {
           data={channels}
           renderItem={renderChannel}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 16 }]}
+          contentContainerStyle={[
+            styles.list,
+            {
+              paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.lg,
+              paddingBottom: insets.bottom + Spacing.xl,
+            },
+          ]}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
+          }
+          ListHeaderComponent={
+            <View style={styles.header}>
+              <Text style={[styles.title, { color: theme.text }]}>Channels</Text>
+              <Pressable
+                style={[styles.createButton, { backgroundColor: theme.primary }]}
+                onPress={() => setShowCreateModal(true)}
+              >
+                <Feather name="plus" size={20} color="#fff" />
+              </Pressable>
+            </View>
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>

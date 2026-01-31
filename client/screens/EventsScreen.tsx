@@ -8,11 +8,14 @@ import {
   Image,
   RefreshControl,
   Modal,
+  Platform,
 } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { useTheme } from "@/hooks/useTheme";
+import { Spacing } from "@/constants/theme";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import { Feather } from "@expo/vector-icons";
@@ -49,6 +52,7 @@ const RSVP_OPTIONS = [
 export default function EventsScreen({ navigation }: any) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newEventTitle, setNewEventTitle] = useState("");
@@ -190,7 +194,7 @@ export default function EventsScreen({ navigation }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <View style={[styles.header, { paddingTop: Platform.OS === "android" ? Spacing.md : headerHeight + Spacing.sm }]}>
         <Text style={[styles.title, { color: theme.text }]}>Events</Text>
         <Pressable
           style={[styles.createButton, { backgroundColor: theme.primary }]}
@@ -209,8 +213,9 @@ export default function EventsScreen({ navigation }: any) {
           data={events}
           renderItem={renderEvent}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 16 }]}
+          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + Spacing.xl }]}
           showsVerticalScrollIndicator={false}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
           }

@@ -192,8 +192,9 @@ export default function BankAccountsScreen({ navigation }: any) {
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: headerHeight + Spacing.lg, paddingBottom: insets.bottom + Spacing.xl },
+          { paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.lg, paddingBottom: insets.bottom + Spacing.xl },
         ]}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
         }

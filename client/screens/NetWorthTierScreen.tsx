@@ -267,9 +267,10 @@ export default function NetWorthTierScreen() {
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: 200 },
+          { paddingBottom: insets.bottom + 200 },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         {TIERS.map((tier, index) => (
           <TierCard

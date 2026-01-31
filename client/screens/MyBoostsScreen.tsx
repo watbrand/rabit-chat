@@ -7,6 +7,7 @@ import {
   RefreshControl,
   Image,
   ScrollView,
+  Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
@@ -468,7 +469,7 @@ export default function MyBoostsScreen() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   
   // Calculate safe top padding - use headerHeight if available, otherwise fallback to insets + estimated header
-  const topPadding = Math.max(headerHeight, insets.top + 44) + Spacing.lg;
+  const topPadding = Platform.OS === "android" ? Spacing.xl : Math.max(headerHeight, insets.top + 44) + Spacing.lg;
 
   const { data: campaigns, isLoading, refetch, isRefetching } = useQuery<Campaign[]>({
     queryKey: ["/api/ads/campaigns"],
@@ -528,6 +529,7 @@ export default function MyBoostsScreen() {
           { paddingTop: topPadding, paddingBottom: insets.bottom + Spacing.xl }
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}

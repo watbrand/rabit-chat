@@ -151,7 +151,7 @@ export default function SearchScreen() {
   return (
     <GradientBackground variant={isDark ? "orbs" : "subtle"}>
       <KeyboardAvoidingView 
-        style={[styles.container, { paddingTop: headerHeight + Spacing.md }]}
+        style={[styles.container, { paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.md }]}
         behavior="padding"
         keyboardVerticalOffset={0}
       >
@@ -180,7 +180,8 @@ export default function SearchScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderUser}
           ListEmptyComponent={renderEmpty}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + Spacing.xl }]}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"

@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
+  Platform,
 } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, RouteProp } from "@react-navigation/native";
@@ -109,7 +110,8 @@ export default function NetWorthPortfolioScreen() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      contentContainerStyle={{ paddingTop: headerHeight + Spacing.md, paddingBottom: insets.bottom + Spacing.xl }}
+      contentContainerStyle={{ paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.lg, paddingBottom: insets.bottom + Spacing.xl }}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
       refreshControl={
         <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.primary} />
       }
