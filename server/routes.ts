@@ -60,13 +60,16 @@ import cloudinary, {
 } from "./cloudinary";
 import * as deezer from "./services/deezer";
 import {
+  loginLimiter,
   authLimiter,
+  passwordResetLimiter,
   signupLimiter,
   postLimiter,
   commentLimiter,
   messageLimiter,
   uploadLimiter,
   apiLimiter,
+  walletLimiter,
 } from "./rate-limit";
 import {
   sendWelcomeEmail,
@@ -1296,7 +1299,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auth/login", authLimiter, async (req, res) => {
+  app.post("/api/auth/login", loginLimiter, async (req, res) => {
     try {
       const { email, password } = req.body;
       
@@ -1548,7 +1551,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Password reset - request
-  app.post("/api/auth/forgot-password", authLimiter, async (req, res) => {
+  app.post("/api/auth/forgot-password", passwordResetLimiter, async (req, res) => {
     try {
       const { email } = req.body;
       if (!email) {
@@ -1576,7 +1579,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Password reset - verify code and reset
-  app.post("/api/auth/reset-password", authLimiter, async (req, res) => {
+  app.post("/api/auth/reset-password", passwordResetLimiter, async (req, res) => {
     try {
       const { email, code, newPassword } = req.body;
       if (!email || !code || !newPassword) {
@@ -1739,7 +1742,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // SMS-based password reset - request code (alternative to email)
-  app.post("/api/auth/forgot-password-sms", authLimiter, async (req, res) => {
+  app.post("/api/auth/forgot-password-sms", passwordResetLimiter, async (req, res) => {
     try {
       const { phoneNumber } = req.body;
       if (!phoneNumber) {
@@ -1780,7 +1783,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // SMS-based password reset - verify code and reset
-  app.post("/api/auth/reset-password-sms", authLimiter, async (req, res) => {
+  app.post("/api/auth/reset-password-sms", passwordResetLimiter, async (req, res) => {
     try {
       const { phoneNumber, code, newPassword } = req.body;
       if (!phoneNumber || !code || !newPassword) {
@@ -15309,7 +15312,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== PAYFAST COIN PURCHASE ENDPOINTS =====
 
   // POST /api/coins/purchase - Initiate coin bundle purchase
-  app.post("/api/coins/purchase", requireAuth, validateBody(coinPurchaseSchema), async (req, res) => {
+  app.post("/api/coins/purchase", requireAuth, walletLimiter, validateBody(coinPurchaseSchema), async (req, res) => {
     try {
       const userId = req.session.userId!;
       const { bundleId } = req.body;
@@ -15392,7 +15395,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/coins/purchase-custom - Purchase custom amount of coins (1 coin = R1)
-  app.post("/api/coins/purchase-custom", requireAuth, validateBody(customCoinPurchaseSchema), async (req, res) => {
+  app.post("/api/coins/purchase-custom", requireAuth, walletLimiter, validateBody(customCoinPurchaseSchema), async (req, res) => {
     console.log("[CoinPurchase] Custom purchase request received, body:", req.body, "userId:", req.session.userId);
     try {
       // Check if purchases are enabled (emergency control)
@@ -15888,7 +15891,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/coins/purchase/complete - Manually complete a pending purchase (called from app if ITN failed)
-  app.post("/api/coins/purchase/complete", requireAuth, async (req, res) => {
+  app.post("/api/coins/purchase/complete", requireAuth, walletLimiter, async (req, res) => {
     try {
       const userId = req.session.userId!;
       const { purchaseId } = req.body;
@@ -15999,7 +16002,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/coins/recover/:id - Recover a pending purchase by completing it
-  app.post("/api/coins/recover/:id", requireAuth, async (req, res) => {
+  app.post("/api/coins/recover/:id", requireAuth, walletLimiter, async (req, res) => {
     try {
       const userId = req.session.userId!;
       const purchaseId = req.params.id;
@@ -20103,7 +20106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/my/withdrawals - Request withdrawal
-  app.post("/api/my/withdrawals", requireAuth, async (req, res) => {
+  app.post("/api/my/withdrawals", requireAuth, walletLimiter, async (req, res) => {
     try {
       const userId = req.session.userId!;
       const { amountCoins, bankAccountId } = req.body;

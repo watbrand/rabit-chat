@@ -12,7 +12,7 @@ import {
   Alert,
   Modal,
 } from "react-native";
-import { LoadingIndicator } from "@/components/animations";
+import { LoadingIndicator, EmptyState } from "@/components/animations";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -146,7 +146,7 @@ export default function ProfileScreen() {
     },
   });
 
-  const { data: userPosts, isLoading, refetch, isRefetching } = useQuery<any[]>({
+  const { data: userPosts, isLoading, isError, error, refetch, isRefetching } = useQuery<any[]>({
     queryKey: [`/api/users/${user?.id}/posts`],
     enabled: !!user?.id,
     queryFn: async () => {
@@ -904,6 +904,28 @@ export default function ProfileScreen() {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
         <LoadingIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
+        <LoadingIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (isError) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
+        <EmptyState
+          icon="alert-circle"
+          title="Something went wrong"
+          message={(error as Error)?.message || "Failed to load profile"}
+          actionLabel="Try Again"
+          onAction={() => refetch()}
+        />
       </View>
     );
   }

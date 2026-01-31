@@ -11,6 +11,7 @@ import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Avatar } from "@/components/Avatar";
 import { Card } from "@/components/Card";
+import { EmptyState } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
@@ -46,7 +47,7 @@ export default function NotificationsScreen() {
   const queryClient = useQueryClient();
   const navigation = useNavigation<any>();
 
-  const { data: notifications, isLoading, refetch, isRefetching } = useQuery<Notification[]>({
+  const { data: notifications, isLoading, isError, error, refetch, isRefetching } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
   });
 
@@ -213,6 +214,20 @@ export default function NotificationsScreen() {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
         <LoadingIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (isError) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
+        <EmptyState
+          icon="alert-circle"
+          title="Something went wrong"
+          message={(error as Error)?.message || "Failed to load notifications"}
+          actionLabel="Try Again"
+          onAction={() => refetch()}
+        />
       </View>
     );
   }

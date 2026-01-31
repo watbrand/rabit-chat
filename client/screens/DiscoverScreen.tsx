@@ -15,7 +15,7 @@ import {
   KeyboardAvoidingView,
   RefreshControl,
 } from "react-native";
-import { LoadingIndicator } from "@/components/animations";
+import { LoadingIndicator, EmptyState } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -351,7 +351,7 @@ function NewPeopleTab() {
   const [sessionKey, setSessionKey] = useState(() => getSessionId());
   const [visibleVideoIds, setVisibleVideoIds] = useState<string[]>([]);
 
-  const { data: posts, isLoading: postsLoading, refetch: refetchPosts, isRefetching: postsRefetching } = useQuery<ExplorePost[]>({
+  const { data: posts, isLoading: postsLoading, isError: postsError, error: postsErrorData, refetch: refetchPosts, isRefetching: postsRefetching } = useQuery<ExplorePost[]>({
     queryKey: ["/api/discover/explore", sessionKey],
     queryFn: async () => {
       const res = await fetch(
@@ -363,7 +363,7 @@ function NewPeopleTab() {
     },
   });
 
-  const { data: voicePosts, isLoading: voiceLoading, refetch: refetchVoice, isRefetching: voiceRefetching } = useQuery<VoicePost[]>({
+  const { data: voicePosts, isLoading: voiceLoading, isError: voiceError, error: voiceErrorData, refetch: refetchVoice, isRefetching: voiceRefetching } = useQuery<VoicePost[]>({
     queryKey: ["/api/discover/voices", sessionKey],
     queryFn: async () => {
       const res = await fetch(
@@ -403,6 +403,8 @@ function NewPeopleTab() {
 
   const isLoading = postsLoading || voiceLoading;
   const isRefetching = postsRefetching || voiceRefetching;
+  const isError = postsError || voiceError;
+  const errorMessage = (postsErrorData as Error)?.message || (voiceErrorData as Error)?.message || "Failed to load content";
 
   const handleRefresh = useCallback(() => {
     resetSessionId();
@@ -550,6 +552,20 @@ function NewPeopleTab() {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot, paddingTop: Spacing.lg }]}>
         <DiscoverGridSkeleton />
+      </View>
+    );
+  }
+
+  if (isError) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot }]}>
+        <EmptyState
+          icon="alert-circle"
+          title="Something went wrong"
+          message={errorMessage}
+          actionLabel="Try Again"
+          onAction={handleRefresh}
+        />
       </View>
     );
   }

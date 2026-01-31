@@ -11,6 +11,17 @@ const rateLimitHandler = (req: Request, res: Response) => {
   );
 };
 
+// Login limiter: 5 attempts per 15 minutes per IP
+export const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { message: "Too many login attempts, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+});
+
+// General auth limiter (for other auth operations)
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -20,9 +31,20 @@ export const authLimiter = rateLimit({
   handler: rateLimitHandler,
 });
 
+// Password reset limiter: 3 requests per 15 minutes per IP
+export const passwordResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  message: { message: "Too many password reset attempts, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+});
+
+// Signup limiter: 10 registrations per hour per IP
 export const signupLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: process.env.NODE_ENV === 'development' ? 100 : 5,
+  max: process.env.NODE_ENV === 'development' ? 100 : 10,
   message: "Too many account creation attempts. Please try again in an hour.",
   standardHeaders: true,
   legacyHeaders: false,
@@ -49,13 +71,27 @@ export const commentLimiter = rateLimit({
   skip: (req) => !req.session?.userId,
 });
 
+// Message limiter: 60 messages per minute per user
 export const messageLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
-  message: "Too many messages. Please slow down.",
+  max: 60,
+  message: { message: "Too many messages, please slow down" },
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler,
+  keyGenerator: (req) => req.session?.userId || 'anonymous',
+  skip: (req) => !req.session?.userId,
+});
+
+// Wallet/financial transactions limiter: 10 per minute per user
+export const walletLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { message: "Too many financial transactions, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: (req) => req.session?.userId || 'anonymous',
   skip: (req) => !req.session?.userId,
 });
 
