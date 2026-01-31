@@ -71,6 +71,8 @@ const NOTIFICATION_SOUNDS = [
   { label: "Silent", value: "silent" },
 ];
 
+const MAX_NICKNAME_LENGTH = 50;
+
 export default function ConversationSettingsScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -236,8 +238,20 @@ export default function ConversationSettingsScreen() {
     notificationSoundSheetRef.current?.close();
   }, []);
 
+  const handleCustomNameChange = useCallback((text: string) => {
+    if (text.length <= MAX_NICKNAME_LENGTH) {
+      setCustomName(text);
+    }
+  }, []);
+
   const handleSaveCustomName = useCallback(() => {
-    updateSettingsMutation.mutate({ customName: customName.trim() || null });
+    const trimmedName = customName.trim();
+    if (trimmedName.length > MAX_NICKNAME_LENGTH) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Nickname Too Long", `Nicknames cannot exceed ${MAX_NICKNAME_LENGTH} characters.`);
+      return;
+    }
+    updateSettingsMutation.mutate({ customName: trimmedName || null });
     setIsEditingName(false);
   }, [customName]);
 
@@ -464,16 +478,27 @@ export default function ConversationSettingsScreen() {
                   Custom Name
                 </ThemedText>
                 {isEditingName ? (
-                  <TextInput
-                    style={[styles.customNameInput, { color: theme.text, borderColor: theme.glassBorder }]}
-                    value={customName}
-                    onChangeText={setCustomName}
-                    placeholder="Enter custom name..."
-                    placeholderTextColor={theme.textSecondary}
-                    autoFocus
-                    onBlur={handleSaveCustomName}
-                    onSubmitEditing={handleSaveCustomName}
-                  />
+                  <View>
+                    <TextInput
+                      style={[styles.customNameInput, { color: theme.text, borderColor: theme.glassBorder }]}
+                      value={customName}
+                      onChangeText={handleCustomNameChange}
+                      placeholder="Enter custom name..."
+                      placeholderTextColor={theme.textSecondary}
+                      autoFocus
+                      onBlur={handleSaveCustomName}
+                      onSubmitEditing={handleSaveCustomName}
+                      maxLength={MAX_NICKNAME_LENGTH}
+                    />
+                    {customName.length > MAX_NICKNAME_LENGTH * 0.7 ? (
+                      <ThemedText style={[
+                        styles.charCountText, 
+                        { color: customName.length > MAX_NICKNAME_LENGTH * 0.9 ? theme.error : theme.textSecondary }
+                      ]}>
+                        {customName.length}/{MAX_NICKNAME_LENGTH}
+                      </ThemedText>
+                    ) : null}
+                  </View>
                 ) : (
                   <ThemedText style={[styles.settingsDescription, { color: theme.textSecondary }]}>
                     {settings?.customName || "Set a nickname for this chat"}
@@ -723,6 +748,11 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
     paddingVertical: Spacing.xs,
     borderBottomWidth: 1,
+  },
+  charCountText: {
+    fontSize: 11,
+    textAlign: "right",
+    marginTop: 2,
   },
   mediaSectionHeader: {
     flexDirection: "row",

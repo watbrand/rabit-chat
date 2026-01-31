@@ -51,6 +51,8 @@ export default function MessagesScreen() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabType>("PRIMARY");
   const [searchQuery, setSearchQuery] = useState("");
+  const lastRefreshTimeRef = useRef<number>(0);
+  const REFRESH_THROTTLE_MS = 2000;
 
   const { data: primaryConversations, isLoading: primaryLoading, refetch: refetchPrimary, isRefetching: primaryRefetching } = useQuery<any[]>({
     queryKey: ["/api/messages/inbox/primary"],
@@ -181,6 +183,15 @@ export default function MessagesScreen() {
   const isRefetching = activeTab === "PRIMARY" ? primaryRefetching : activeTab === "GENERAL" ? generalRefetching : requestsRefetching;
   const refetch = activeTab === "PRIMARY" ? refetchPrimary : activeTab === "GENERAL" ? refetchGeneral : refetchRequests;
 
+  const handleRefresh = () => {
+    const now = Date.now();
+    if (now - lastRefreshTimeRef.current < REFRESH_THROTTLE_MS) {
+      return;
+    }
+    lastRefreshTimeRef.current = now;
+    refetch();
+  };
+
   const renderEmpty = () => {
     const emptyMessages: Record<TabType, { title: string; text: string }> = {
       PRIMARY: {
@@ -198,7 +209,7 @@ export default function MessagesScreen() {
     };
 
     return (
-      <View style={styles.emptyContainer}>
+      <View style={styles.emptyContainer} testID="empty-messages-container">
         <Image
           source={require("../../assets/images/empty-states/empty-messages.png")}
           style={styles.emptyImage}
@@ -388,7 +399,7 @@ export default function MessagesScreen() {
           paddingHorizontal: Spacing.lg,
           flexGrow: 1,
         }}
-        scrollIndicatorInsets={{ bottom: insets.bottom }}
+        scrollIndicatorInsets={{ bottom: tabBarHeight }}
         data={getActiveData()}
         keyExtractor={(item) => item.id}
         renderItem={activeTab === "REQUESTS" ? renderRequestItem : ({ item }) => (
@@ -403,7 +414,7 @@ export default function MessagesScreen() {
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
-            onRefresh={refetch}
+            onRefresh={handleRefresh}
             tintColor={theme.primary}
           />
         }

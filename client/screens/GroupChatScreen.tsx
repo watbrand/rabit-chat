@@ -7,6 +7,7 @@ import {
   TextInput,
   Pressable,
   Platform,
+  Alert,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,6 +20,9 @@ import { Avatar } from "@/components/Avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { LoadingIndicator } from "@/components/animations";
 import { Spacing } from "@/constants/theme";
+import * as Haptics from "expo-haptics";
+
+const MAX_MESSAGE_LENGTH = 2000;
 
 interface GroupMessage {
   id: string;
@@ -79,11 +83,28 @@ export default function GroupChatScreen({ route, navigation }: any) {
       setMessage("");
       refetch();
     },
+    onError: (error: any) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to send message. Please try again.");
+    },
   });
 
   const handleSend = () => {
-    if (message.trim()) {
-      sendMessageMutation.mutate(message.trim());
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) return;
+    
+    if (trimmedMessage.length > MAX_MESSAGE_LENGTH) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Message Too Long", `Messages cannot exceed ${MAX_MESSAGE_LENGTH} characters.`);
+      return;
+    }
+    
+    sendMessageMutation.mutate(trimmedMessage);
+  };
+  
+  const handleMessageChange = (text: string) => {
+    if (text.length <= MAX_MESSAGE_LENGTH) {
+      setMessage(text);
     }
   };
 
@@ -193,16 +214,27 @@ export default function GroupChatScreen({ route, navigation }: any) {
         <Pressable style={styles.attachButton}>
           <Feather name="plus-circle" size={24} color={theme.primary} />
         </Pressable>
-        <TextInput
-          style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
-          placeholder="Type a message..."
-          placeholderTextColor={theme.textSecondary}
-          value={message}
-          onChangeText={setMessage}
-          onSubmitEditing={handleSend}
-          returnKeyType="send"
-          multiline
-        />
+        <View style={styles.inputWrapper}>
+          <TextInput
+            style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
+            placeholder="Type a message..."
+            placeholderTextColor={theme.textSecondary}
+            value={message}
+            onChangeText={handleMessageChange}
+            onSubmitEditing={handleSend}
+            returnKeyType="send"
+            multiline
+            maxLength={MAX_MESSAGE_LENGTH}
+          />
+          {message.length > MAX_MESSAGE_LENGTH * 0.8 ? (
+            <Text style={[
+              styles.charCount, 
+              { color: message.length > MAX_MESSAGE_LENGTH * 0.95 ? theme.error : theme.textSecondary }
+            ]}>
+              {message.length}/{MAX_MESSAGE_LENGTH}
+            </Text>
+          ) : null}
+        </View>
         <Pressable
           style={[styles.sendButton, { backgroundColor: theme.primary }]}
           onPress={handleSend}
@@ -309,13 +341,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  input: {
+  inputWrapper: {
     flex: 1,
+  },
+  input: {
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 16,
     maxHeight: 100,
+  },
+  charCount: {
+    fontSize: 11,
+    textAlign: "right",
+    marginTop: 2,
+    marginRight: 8,
   },
   sendButton: {
     width: 40,

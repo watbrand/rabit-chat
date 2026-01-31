@@ -106,6 +106,7 @@ export default function ChatScreen() {
   const [reactionPickerPosition, setReactionPickerPosition] = useState({ x: 0, y: 0 });
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
 
   const { data: otherUser } = useQuery<any>({
     queryKey: [`/api/users/${otherUserId}`],
@@ -248,6 +249,7 @@ export default function ChatScreen() {
 
       ws.onopen = () => {
         reconnectAttempts = 0;
+        setIsConnected(true);
       };
 
       ws.onmessage = (event) => {
@@ -260,6 +262,7 @@ export default function ChatScreen() {
           
           if (data.type === "auth_error") {
             console.error("WebSocket auth failed:", data.message);
+            Alert.alert("Connection Error", "Failed to connect to chat. Please try again.");
             ws?.close();
             return;
           }
@@ -317,6 +320,7 @@ export default function ChatScreen() {
       };
       
       ws.onclose = () => {
+        setIsConnected(false);
         if (!isUnmounted && reconnectAttempts < maxReconnectAttempts) {
           reconnectAttempts++;
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
@@ -340,6 +344,9 @@ export default function ChatScreen() {
       isUnmounted = true;
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
+      }
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
       }
       ws?.close();
     };
@@ -438,6 +445,10 @@ export default function ChatScreen() {
         queryKey: [`/api/conversations/${conversationId}/messages`],
       });
     },
+    onError: (error) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", "Failed to delete message. Please try again.");
+    },
   });
 
   const reactMutation = useMutation({
@@ -451,10 +462,18 @@ export default function ChatScreen() {
         queryKey: [`/api/conversations/${conversationId}/messages`],
       });
     },
+    onError: (error) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", "Failed to add reaction. Please try again.");
+    },
   });
 
   const handleSend = useCallback(() => {
     if (!message.trim() || sendMutation.isPending) return;
+    if (message.length > 2000) {
+      Alert.alert("Message too long", "Messages must be under 2000 characters.");
+      return;
+    }
     const content = message.trim();
     setMessage("");
     sendTypingIndicator(false);
@@ -549,6 +568,11 @@ export default function ChatScreen() {
   }, [sendMutation]);
 
   const handleSelectDocument = useCallback(async (uri: string, name: string, size: number, mimeType: string) => {
+    const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+    if (size > MAX_FILE_SIZE) {
+      Alert.alert("File too large", "Files must be under 25MB.");
+      return;
+    }
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const uploadResult = await uploadFileWithProgress(uri, "posts", mimeType);
