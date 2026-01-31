@@ -7,6 +7,7 @@ import {
   Pressable,
   Platform,
   ViewToken,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from "@react-navigation/native";
@@ -282,6 +283,9 @@ export default function ProfileReelsScreen() {
       queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/posts`] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
     },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to update like');
+    },
   });
 
   const bookmarkMutation = useMutation({
@@ -294,6 +298,9 @@ export default function ProfileReelsScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/posts`] });
+    },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to update bookmark');
     },
   });
 

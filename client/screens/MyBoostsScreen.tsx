@@ -8,6 +8,7 @@ import {
   Image,
   ScrollView,
   Platform,
+  Alert,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
@@ -179,6 +180,9 @@ function CampaignCard({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ads/campaigns"] });
     },
+    onError: (error: Error) => {
+      Alert.alert("Error", error.message || "Failed to pause campaign. Please try again.");
+    },
   });
 
   const resumeMutation = useMutation({
@@ -187,6 +191,9 @@ function CampaignCard({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ads/campaigns"] });
+    },
+    onError: (error: Error) => {
+      Alert.alert("Error", error.message || "Failed to resume campaign. Please try again.");
     },
   });
 
@@ -487,6 +494,9 @@ export default function MyBoostsScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ads/campaigns"] });
       refetch();
+    },
+    onError: (error: Error) => {
+      Alert.alert("Error", error.message || "Failed to sync campaigns. Please try again.");
     },
   });
 

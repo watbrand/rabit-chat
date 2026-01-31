@@ -47,6 +47,17 @@ export default function AdminPostsScreen() {
   const [showHideInput, setShowHideInput] = useState(false);
   const [showSoftDeleteInput, setShowSoftDeleteInput] = useState(false);
   const [softDeleteReason, setSoftDeleteReason] = useState("");
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [modalContentExpanded, setModalContentExpanded] = useState(false);
+
+  const toggleExpand = (id: string) => {
+    setExpandedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const {
     data: posts,
@@ -196,6 +207,7 @@ export default function AdminPostsScreen() {
     setHideReason("");
     setShowSoftDeleteInput(false);
     setSoftDeleteReason("");
+    setModalContentExpanded(false);
   };
 
   const handleSoftDelete = () => {
@@ -260,7 +272,9 @@ export default function AdminPostsScreen() {
     </Pressable>
   );
 
-  const renderPostItem = ({ item }: { item: AdminPost }) => (
+  const renderPostItem = ({ item }: { item: AdminPost }) => {
+    const isExpanded = expandedItems.has(item.id);
+    return (
     <Pressable onPress={() => item.author?.id ? handlePostPress(item) : null}>
       <Card elevation={1} style={styles.postCard}>
         <View style={styles.postHeader}>
@@ -298,9 +312,14 @@ export default function AdminPostsScreen() {
           </View>
           <Feather name="more-horizontal" size={20} color={theme.textSecondary} />
         </View>
-        <ThemedText style={styles.postContent} numberOfLines={3}>
-          {item.content || item.caption || `[${item.type} post]`}
-        </ThemedText>
+        <Pressable onPress={(e) => { e.stopPropagation(); toggleExpand(item.id); }}>
+          <ThemedText style={styles.postContent} numberOfLines={isExpanded ? undefined : 3}>
+            {item.content || item.caption || `[${item.type} post]`}
+          </ThemedText>
+          <ThemedText style={[styles.expandButton, { color: theme.primary }]}>
+            {isExpanded ? 'See less' : 'See more'}
+          </ThemedText>
+        </Pressable>
         {item.hiddenReason ? (
           <View style={[styles.hiddenReasonBox, { backgroundColor: theme.glassBackground }]}>
             <ThemedText style={[styles.hiddenReasonLabel, { color: theme.textSecondary }]}>
@@ -338,6 +357,7 @@ export default function AdminPostsScreen() {
       </Card>
     </Pressable>
   );
+  };
 
   if (isLoading) {
     return (
@@ -460,9 +480,14 @@ export default function AdminPostsScreen() {
                     </ThemedText>
                   </View>
                 </View>
-                <ThemedText style={styles.previewContent} numberOfLines={4}>
-                  {selectedPost.content}
-                </ThemedText>
+                <Pressable onPress={() => setModalContentExpanded(!modalContentExpanded)}>
+                  <ThemedText style={styles.previewContent} numberOfLines={modalContentExpanded ? undefined : 4}>
+                    {selectedPost.content}
+                  </ThemedText>
+                  <ThemedText style={[styles.expandButton, { color: theme.primary }]}>
+                    {modalContentExpanded ? 'See less' : 'See more'}
+                  </ThemedText>
+                </Pressable>
 
                 {showHideInput ? (
                   <View style={styles.hideInputContainer}>
@@ -703,6 +728,11 @@ const styles = StyleSheet.create({
   postContent: {
     fontSize: 15,
     lineHeight: 22,
+    marginBottom: Spacing.xs,
+  },
+  expandButton: {
+    fontSize: 12,
+    fontWeight: "500",
     marginBottom: Spacing.md,
   },
   hiddenReasonBox: {

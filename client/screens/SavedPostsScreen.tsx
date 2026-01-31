@@ -4,6 +4,7 @@ import {
   StyleSheet,
   FlatList,
   Platform,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -62,10 +63,11 @@ export default function SavedPostsScreen() {
       
       return { previousPosts };
     },
-    onError: (_err, _vars, context) => {
+    onError: (error: Error, _vars, context) => {
       if (context?.previousPosts) {
         queryClient.setQueryData(["/api/bookmarks"], context.previousPosts);
       }
+      Alert.alert('Error', error.message || 'Failed to update like');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bookmarks"] });

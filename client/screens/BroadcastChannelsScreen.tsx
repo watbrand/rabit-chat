@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Modal,
   Platform,
+  Alert,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -61,6 +62,9 @@ export default function BroadcastChannelsScreen({ navigation }: any) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/broadcast-channels"] });
     },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to join channel. Please try again.');
+    },
   });
 
   const unsubscribeMutation = useMutation({
@@ -69,6 +73,9 @@ export default function BroadcastChannelsScreen({ navigation }: any) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/broadcast-channels"] });
+    },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to leave channel. Please try again.');
     },
   });
 
@@ -84,6 +91,9 @@ export default function BroadcastChannelsScreen({ navigation }: any) {
       setShowCreateModal(false);
       setNewChannelName("");
       setNewChannelDescription("");
+    },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to create channel. Please try again.');
     },
   });
 

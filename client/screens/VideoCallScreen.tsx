@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Pressable,
   Dimensions,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/hooks/useTheme";
@@ -85,6 +86,9 @@ export default function VideoCallScreen({ route, navigation }: CallScreenProps) 
     mutationFn: async () => {
       return apiRequest("POST", `/api/calls/${callId}/answer`);
     },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to answer call');
+    },
   });
 
   const endMutation = useMutation({
@@ -93,6 +97,9 @@ export default function VideoCallScreen({ route, navigation }: CallScreenProps) 
     },
     onSuccess: () => {
       navigation.goBack();
+    },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to end call');
     },
   });
 

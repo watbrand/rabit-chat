@@ -43,6 +43,17 @@ export default function AdminCommentsScreen() {
   const [showActionModal, setShowActionModal] = useState(false);
   const [hideReason, setHideReason] = useState("");
   const [showHideInput, setShowHideInput] = useState(false);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [modalContentExpanded, setModalContentExpanded] = useState(false);
+
+  const toggleExpand = (id: string) => {
+    setExpandedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const {
     data: comments,
@@ -148,6 +159,7 @@ export default function AdminCommentsScreen() {
     setShowActionModal(true);
     setShowHideInput(false);
     setHideReason("");
+    setModalContentExpanded(false);
   };
 
   const handleHideComment = () => {
@@ -202,7 +214,9 @@ export default function AdminCommentsScreen() {
     </Pressable>
   );
 
-  const renderCommentItem = ({ item }: { item: AdminComment }) => (
+  const renderCommentItem = ({ item }: { item: AdminComment }) => {
+    const isExpanded = expandedItems.has(item.id);
+    return (
     <Pressable onPress={() => item.author?.id ? handleCommentPress(item) : null}>
       <Card elevation={1} style={styles.commentCard}>
         <View style={styles.commentHeader}>
@@ -225,9 +239,14 @@ export default function AdminCommentsScreen() {
           </View>
           <Feather name="more-horizontal" size={20} color={theme.textSecondary} />
         </View>
-        <ThemedText style={styles.commentContent} numberOfLines={2}>
-          {item.content}
-        </ThemedText>
+        <Pressable onPress={(e) => { e.stopPropagation(); toggleExpand(item.id); }}>
+          <ThemedText style={styles.commentContent} numberOfLines={isExpanded ? undefined : 2}>
+            {item.content}
+          </ThemedText>
+          <ThemedText style={[styles.expandButton, { color: theme.primary }]}>
+            {isExpanded ? 'See less' : 'See more'}
+          </ThemedText>
+        </Pressable>
         {item.hiddenReason ? (
           <View style={[styles.hiddenReasonBox, { backgroundColor: theme.glassBackground }]}>
             <ThemedText style={[styles.hiddenReasonLabel, { color: theme.textSecondary }]}>
@@ -247,6 +266,7 @@ export default function AdminCommentsScreen() {
       </Card>
     </Pressable>
   );
+  };
 
   if (isLoading) {
     return (
@@ -343,9 +363,14 @@ export default function AdminCommentsScreen() {
                     </ThemedText>
                   </View>
                 </View>
-                <ThemedText style={styles.previewContent} numberOfLines={4}>
-                  {selectedComment.content}
-                </ThemedText>
+                <Pressable onPress={() => setModalContentExpanded(!modalContentExpanded)}>
+                  <ThemedText style={styles.previewContent} numberOfLines={modalContentExpanded ? undefined : 4}>
+                    {selectedComment.content}
+                  </ThemedText>
+                  <ThemedText style={[styles.expandButton, { color: theme.primary }]}>
+                    {modalContentExpanded ? 'See less' : 'See more'}
+                  </ThemedText>
+                </Pressable>
 
                 {showHideInput ? (
                   <View style={styles.hideInputContainer}>
@@ -511,6 +536,11 @@ const styles = StyleSheet.create({
   commentContent: {
     fontSize: 14,
     lineHeight: 20,
+    marginBottom: Spacing.xs,
+  },
+  expandButton: {
+    fontSize: 12,
+    fontWeight: "500",
     marginBottom: Spacing.sm,
   },
   hiddenReasonBox: {

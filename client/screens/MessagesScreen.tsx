@@ -9,6 +9,7 @@ import {
   Platform,
   Animated,
   ScrollView,
+  Alert,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -118,6 +119,9 @@ export default function MessagesScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/messages/requests"] });
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
     },
+    onError: (error: Error) => {
+      Alert.alert("Error", error.message || "Failed to accept message request. Please try again.");
+    },
   });
 
   const declineMutation = useMutation({
@@ -126,6 +130,9 @@ export default function MessagesScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/messages/requests"] });
+    },
+    onError: (error: Error) => {
+      Alert.alert("Error", error.message || "Failed to decline message request. Please try again.");
     },
   });
 

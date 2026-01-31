@@ -12,6 +12,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Share,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -216,6 +217,9 @@ export default function ExplorePicturesScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/discover/explore"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
     },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to like post. Please try again.');
+    },
   });
 
   const bookmarkMutation = useMutation({
@@ -224,6 +228,9 @@ export default function ExplorePicturesScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/discover/explore"] });
+    },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to save post. Please try again.');
     },
   });
 
@@ -254,6 +261,9 @@ export default function ExplorePicturesScreen() {
     onSuccess: () => {
       refetchComments();
       queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
+    },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to post comment. Please try again.');
     },
   });
 

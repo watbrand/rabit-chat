@@ -7,6 +7,7 @@ import {
   Pressable,
   Platform,
   ViewToken,
+  Alert,
 } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -300,10 +301,11 @@ export default function ReelsScreen() {
       
       return { previousPosts };
     },
-    onError: (_err, _vars, context) => {
+    onError: (error: Error, _vars, context) => {
       if (context?.previousPosts) {
         queryClient.setQueryData(["/api/posts/videos"], context.previousPosts);
       }
+      Alert.alert('Error', error.message || 'Failed to update like');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts/videos"] });
@@ -333,10 +335,11 @@ export default function ReelsScreen() {
       
       return { previousPosts };
     },
-    onError: (_err, _vars, context) => {
+    onError: (error: Error, _vars, context) => {
       if (context?.previousPosts) {
         queryClient.setQueryData(["/api/posts/videos"], context.previousPosts);
       }
+      Alert.alert('Error', error.message || 'Failed to update bookmark');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts/videos"] });

@@ -7,6 +7,7 @@ import {
   Pressable,
   ViewToken,
   Platform,
+  Alert,
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -89,11 +90,19 @@ export default function OnboardingScreen() {
   };
 
   const handleSkip = async () => {
-    await completeOnboarding();
+    try {
+      await completeOnboarding();
+    } catch (error) {
+      Alert.alert("Error", "Failed to complete onboarding. Please try again.");
+    }
   };
 
   const handleGetStarted = async () => {
-    await completeOnboarding();
+    try {
+      await completeOnboarding();
+    } catch (error) {
+      Alert.alert("Error", "Failed to complete onboarding. Please try again.");
+    }
   };
 
   const renderSlide = ({ item, index }: { item: OnboardingSlide; index: number }) => {

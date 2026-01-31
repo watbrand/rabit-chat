@@ -38,6 +38,16 @@ export default function AdminReportsScreen() {
 
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("PENDING");
   const [typeFilter, setTypeFilter] = useState<FilterType>("all");
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => {
+    setExpandedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const buildQueryParams = () => {
     const params = new URLSearchParams();
@@ -340,17 +350,23 @@ export default function AdminReportsScreen() {
   const renderReportItem = ({ item }: { item: ReportWithDetails }) => {
     const statusColor = getStatusColor(item.status);
     const canTakeAction = item.status === "PENDING" || item.status === "REVIEWED";
+    const isExpanded = expandedItems.has(item.id);
 
     return (
       <Card elevation={1} style={styles.reportCard}>
         <View style={styles.reportHeader}>
           <View style={styles.reportContent}>
-            <ThemedText
-              style={[styles.reportReason, { flex: 1 }]}
-              numberOfLines={2}
-            >
-              {item.reason}
-            </ThemedText>
+            <Pressable onPress={() => toggleExpand(item.id)}>
+              <ThemedText
+                style={[styles.reportReason, { flex: 1 }]}
+                numberOfLines={isExpanded ? undefined : 2}
+              >
+                {item.reason}
+              </ThemedText>
+              <ThemedText style={[styles.expandButton, { color: theme.primary }]}>
+                {isExpanded ? 'See less' : 'See more'}
+              </ThemedText>
+            </Pressable>
             <View style={styles.reportMeta}>
               <View
                 style={[
@@ -628,6 +644,11 @@ const styles = StyleSheet.create({
   reportReason: {
     fontSize: 16,
     fontWeight: "600",
+    marginBottom: Spacing.xs,
+  },
+  expandButton: {
+    fontSize: 12,
+    fontWeight: "500",
     marginBottom: Spacing.md,
   },
   reportMeta: {

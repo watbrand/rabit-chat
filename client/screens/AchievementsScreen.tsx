@@ -7,6 +7,7 @@ import {
   RefreshControl,
   Platform,
   Dimensions,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -212,6 +213,9 @@ export default function AchievementsScreen() {
       }
       queryClient.invalidateQueries({ queryKey: ["/api/achievements"] });
       queryClient.invalidateQueries({ queryKey: ["/api/wallet"] });
+    },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to claim achievement. Please try again.');
     },
   });
 

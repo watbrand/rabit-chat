@@ -84,6 +84,16 @@ export default function AdminAuditScreen() {
   const [filterAction, setFilterAction] = useState("");
   const [filterTargetType, setFilterTargetType] = useState("");
   const [filterDateRange, setFilterDateRange] = useState("");
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => {
+    setExpandedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const buildQueryUrl = useCallback(() => {
     const params = new URLSearchParams();
@@ -148,6 +158,7 @@ export default function AdminAuditScreen() {
   const renderAuditItem = ({ item }: { item: AuditLogWithActor }) => {
     const icon = ACTION_ICONS[item.action] || "activity";
     const color = ACTION_COLORS[item.action] || theme.primary;
+    const isExpanded = expandedItems.has(item.id);
 
     return (
       <Card elevation={1} style={styles.auditCard}>
@@ -188,11 +199,16 @@ export default function AdminAuditScreen() {
         ) : null}
 
         {item.details ? (
-          <View style={styles.detailsContainer}>
-            <ThemedText style={[styles.detailsText, { color: theme.textSecondary }]} numberOfLines={2}>
-              {typeof item.details === "string" ? item.details : JSON.stringify(item.details)}
-            </ThemedText>
-          </View>
+          <Pressable onPress={() => toggleExpand(item.id)}>
+            <View style={styles.detailsContainer}>
+              <ThemedText style={[styles.detailsText, { color: theme.textSecondary }]} numberOfLines={isExpanded ? undefined : 2}>
+                {typeof item.details === "string" ? item.details : JSON.stringify(item.details)}
+              </ThemedText>
+              <ThemedText style={[styles.expandButton, { color: theme.primary }]}>
+                {isExpanded ? 'See less' : 'See more'}
+              </ThemedText>
+            </View>
+          </Pressable>
         ) : null}
 
         {item.ipAddress ? (
@@ -515,6 +531,11 @@ const styles = StyleSheet.create({
   detailsText: {
     fontSize: 11,
     fontFamily: "monospace",
+  },
+  expandButton: {
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: Spacing.xs,
   },
   metaRow: {
     flexDirection: "row",

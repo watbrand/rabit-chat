@@ -9,6 +9,7 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/hooks/useTheme";
@@ -103,11 +104,17 @@ export default function LiveStreamScreen({ route, navigation }: any) {
       setComment("");
       refetchComments();
     },
+    onError: (error: Error) => {
+      Alert.alert("Error", error.message || "Failed to send comment. Please try again.");
+    },
   });
 
   const sendReactionMutation = useMutation({
     mutationFn: async (reactionType: string) => {
       return apiRequest("POST", `/api/live-streams/${streamId}/reactions`, { reactionType });
+    },
+    onError: (error: Error) => {
+      Alert.alert("Error", error.message || "Failed to send reaction. Please try again.");
     },
   });
 

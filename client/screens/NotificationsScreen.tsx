@@ -1,5 +1,5 @@
 import React from "react";
-import { View, FlatList, StyleSheet, RefreshControl, Platform, Pressable } from "react-native";
+import { View, FlatList, StyleSheet, RefreshControl, Platform, Pressable, Alert } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -59,6 +59,9 @@ export default function NotificationsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
     },
+    onError: (error: Error) => {
+      Alert.alert("Error", error.message || "Failed to mark notification as read. Please try again.");
+    },
   });
 
   const markAllReadMutation = useMutation({
@@ -68,6 +71,9 @@ export default function NotificationsScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+    },
+    onError: (error: Error) => {
+      Alert.alert("Error", error.message || "Failed to mark all notifications as read. Please try again.");
     },
   });
 

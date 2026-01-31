@@ -8,6 +8,7 @@ import {
   Platform,
   ViewToken,
   Share,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from "@react-navigation/native";
@@ -402,6 +403,9 @@ export default function ExploreReelsScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/discover/explore"] });
       queryClient.invalidateQueries({ queryKey: ["/api/discover/reels"] });
+    },
+    onError: (error: Error) => {
+      Alert.alert('Error', error.message || 'Failed to like reel. Please try again.');
     },
   });
 
