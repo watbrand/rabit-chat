@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   qualityLabel: {
     fontSize: 16,
     fontWeight: "600",
-    marginBottom: 2,
+    marginBottom: Spacing.xs,
   },
   qualityDescription: {
     fontSize: 13,

@@ -778,7 +778,7 @@ const styles = StyleSheet.create({
   },
   statusSubtext: {
     fontSize: 12,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   quickActionsSection: {
     paddingHorizontal: Spacing.lg,
@@ -851,7 +851,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   categoryName: {
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   categoryDescription: {
     fontSize: 12,
@@ -942,7 +942,7 @@ const styles = StyleSheet.create({
   },
   communitySubtext: {
     fontSize: 13,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   safetySection: {
     paddingHorizontal: Spacing.lg,
@@ -968,7 +968,7 @@ const styles = StyleSheet.create({
   },
   safetySubtext: {
     fontSize: 13,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   sosButton: {
     paddingHorizontal: Spacing.md,
@@ -1005,7 +1005,7 @@ const styles = StyleSheet.create({
   searchResultTitle: {
     fontSize: 15,
     fontWeight: "600",
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   searchResultSummary: {
     fontSize: 13,

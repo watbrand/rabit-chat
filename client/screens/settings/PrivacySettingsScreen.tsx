@@ -634,7 +634,7 @@ const styles = StyleSheet.create({
   },
   accountReason: {
     fontSize: 12,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   actionText: {
     fontSize: 14,

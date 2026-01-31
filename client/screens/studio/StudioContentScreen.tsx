@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
   contentTitle: {
     fontSize: 15,
     fontWeight: "600",
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   contentMeta: {
     flexDirection: "row",

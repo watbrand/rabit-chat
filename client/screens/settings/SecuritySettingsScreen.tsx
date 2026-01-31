@@ -1279,7 +1279,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
-    marginBottom: 2,
+    marginBottom: Spacing.xs,
   },
   sessionLabel: {
     fontSize: 14,
@@ -1287,13 +1287,13 @@ const styles = StyleSheet.create({
   },
   sessionDetail: {
     fontSize: 13,
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   sessionMetaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.md,
-    marginTop: 4,
+    marginTop: Spacing.xs,
   },
   sessionMetaItem: {
     flexDirection: "row",
@@ -1380,7 +1380,7 @@ const styles = StyleSheet.create({
   twoFactorTitle: {
     fontSize: 16,
     fontWeight: "600",
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   twoFactorSubtitle: {
     fontSize: 13,

@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 80,
+    paddingTop: Spacing["5xl"],
     gap: Spacing.md,
   },
   emptyTitle: {

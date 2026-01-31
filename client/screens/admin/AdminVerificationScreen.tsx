@@ -851,11 +851,11 @@ const styles = StyleSheet.create({
   },
   username: {
     fontSize: 13,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   joinDate: {
     fontSize: 11,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   statusBadge: {
     paddingHorizontal: Spacing.sm,
@@ -896,7 +896,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: Spacing.md,
     top: "50%",
-    marginTop: -10,
+    transform: [{ translateY: -10 }],
   },
   emptyContainer: {
     alignItems: "center",
@@ -947,7 +947,7 @@ const styles = StyleSheet.create({
   },
   userCardHandle: {
     fontSize: 14,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   userMetaRow: {
     flexDirection: "row",
@@ -987,7 +987,7 @@ const styles = StyleSheet.create({
   },
   detailItemLabel: {
     fontSize: 12,
-    marginBottom: 2,
+    marginBottom: Spacing.xs,
   },
   detailItemValue: {
     fontSize: 15,

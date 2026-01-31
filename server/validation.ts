@@ -282,69 +282,22 @@ export const ErrorCodes = {
   INTERNAL_ERROR: "INTERNAL_ERROR",
 } as const;
 
-const policyOptionEnum = z.enum(["EVERYONE", "FOLLOWERS", "NOBODY"]);
 const userCategoryEnum = z.enum(["PERSONAL", "CREATOR", "BUSINESS"]);
 
 export const updateSettingsSchema = z.object({
-  privateAccount: z.boolean().optional(),
-  commentPolicy: policyOptionEnum.optional(),
-  messagePolicy: policyOptionEnum.optional(),
-  mentionPolicy: policyOptionEnum.optional(),
-  storyViewPolicy: policyOptionEnum.optional(),
-  followersListVisibility: policyOptionEnum.optional(),
-  followingListVisibility: policyOptionEnum.optional(),
-  // Legacy notifications (keeping for compatibility)
   notifications: z.object({
-    likes: z.boolean().optional(),
-    comments: z.boolean().optional(),
-    follows: z.boolean().optional(),
-    messages: z.boolean().optional(),
-    mentions: z.boolean().optional(),
+    push: z.boolean().optional(),
+    email: z.boolean().optional(),
+    sms: z.boolean().optional(),
   }).optional(),
-  // Push Notifications (granular)
-  pushNotifications: z.object({
-    likes: z.boolean().optional(),
-    comments: z.boolean().optional(),
-    follows: z.boolean().optional(),
-    messages: z.boolean().optional(),
-    mentions: z.boolean().optional(),
-    storyViews: z.boolean().optional(),
-    profileViews: z.boolean().optional(),
-    newFollowers: z.boolean().optional(),
-    liveVideos: z.boolean().optional(),
-    promotions: z.boolean().optional(),
+  privacy: z.object({
+    profileVisibility: z.enum(["PUBLIC", "FRIENDS", "PRIVATE"]).optional(),
+    showOnlineStatus: z.boolean().optional(),
+    allowTagging: z.boolean().optional(),
   }).optional(),
-  // Email Notifications
-  emailNotifications: z.object({
-    weeklyDigest: z.boolean().optional(),
-    newFollowers: z.boolean().optional(),
-    messages: z.boolean().optional(),
-    mentions: z.boolean().optional(),
-    productUpdates: z.boolean().optional(),
-    securityAlerts: z.boolean().optional(),
-  }).optional(),
-  // Quiet Hours / Do Not Disturb
-  quietHoursEnabled: z.boolean().optional(),
-  quietHoursStart: z.string().regex(/^\d{2}:\d{2}$/, "Format: HH:MM").optional().nullable(),
-  quietHoursEnd: z.string().regex(/^\d{2}:\d{2}$/, "Format: HH:MM").optional().nullable(),
-  quietHoursTimezone: z.string().optional().nullable(),
-  // Content Preferences
-  contentPreferences: z.object({
-    showSensitiveContent: z.boolean().optional(),
-    autoTranslate: z.boolean().optional(),
-    prioritizeFollowing: z.boolean().optional(),
-  }).optional(),
-  sensitiveContentFilter: z.boolean().optional(),
-  // Security
-  loginAlertsEnabled: z.boolean().optional(),
-  twoFactorEnabled: z.boolean().optional(),
-  // Accessibility
-  fontSizePreference: z.enum(["SMALL", "MEDIUM", "LARGE"]).optional(),
-  // Media prefs
-  mediaPrefs: z.object({
-    autoplay: z.boolean().optional(),
-    dataSaver: z.boolean().optional(),
-    uploadQuality: z.enum(["low", "medium", "high"]).optional(),
+  security: z.object({
+    twoFactorEnabled: z.boolean().optional(),
+    loginAlerts: z.boolean().optional(),
   }).optional(),
 });
 
@@ -539,43 +492,25 @@ export const withdrawalRequestSchema = z.object({
   accountHolder: z.string().min(2, "Account holder name required").max(100, "Name too long"),
 });
 
-const storyTypeEnum = z.enum(["PHOTO", "VIDEO", "TEXT", "VOICE"]);
 const replySettingEnum = z.enum(["EVERYONE", "FOLLOWING", "NOBODY"]);
 const storyReactionTypeEnum = z.enum(["FIRE", "HEART", "LAUGH", "WOW", "SAD", "CLAP"]);
 
 export const createStorySchema = z.object({
-  type: storyTypeEnum,
-  caption: z.string().max(500, "Caption too long").optional().nullable(),
-  mediaUrl: z.string().url().optional().nullable(),
-  thumbnailUrl: z.string().url().optional().nullable(),
-  durationMs: z.union([z.number().int().positive(), z.string().transform(val => parseInt(val, 10))]).optional().nullable(),
-  textContent: z.string().max(500, "Text content too long").optional().nullable(),
-  backgroundColor: z.string().optional().nullable(),
-  isGradient: z.union([z.boolean(), z.string().transform(val => val === "true")]).optional(),
-  gradientColors: z.union([z.array(z.string()), z.string()]).optional().nullable(),
-  fontFamily: z.string().optional().nullable(),
-  textAlignment: z.string().optional().nullable(),
-  textAnimation: z.string().optional().nullable(),
-  textBackgroundPill: z.union([z.boolean(), z.string().transform(val => val === "true")]).optional(),
-  fontSize: z.union([z.number(), z.string().transform(val => parseInt(val, 10))]).optional().nullable(),
-  audioUrl: z.string().url().optional().nullable(),
-  audioDuration: z.union([z.number(), z.string().transform(val => parseInt(val, 10))]).optional().nullable(),
-  audioTranscript: z.string().optional().nullable(),
-  musicUrl: z.string().url().optional().nullable(),
-  musicTitle: z.string().optional().nullable(),
-  musicArtist: z.string().optional().nullable(),
-  musicStartTime: z.union([z.number(), z.string().transform(val => parseInt(val, 10))]).optional().nullable(),
-  musicDuration: z.union([z.number(), z.string().transform(val => parseInt(val, 10))]).optional().nullable(),
-  filterName: z.string().optional().nullable(),
-  textOverlays: z.any().optional().nullable(),
-  drawings: z.any().optional().nullable(),
-  isCloseFriends: z.union([z.boolean(), z.string().transform(val => val === "true")]).optional(),
-  replySetting: replySettingEnum.optional(),
-  scheduledAt: z.string().optional().nullable(),
-  locationName: z.string().optional().nullable(),
-  locationLat: z.union([z.number(), z.string().transform(val => parseFloat(val))]).optional().nullable(),
-  locationLng: z.union([z.number(), z.string().transform(val => parseFloat(val))]).optional().nullable(),
-  stickers: z.any().optional().nullable(),
+  mediaUrl: z.string().url("Invalid media URL"),
+  mediaType: z.enum(["image", "video"], {
+    errorMap: () => ({ message: "Media type must be either 'image' or 'video'" }),
+  }),
+  duration: z.number()
+    .int("Duration must be a whole number")
+    .min(1, "Duration must be at least 1 second")
+    .max(60, "Duration cannot exceed 60 seconds")
+    .optional(),
+  visibility: z.enum(["PUBLIC", "FRIENDS", "CLOSE_FRIENDS"], {
+    errorMap: () => ({ message: "Visibility must be PUBLIC, FRIENDS, or CLOSE_FRIENDS" }),
+  }).optional().default("PUBLIC"),
+  expiresAt: z.string()
+    .datetime("Invalid expiration date format")
+    .optional(),
 });
 
 export const storyReactionSchema = z.object({
@@ -733,3 +668,61 @@ export const dataImportSchema = z.object({
   }),
   overwrite: z.boolean().optional().default(false),
 });
+
+// ===== REEL VALIDATION =====
+
+export const createReelSchema = z.object({
+  videoUrl: z.string().url("Invalid video URL"),
+  caption: z.string().max(2000, "Caption cannot exceed 2000 characters").optional(),
+  thumbnailUrl: z.string().url("Invalid thumbnail URL").optional(),
+  duration: z.number()
+    .int("Duration must be a whole number")
+    .min(1, "Duration must be at least 1 second")
+    .max(180, "Duration cannot exceed 180 seconds"),
+  visibility: z.enum(["PUBLIC", "FOLLOWERS", "PRIVATE"]).optional().default("PUBLIC"),
+});
+
+// ===== ONBOARDING VALIDATION =====
+
+export const updateOnboardingSchema = z.object({
+  step: z.number()
+    .int("Step must be a whole number")
+    .min(1, "Step must be at least 1")
+    .max(7, "Step cannot exceed 7"),
+  interests: z.array(z.string())
+    .max(10, "Maximum 10 interests allowed")
+    .optional(),
+  industries: z.array(z.string())
+    .max(5, "Maximum 5 industries allowed")
+    .optional(),
+  netWorthTier: z.string().optional(),
+  privacySettings: z.object({
+    profileVisibility: z.enum(["PUBLIC", "FRIENDS", "PRIVATE"]),
+    allowDMs: z.boolean(),
+  }).optional(),
+});
+
+// ===== DATA EXPORT VALIDATION =====
+
+export const dataExportSchema = z.object({
+  format: z.enum(["json", "csv"], {
+    errorMap: () => ({ message: "Format must be either 'json' or 'csv'" }),
+  }),
+  dataTypes: z.array(z.enum(["posts", "comments", "messages", "profile", "activity"]))
+    .min(1, "At least one data type must be selected"),
+  dateRange: z.object({
+    start: z.string().datetime("Invalid start date format").optional(),
+    end: z.string().datetime("Invalid end date format").optional(),
+  }).optional(),
+}).refine(data => {
+  if (data.dateRange && data.dateRange.start && data.dateRange.end) {
+    const start = new Date(data.dateRange.start);
+    const end = new Date(data.dateRange.end);
+    return end > start;
+  }
+  return true;
+}, {
+  message: "End date must be after start date",
+  path: ["dateRange.end"],
+});
+

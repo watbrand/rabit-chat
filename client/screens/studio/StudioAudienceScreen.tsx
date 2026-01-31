@@ -314,11 +314,11 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 13,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   statSubtitle: {
     fontSize: 11,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   chartCard: {
     padding: Spacing.lg,
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
   },
   insightTitle: {
     fontWeight: "600",
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   insightText: {
     fontSize: 14,

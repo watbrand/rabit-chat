@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
   },
   metricLabel: {
     fontSize: 13,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   trendContainer: {
     flexDirection: "row",

@@ -671,7 +671,7 @@ const styles = StyleSheet.create({
   },
   actionDescription: {
     fontSize: 13,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   loadingContainer: {
     padding: Spacing.xl,
@@ -780,7 +780,7 @@ const styles = StyleSheet.create({
   },
   optionNote: {
     fontSize: 12,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   optionButtons: {
     flexDirection: "row",

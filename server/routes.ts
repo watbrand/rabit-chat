@@ -26,7 +26,7 @@ import { registerApiUsageRoutes } from "./routes-api-usage";
 import { registerHelpCenterRoutes } from "./routes-help-center";
 import { adsEngine, type AuctionResult } from "./ads-engine";
 import { pool, db } from "./db";
-import { sql, and, eq, gt, gte, lt, lte, isNull, inArray, desc, or, like, asc, ilike } from "drizzle-orm";
+import { sql, and, eq, gt, gte, lt, lte, isNull, isNotNull, inArray, desc, or, like, asc, ilike } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
   getViewerContext,
@@ -40,7 +40,8 @@ import {
   hasPermission,
   createPolicyError,
 } from "./policy";
-import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, liveStreamComments, liveStreamReactions, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, keywordFilters, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, giftStakes, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes, userSettings, venues, checkIns, userLocations, chatFolders, chatFolderConversations, usageStats, focusModeSettings, pokes, bffStatus, closeFriends, webhooks, webhookDeliveries, postThreads, threadPosts, duetStitchPosts, arFilters, aiAvatars, aiTranslations, videoCalls, gossipDMConversations, gossipDMMessages, anonGossipPosts, adCampaigns } from "@shared/schema";
+import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, liveStreamComments, liveStreamReactions, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, keywordFilters, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, giftStakes, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes, userSettings, venues, checkIns, userLocations, chatFolders, chatFolderConversations, usageStats, focusModeSettings, pokes, bffStatus, closeFriends, webhooks, webhookDeliveries, postThreads, threadPosts, duetStitchPosts, arFilters, aiAvatars, aiTranslations, videoCalls, gossipDMConversations, gossipDMMessages, anonGossipPosts, adCampaigns, anonGossipReports, anonGossipReplies, creatorEarnings, earningsHistory } from "@shared/schema";
+import { adDisputes, advertisers } from "@shared/ads-schema";
 import cloudinary, {
   uploadToCloudinary,
   uploadToCloudinaryFromFile,
@@ -132,6 +133,9 @@ import {
   customCoinPurchaseSchema,
   walletAdjustmentSchema,
   createStorySchema,
+  createReelSchema,
+  updateOnboardingSchema,
+  dataExportSchema,
   storyReactionSchema,
   dataImportSchema,
 } from "./validation";
@@ -17142,6 +17146,410 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // DELETE /api/admin/subscriptions/:id - Cancel a subscription on behalf of user
+  app.delete("/api/admin/subscriptions/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const adminId = req.session.userId!;
+      
+      const [subscription] = await db.select({
+        id: subscriptions.id,
+        subscriberId: subscriptions.subscriberId,
+        creatorId: subscriptions.creatorId,
+        tierId: subscriptions.tierId,
+        status: subscriptions.status,
+      })
+      .from(subscriptions)
+      .where(eq(subscriptions.id, id));
+      
+      if (!subscription) {
+        return res.status(404).json({ message: "Subscription not found" });
+      }
+      
+      await db.update(subscriptions)
+        .set({ 
+          status: "CANCELLED",
+          cancelledAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(subscriptions.id, id));
+      
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_CANCEL_SUBSCRIPTION" as AuditAction,
+        targetType: "subscription",
+        targetId: id,
+        details: { 
+          subscriberId: subscription.subscriberId,
+          creatorId: subscription.creatorId,
+          tierId: subscription.tierId,
+          previousStatus: subscription.status,
+        },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+      
+      res.json({ success: true, message: "Subscription cancelled" });
+    } catch (error) {
+      console.error("Failed to cancel subscription:", error);
+      res.status(500).json({ message: "Failed to cancel subscription" });
+    }
+  });
+
+  // ===== ADMIN: GOSSIP REPORTS MANAGEMENT =====
+
+  // GET /api/admin/gossip/reports - Get all gossip post reports with pagination
+  app.get("/api/admin/gossip/reports", requireAdmin, async (req, res) => {
+    try {
+      const { status, limit = "50", offset = "0" } = req.query;
+      const limitNum = Math.min(parseInt(limit as string, 10) || 50, 100);
+      const offsetNum = parseInt(offset as string, 10) || 0;
+      
+      let query = db.select({
+        id: anonGossipReports.id,
+        postId: anonGossipReports.postId,
+        replyId: anonGossipReports.replyId,
+        deviceHash: anonGossipReports.deviceHash,
+        reason: anonGossipReports.reason,
+        status: anonGossipReports.status,
+        reviewedBy: anonGossipReports.reviewedBy,
+        reviewedAt: anonGossipReports.reviewedAt,
+        reviewNotes: anonGossipReports.reviewNotes,
+        createdAt: anonGossipReports.createdAt,
+        postContent: anonGossipPosts.content,
+        postLocation: anonGossipPosts.locationDisplay,
+      })
+      .from(anonGossipReports)
+      .leftJoin(anonGossipPosts, eq(anonGossipReports.postId, anonGossipPosts.id))
+      .orderBy(desc(anonGossipReports.createdAt))
+      .limit(limitNum)
+      .offset(offsetNum);
+      
+      const reports = status 
+        ? await db.select({
+            id: anonGossipReports.id,
+            postId: anonGossipReports.postId,
+            replyId: anonGossipReports.replyId,
+            deviceHash: anonGossipReports.deviceHash,
+            reason: anonGossipReports.reason,
+            status: anonGossipReports.status,
+            reviewedBy: anonGossipReports.reviewedBy,
+            reviewedAt: anonGossipReports.reviewedAt,
+            reviewNotes: anonGossipReports.reviewNotes,
+            createdAt: anonGossipReports.createdAt,
+            postContent: anonGossipPosts.content,
+            postLocation: anonGossipPosts.locationDisplay,
+          })
+          .from(anonGossipReports)
+          .leftJoin(anonGossipPosts, eq(anonGossipReports.postId, anonGossipPosts.id))
+          .where(eq(anonGossipReports.status, status as any))
+          .orderBy(desc(anonGossipReports.createdAt))
+          .limit(limitNum)
+          .offset(offsetNum)
+        : await query;
+      
+      const [totalResult] = await db.select({ count: sql<number>`count(*)` })
+        .from(anonGossipReports);
+      
+      res.json({
+        reports,
+        pagination: {
+          total: Number(totalResult?.count || 0),
+          limit: limitNum,
+          offset: offsetNum,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to get gossip reports:", error);
+      res.status(500).json({ message: "Failed to get gossip reports" });
+    }
+  });
+
+  // POST /api/admin/gossip/reports/:reportId/action - Take action on a gossip report
+  app.post("/api/admin/gossip/reports/:reportId/action", requireAdmin, async (req, res) => {
+    try {
+      const { reportId } = req.params;
+      const { action, notes } = req.body;
+      const adminId = req.session.userId!;
+      
+      if (!action || !["APPROVE", "DISMISS"].includes(action)) {
+        return res.status(400).json({ message: "action must be APPROVE or DISMISS" });
+      }
+      
+      const [report] = await db.select()
+        .from(anonGossipReports)
+        .where(eq(anonGossipReports.id, reportId));
+      
+      if (!report) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+      
+      const newStatus = action === "APPROVE" ? "REMOVED" : "DISMISSED";
+      
+      await db.update(anonGossipReports)
+        .set({
+          status: newStatus,
+          reviewedBy: adminId,
+          reviewedAt: new Date(),
+          reviewNotes: notes || null,
+        })
+        .where(eq(anonGossipReports.id, reportId));
+      
+      if (action === "APPROVE") {
+        if (report.postId) {
+          await db.update(anonGossipPosts)
+            .set({ isRemovedByAdmin: true })
+            .where(eq(anonGossipPosts.id, report.postId));
+        }
+        if (report.replyId) {
+          await db.update(anonGossipReplies)
+            .set({ isRemovedByAdmin: true })
+            .where(eq(anonGossipReplies.id, report.replyId));
+        }
+      }
+      
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: action === "APPROVE" ? "ADMIN_REMOVE_GOSSIP_CONTENT" : "ADMIN_DISMISS_GOSSIP_REPORT" as AuditAction,
+        targetType: "gossip_report",
+        targetId: reportId,
+        details: { 
+          action, 
+          postId: report.postId, 
+          replyId: report.replyId,
+          notes,
+        },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+      
+      res.json({ success: true, message: `Report ${action === "APPROVE" ? "approved and content removed" : "dismissed"}` });
+    } catch (error) {
+      console.error("Failed to take action on gossip report:", error);
+      res.status(500).json({ message: "Failed to take action on report" });
+    }
+  });
+
+  // ===== ADMIN: ADVERTISING DISPUTES MANAGEMENT =====
+
+  // GET /api/admin/advertising/disputes - Get all advertiser disputes
+  app.get("/api/admin/advertising/disputes", requireAdmin, async (req, res) => {
+    try {
+      const { status, limit = "50", offset = "0" } = req.query;
+      const limitNum = Math.min(parseInt(limit as string, 10) || 50, 100);
+      const offsetNum = parseInt(offset as string, 10) || 0;
+      
+      const baseQuery = db.select({
+        id: adDisputes.id,
+        advertiserId: adDisputes.advertiserId,
+        campaignId: adDisputes.campaignId,
+        disputeType: adDisputes.disputeType,
+        status: adDisputes.status,
+        subject: adDisputes.subject,
+        description: adDisputes.description,
+        requestedRefundAmount: adDisputes.requestedRefundAmount,
+        approvedRefundAmount: adDisputes.approvedRefundAmount,
+        attachments: adDisputes.attachments,
+        adminResponse: adDisputes.adminResponse,
+        resolvedBy: adDisputes.resolvedBy,
+        resolvedAt: adDisputes.resolvedAt,
+        createdAt: adDisputes.createdAt,
+        updatedAt: adDisputes.updatedAt,
+        advertiserBusinessName: advertisers.businessName,
+        advertiserUserId: advertisers.userId,
+      })
+      .from(adDisputes)
+      .leftJoin(advertisers, eq(adDisputes.advertiserId, advertisers.id))
+      .orderBy(desc(adDisputes.createdAt))
+      .limit(limitNum)
+      .offset(offsetNum);
+      
+      const disputes = status
+        ? await db.select({
+            id: adDisputes.id,
+            advertiserId: adDisputes.advertiserId,
+            campaignId: adDisputes.campaignId,
+            disputeType: adDisputes.disputeType,
+            status: adDisputes.status,
+            subject: adDisputes.subject,
+            description: adDisputes.description,
+            requestedRefundAmount: adDisputes.requestedRefundAmount,
+            approvedRefundAmount: adDisputes.approvedRefundAmount,
+            attachments: adDisputes.attachments,
+            adminResponse: adDisputes.adminResponse,
+            resolvedBy: adDisputes.resolvedBy,
+            resolvedAt: adDisputes.resolvedAt,
+            createdAt: adDisputes.createdAt,
+            updatedAt: adDisputes.updatedAt,
+            advertiserBusinessName: advertisers.businessName,
+            advertiserUserId: advertisers.userId,
+          })
+          .from(adDisputes)
+          .leftJoin(advertisers, eq(adDisputes.advertiserId, advertisers.id))
+          .where(eq(adDisputes.status, status as any))
+          .orderBy(desc(adDisputes.createdAt))
+          .limit(limitNum)
+          .offset(offsetNum)
+        : await baseQuery;
+      
+      const [totalResult] = await db.select({ count: sql<number>`count(*)` })
+        .from(adDisputes);
+      
+      res.json({
+        disputes,
+        pagination: {
+          total: Number(totalResult?.count || 0),
+          limit: limitNum,
+          offset: offsetNum,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to get advertising disputes:", error);
+      res.status(500).json({ message: "Failed to get advertising disputes" });
+    }
+  });
+
+  // POST /api/admin/advertising/disputes/:id/resolve - Resolve a dispute with outcome
+  app.post("/api/admin/advertising/disputes/:id/resolve", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, adminResponse, approvedRefundAmount } = req.body;
+      const adminId = req.session.userId!;
+      
+      if (!status || !["RESOLVED", "REJECTED", "REFUNDED"].includes(status)) {
+        return res.status(400).json({ message: "status must be RESOLVED, REJECTED, or REFUNDED" });
+      }
+      
+      const [dispute] = await db.select()
+        .from(adDisputes)
+        .where(eq(adDisputes.id, id));
+      
+      if (!dispute) {
+        return res.status(404).json({ message: "Dispute not found" });
+      }
+      
+      await db.update(adDisputes)
+        .set({
+          status,
+          adminResponse: adminResponse || null,
+          approvedRefundAmount: approvedRefundAmount || null,
+          resolvedBy: adminId,
+          resolvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(adDisputes.id, id));
+      
+      await storage.createAuditLog({
+        actorId: adminId,
+        action: "ADMIN_RESOLVE_AD_DISPUTE" as AuditAction,
+        targetType: "ad_dispute",
+        targetId: id,
+        details: { 
+          status, 
+          adminResponse,
+          approvedRefundAmount,
+          advertiserId: dispute.advertiserId,
+          campaignId: dispute.campaignId,
+        },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.headers["user-agent"] || "unknown",
+      });
+      
+      res.json({ success: true, message: `Dispute resolved with status: ${status}` });
+    } catch (error) {
+      console.error("Failed to resolve dispute:", error);
+      res.status(500).json({ message: "Failed to resolve dispute" });
+    }
+  });
+
+  // ===== ADMIN: LEGAL DOCUMENTS MANAGEMENT =====
+
+  // GET /api/admin/legal/acceptances - Get all users' legal document acceptances
+  app.get("/api/admin/legal/acceptances", requireAdmin, async (req, res) => {
+    try {
+      const { limit = "50", offset = "0", version, hasAccepted } = req.query;
+      const limitNum = Math.min(parseInt(limit as string, 10) || 50, 100);
+      const offsetNum = parseInt(offset as string, 10) || 0;
+      
+      let conditions: SQL<unknown>[] = [];
+      
+      if (version && typeof version === "string") {
+        conditions.push(eq(users.legalVersion, version));
+      }
+      
+      if (hasAccepted === "true") {
+        conditions.push(isNotNull(users.termsAcceptedAt));
+      } else if (hasAccepted === "false") {
+        conditions.push(isNull(users.termsAcceptedAt));
+      }
+      
+      const query = db.select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        displayName: users.displayName,
+        termsAcceptedAt: users.termsAcceptedAt,
+        privacyAcceptedAt: users.privacyAcceptedAt,
+        communityGuidelinesAcceptedAt: users.communityGuidelinesAcceptedAt,
+        legalVersion: users.legalVersion,
+        marketingOptIn: users.marketingOptIn,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .orderBy(desc(users.createdAt))
+      .limit(limitNum)
+      .offset(offsetNum);
+      
+      const acceptances = conditions.length > 0
+        ? await db.select({
+            id: users.id,
+            username: users.username,
+            email: users.email,
+            displayName: users.displayName,
+            termsAcceptedAt: users.termsAcceptedAt,
+            privacyAcceptedAt: users.privacyAcceptedAt,
+            communityGuidelinesAcceptedAt: users.communityGuidelinesAcceptedAt,
+            legalVersion: users.legalVersion,
+            marketingOptIn: users.marketingOptIn,
+            createdAt: users.createdAt,
+          })
+          .from(users)
+          .where(and(...conditions))
+          .orderBy(desc(users.createdAt))
+          .limit(limitNum)
+          .offset(offsetNum)
+        : await query;
+      
+      const [totalResult] = await db.select({ count: sql<number>`count(*)` })
+        .from(users);
+      
+      const [acceptedCount] = await db.select({ count: sql<number>`count(*)` })
+        .from(users)
+        .where(isNotNull(users.termsAcceptedAt));
+      
+      const [marketingOptInCount] = await db.select({ count: sql<number>`count(*)` })
+        .from(users)
+        .where(eq(users.marketingOptIn, true));
+      
+      res.json({
+        acceptances,
+        stats: {
+          totalUsers: Number(totalResult?.count || 0),
+          acceptedTerms: Number(acceptedCount?.count || 0),
+          marketingOptIn: Number(marketingOptInCount?.count || 0),
+        },
+        pagination: {
+          total: Number(totalResult?.count || 0),
+          limit: limitNum,
+          offset: offsetNum,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to get legal acceptances:", error);
+      res.status(500).json({ message: "Failed to get legal acceptances" });
+    }
+  });
+
   // ===== ADMIN: BROADCAST CHANNELS MANAGEMENT =====
   
   app.get("/api/admin/broadcasts/stats", requireAdmin, async (req, res) => {
@@ -17416,29 +17824,516 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/admin/reels", requireAdmin, async (req, res) => {
     try {
-      const limit = parseInt(req.query.limit as string) || 50;
+      const { page = "1", limit = "50", userId, search, featured } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      let conditions: SQL[] = [eq(posts.type, "VIDEO")];
+      
+      if (userId && typeof userId === "string") {
+        conditions.push(eq(posts.authorId, userId));
+      }
+      if (search && typeof search === "string") {
+        conditions.push(ilike(posts.content, `%${search}%`));
+      }
+      if (featured === "true") {
+        conditions.push(eq(posts.isFeatured, true));
+      }
+
       const reels = await db.select({
         id: posts.id,
         authorId: posts.authorId,
         content: posts.content,
+        caption: posts.caption,
         mediaUrl: posts.mediaUrl,
+        thumbnailUrl: posts.thumbnailUrl,
         visibility: posts.visibility,
         likesCount: posts.likesCount,
         commentsCount: posts.commentsCount,
+        sharesCount: posts.sharesCount,
+        viewsCount: posts.viewsCount,
+        isFeatured: posts.isFeatured,
+        isPinned: posts.isPinned,
         createdAt: posts.createdAt,
-        authorName: users.displayName,
+        authorDisplayName: users.displayName,
         authorUsername: users.username,
+        authorAvatarUrl: users.avatarUrl,
+        authorIsVerified: users.isVerified,
       })
       .from(posts)
       .leftJoin(users, eq(posts.authorId, users.id))
-      .where(eq(posts.type, "VIDEO"))
+      .where(and(...conditions))
       .orderBy(desc(posts.createdAt))
-      .limit(limit);
+      .limit(limitNum)
+      .offset(offset);
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      })
+        .from(posts)
+        .where(and(...conditions));
       
-      res.json(reels);
+      res.json({
+        reels,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
     } catch (error) {
       console.error("Failed to get reels:", error);
       res.status(500).json({ message: "Failed to get reels" });
+    }
+  });
+
+  app.post("/api/admin/reels/:id/remove", requireAdmin, async (req, res) => {
+    try {
+      const { reason } = req.body;
+      
+      const [reel] = await db.select()
+        .from(posts)
+        .where(and(eq(posts.id, req.params.id), eq(posts.type, "VIDEO")))
+        .limit(1);
+
+      if (!reel) {
+        return res.status(404).json({ message: "Reel not found" });
+      }
+
+      await db.delete(posts).where(eq(posts.id, req.params.id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "post",
+        req.params.id,
+        { action: "admin_remove_reel", reason: reason || "No reason provided", authorId: reel.authorId },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "Reel removed successfully" });
+    } catch (error) {
+      console.error("Failed to remove reel:", error);
+      res.status(500).json({ message: "Failed to remove reel" });
+    }
+  });
+
+  app.post("/api/admin/reels/:id/feature", requireAdmin, async (req, res) => {
+    try {
+      const { featured } = req.body;
+      
+      const [reel] = await db.select()
+        .from(posts)
+        .where(and(eq(posts.id, req.params.id), eq(posts.type, "VIDEO")))
+        .limit(1);
+
+      if (!reel) {
+        return res.status(404).json({ message: "Reel not found" });
+      }
+
+      const isFeatured = featured !== undefined ? Boolean(featured) : !reel.isFeatured;
+
+      const [updatedReel] = await db.update(posts)
+        .set({ isFeatured })
+        .where(eq(posts.id, req.params.id))
+        .returning();
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "post",
+        req.params.id,
+        { action: isFeatured ? "feature_reel" : "unfeature_reel" },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ 
+        message: isFeatured ? "Reel featured successfully" : "Reel unfeatured successfully",
+        reel: updatedReel
+      });
+    } catch (error) {
+      console.error("Failed to feature/unfeature reel:", error);
+      res.status(500).json({ message: "Failed to update reel feature status" });
+    }
+  });
+
+  // ===== ADMIN: GIFT TRANSACTIONS LOG =====
+
+  app.get("/api/admin/gift-transactions", requireAdmin, async (req, res) => {
+    try {
+      const { page = "1", limit = "50", senderId, recipientId, giftTypeId, dateFrom, dateTo } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      let conditions: SQL[] = [];
+      
+      if (senderId && typeof senderId === "string") {
+        conditions.push(eq(giftTransactions.senderId, senderId));
+      }
+      if (recipientId && typeof recipientId === "string") {
+        conditions.push(eq(giftTransactions.recipientId, recipientId));
+      }
+      if (giftTypeId && typeof giftTypeId === "string") {
+        conditions.push(eq(giftTransactions.giftTypeId, giftTypeId));
+      }
+      if (dateFrom && typeof dateFrom === "string") {
+        conditions.push(gte(giftTransactions.createdAt, new Date(dateFrom)));
+      }
+      if (dateTo && typeof dateTo === "string") {
+        conditions.push(lte(giftTransactions.createdAt, new Date(dateTo)));
+      }
+
+      const senderAlias = db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      }).from(users).as('sender');
+
+      const recipientAlias = db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      }).from(users).as('recipient');
+
+      const transactions = await db.select({
+        id: giftTransactions.id,
+        senderId: giftTransactions.senderId,
+        recipientId: giftTransactions.recipientId,
+        giftTypeId: giftTransactions.giftTypeId,
+        quantity: giftTransactions.quantity,
+        totalCoins: giftTransactions.totalCoins,
+        contextType: giftTransactions.contextType,
+        contextId: giftTransactions.contextId,
+        message: giftTransactions.message,
+        createdAt: giftTransactions.createdAt,
+        senderUsername: senderAlias.username,
+        senderDisplayName: senderAlias.displayName,
+        senderAvatarUrl: senderAlias.avatarUrl,
+        recipientUsername: recipientAlias.username,
+        recipientDisplayName: recipientAlias.displayName,
+        recipientAvatarUrl: recipientAlias.avatarUrl,
+        giftName: giftTypes.name,
+        giftIconUrl: giftTypes.iconUrl,
+        giftCoinCost: giftTypes.coinCost,
+      })
+        .from(giftTransactions)
+        .leftJoin(senderAlias, eq(giftTransactions.senderId, senderAlias.id))
+        .leftJoin(recipientAlias, eq(giftTransactions.recipientId, recipientAlias.id))
+        .leftJoin(giftTypes, eq(giftTransactions.giftTypeId, giftTypes.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(giftTransactions.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      })
+        .from(giftTransactions)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const [statsResult] = await db.select({
+        totalCoins: sql<number>`coalesce(sum(${giftTransactions.totalCoins}), 0)::int`,
+        totalTransactions: sql<number>`count(*)::int`,
+      })
+        .from(giftTransactions)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({
+        transactions,
+        stats: {
+          totalCoins: statsResult?.totalCoins || 0,
+          totalTransactions: statsResult?.totalTransactions || 0,
+        },
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error) {
+      console.error("Failed to get gift transactions:", error);
+      res.status(500).json({ message: "Failed to get gift transactions" });
+    }
+  });
+
+  // ===== ADMIN: STAKING CANCEL ENDPOINT =====
+
+  app.post("/api/admin/staking/:id/cancel", requireAdmin, async (req, res) => {
+    try {
+      const { refundFull, reason } = req.body;
+
+      const [stake] = await db.select()
+        .from(giftStakes)
+        .where(eq(giftStakes.id, req.params.id))
+        .limit(1);
+
+      if (!stake) {
+        return res.status(404).json({ message: "Stake not found" });
+      }
+
+      if (stake.status === "CLAIMED" || stake.status === "CANCELLED") {
+        return res.status(400).json({ message: "Stake is already claimed or cancelled" });
+      }
+
+      const refundAmount = refundFull ? stake.expectedReturn : stake.stakedCoins;
+
+      const [updatedStake] = await db.update(giftStakes)
+        .set({
+          status: "CANCELLED",
+          claimedAt: new Date(),
+        })
+        .where(eq(giftStakes.id, req.params.id))
+        .returning();
+
+      await db.update(wallets)
+        .set({
+          coinBalance: sql`${wallets.coinBalance} + ${refundAmount}`,
+        })
+        .where(eq(wallets.userId, stake.userId));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "gift_stake",
+        req.params.id,
+        { 
+          action: "admin_cancel_stake", 
+          reason: reason || "Admin cancelled", 
+          refundAmount, 
+          refundFull: Boolean(refundFull),
+          userId: stake.userId 
+        },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ 
+        message: "Stake cancelled and refunded successfully", 
+        stake: updatedStake,
+        refundAmount
+      });
+    } catch (error: any) {
+      console.error("Failed to cancel stake:", error);
+      res.status(500).json({ message: error?.message || "Failed to cancel stake" });
+    }
+  });
+
+  // ===== ADMIN: MALL ITEM TOGGLE =====
+
+  app.post("/api/admin/mall/items/:id/toggle", requireAdmin, async (req, res) => {
+    try {
+      const { enabled } = req.body;
+
+      const [item] = await db.select()
+        .from(mallItems)
+        .where(eq(mallItems.id, req.params.id))
+        .limit(1);
+
+      if (!item) {
+        return res.status(404).json({ message: "Mall item not found" });
+      }
+
+      const isActive = enabled !== undefined ? Boolean(enabled) : !item.isActive;
+
+      const [updatedItem] = await db.update(mallItems)
+        .set({ isActive })
+        .where(eq(mallItems.id, req.params.id))
+        .returning();
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "mall_item",
+        req.params.id,
+        { action: isActive ? "enable_mall_item" : "disable_mall_item", itemName: item.name },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ 
+        message: isActive ? "Mall item enabled" : "Mall item disabled",
+        item: updatedItem
+      });
+    } catch (error) {
+      console.error("Failed to toggle mall item:", error);
+      res.status(500).json({ message: "Failed to toggle mall item" });
+    }
+  });
+
+  // ===== ADMIN: CREATOR PAYOUTS =====
+
+  app.get("/api/admin/creator-payouts", requireAdmin, async (req, res) => {
+    try {
+      const { page = "1", limit = "50", status, userId } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      let conditions: SQL[] = [];
+      
+      if (status && typeof status === "string") {
+        conditions.push(eq(withdrawalRequests.status, status as any));
+      }
+      if (userId && typeof userId === "string") {
+        conditions.push(eq(withdrawalRequests.userId, userId));
+      }
+
+      const payouts = await db.select({
+        id: withdrawalRequests.id,
+        userId: withdrawalRequests.userId,
+        bankAccountId: withdrawalRequests.bankAccountId,
+        amountCoins: withdrawalRequests.amountCoins,
+        platformFeeCoins: withdrawalRequests.platformFeeCoins,
+        netAmountCoins: withdrawalRequests.netAmountCoins,
+        amountRands: withdrawalRequests.amountRands,
+        status: withdrawalRequests.status,
+        paymentReference: withdrawalRequests.paymentReference,
+        rejectionReason: withdrawalRequests.rejectionReason,
+        adminNotes: withdrawalRequests.adminNotes,
+        processedBy: withdrawalRequests.processedBy,
+        processedAt: withdrawalRequests.processedAt,
+        createdAt: withdrawalRequests.createdAt,
+        updatedAt: withdrawalRequests.updatedAt,
+        userUsername: users.username,
+        userDisplayName: users.displayName,
+        userAvatarUrl: users.avatarUrl,
+        userIsVerified: users.isVerified,
+      })
+        .from(withdrawalRequests)
+        .leftJoin(users, eq(withdrawalRequests.userId, users.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(withdrawalRequests.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      })
+        .from(withdrawalRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const [statsResult] = await db.select({
+        totalPending: sql<number>`count(*) filter (where ${withdrawalRequests.status} = 'PENDING')::int`,
+        totalProcessing: sql<number>`count(*) filter (where ${withdrawalRequests.status} = 'PROCESSING')::int`,
+        totalCompleted: sql<number>`count(*) filter (where ${withdrawalRequests.status} = 'COMPLETED')::int`,
+        totalRejected: sql<number>`count(*) filter (where ${withdrawalRequests.status} = 'REJECTED')::int`,
+        totalAmountPending: sql<number>`coalesce(sum(${withdrawalRequests.amountRands}) filter (where ${withdrawalRequests.status} = 'PENDING'), 0)::int`,
+      }).from(withdrawalRequests);
+
+      res.json({
+        payouts,
+        stats: {
+          totalPending: statsResult?.totalPending || 0,
+          totalProcessing: statsResult?.totalProcessing || 0,
+          totalCompleted: statsResult?.totalCompleted || 0,
+          totalRejected: statsResult?.totalRejected || 0,
+          totalAmountPending: statsResult?.totalAmountPending || 0,
+        },
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error) {
+      console.error("Failed to get creator payouts:", error);
+      res.status(500).json({ message: "Failed to get creator payouts" });
+    }
+  });
+
+  app.post("/api/admin/creator-payouts/:id/process", requireAdmin, async (req, res) => {
+    try {
+      const { action, paymentReference, rejectionReason, adminNotes } = req.body;
+
+      if (!action || !["approve", "reject", "complete"].includes(action)) {
+        return res.status(400).json({ message: "Invalid action. Must be 'approve', 'reject', or 'complete'" });
+      }
+
+      const [payout] = await db.select()
+        .from(withdrawalRequests)
+        .where(eq(withdrawalRequests.id, req.params.id))
+        .limit(1);
+
+      if (!payout) {
+        return res.status(404).json({ message: "Payout request not found" });
+      }
+
+      if (payout.status === "COMPLETED" || payout.status === "REJECTED") {
+        return res.status(400).json({ message: "Payout request is already finalized" });
+      }
+
+      const updates: Record<string, any> = {
+        processedBy: req.session.userId,
+        processedAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      if (action === "approve") {
+        if (payout.status !== "PENDING") {
+          return res.status(400).json({ message: "Can only approve pending requests" });
+        }
+        updates.status = "PROCESSING";
+      } else if (action === "reject") {
+        updates.status = "REJECTED";
+        updates.rejectionReason = rejectionReason || "Rejected by admin";
+        
+        await db.update(wallets)
+          .set({
+            coinBalance: sql`${wallets.coinBalance} + ${payout.amountCoins}`,
+          })
+          .where(eq(wallets.userId, payout.userId));
+      } else if (action === "complete") {
+        if (payout.status !== "PROCESSING") {
+          return res.status(400).json({ message: "Can only complete requests that are processing" });
+        }
+        updates.status = "COMPLETED";
+        updates.paymentReference = paymentReference;
+      }
+
+      if (adminNotes) {
+        updates.adminNotes = adminNotes;
+      }
+
+      const [updatedPayout] = await db.update(withdrawalRequests)
+        .set(updates)
+        .where(eq(withdrawalRequests.id, req.params.id))
+        .returning();
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "withdrawal_request",
+        req.params.id,
+        { 
+          action: `payout_${action}`, 
+          previousStatus: payout.status,
+          newStatus: updates.status,
+          userId: payout.userId,
+          amountCoins: payout.amountCoins,
+          amountRands: payout.amountRands,
+          paymentReference,
+          rejectionReason,
+        },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ 
+        message: `Payout ${action === "approve" ? "approved" : action === "reject" ? "rejected" : "completed"} successfully`,
+        payout: updatedPayout
+      });
+    } catch (error: any) {
+      console.error("Failed to process payout:", error);
+      res.status(500).json({ message: error?.message || "Failed to process payout" });
     }
   });
 

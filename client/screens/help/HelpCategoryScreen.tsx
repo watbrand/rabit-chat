@@ -413,7 +413,7 @@ const styles = StyleSheet.create({
   subcategoryName: {
     fontSize: 15,
     fontWeight: "600",
-    marginBottom: 2,
+    marginBottom: Spacing.xs,
   },
   subcategoryCount: {
     fontSize: 12,

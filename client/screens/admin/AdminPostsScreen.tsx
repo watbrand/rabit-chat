@@ -723,7 +723,7 @@ const styles = StyleSheet.create({
   },
   postDate: {
     fontSize: 12,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   postContent: {
     fontSize: 15,
@@ -742,7 +742,7 @@ const styles = StyleSheet.create({
   },
   hiddenReasonLabel: {
     fontSize: 12,
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   hiddenReasonText: {
     fontSize: 14,

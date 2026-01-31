@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
   postTitle: {
     fontSize: 16,
     fontWeight: "600",
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   postMeta: {
     flexDirection: "row",

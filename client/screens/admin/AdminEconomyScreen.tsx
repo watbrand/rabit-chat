@@ -1092,7 +1092,7 @@ const styles = StyleSheet.create({
   giftPrices: {
     flexDirection: "row",
     gap: Spacing.sm,
-    marginTop: 4,
+    marginTop: Spacing.xs,
   },
   giftPrice: {
     fontSize: 13,
@@ -1133,7 +1133,7 @@ const styles = StyleSheet.create({
   bundleDetails: {
     flexDirection: "row",
     gap: Spacing.sm,
-    marginTop: 4,
+    marginTop: Spacing.xs,
   },
   bundleCoins: {
     fontSize: 13,
@@ -1261,7 +1261,7 @@ const styles = StyleSheet.create({
   },
   emergencyDesc: {
     fontSize: 13,
-    marginTop: 4,
+    marginTop: Spacing.xs,
   },
   emergencyButton: {
     flexDirection: "row",

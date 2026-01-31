@@ -531,7 +531,7 @@ const styles = StyleSheet.create({
   },
   commentDate: {
     fontSize: 12,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   commentContent: {
     fontSize: 14,
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
   },
   hiddenReasonLabel: {
     fontSize: 12,
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   hiddenReasonText: {
     fontSize: 14,

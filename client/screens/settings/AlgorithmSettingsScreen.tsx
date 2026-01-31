@@ -500,7 +500,7 @@ const styles = StyleSheet.create({
   infoTitle: {
     fontSize: 16,
     fontWeight: "600",
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   infoDescription: {
     fontSize: 14,
@@ -579,7 +579,7 @@ const styles = StyleSheet.create({
   interestName: {
     fontSize: 15,
     fontWeight: "600",
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   affinityRow: {
     flexDirection: "row",
@@ -652,7 +652,7 @@ const styles = StyleSheet.create({
   },
   preferenceDescription: {
     fontSize: 12,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
   statsCard: {
     padding: Spacing.lg,

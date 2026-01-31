@@ -849,7 +849,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   ticketSubject: {
-    marginBottom: 2,
+    marginBottom: Spacing.xs,
   },
   ticketUsername: {
     fontSize: 12,

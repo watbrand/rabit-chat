@@ -671,7 +671,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.md,
     borderTopWidth: 1,
-    marginTop: -1,
+    marginTop: -Spacing.xs / 4,
   },
   tipContent: {
     fontSize: 13,

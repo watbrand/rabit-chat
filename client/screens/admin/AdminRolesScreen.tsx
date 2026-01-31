@@ -646,7 +646,7 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 11,
-    marginBottom: 2,
+    marginBottom: Spacing.xs,
   },
   detailValue: {
     fontSize: 16,
@@ -758,6 +758,6 @@ const styles = StyleSheet.create({
   },
   permissionKey: {
     fontSize: 12,
-    marginTop: 2,
+    marginTop: Spacing.xs,
   },
 });
