@@ -7068,6 +7068,469 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===== ADMIN CHAT FOLDERS MANAGEMENT =====
+
+  // Get chat folder statistics
+  app.get("/api/admin/messaging/chat-folders/stats", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "messaging.view")) {
+        return res.status(403).json({ message: "Missing permission: messaging.view" });
+      }
+
+      // Total folders created
+      const [totalResult] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(chatFolders);
+      const totalFolders = totalResult?.count || 0;
+
+      // Total users with folders
+      const [usersWithFoldersResult] = await db
+        .select({ count: sql<number>`count(distinct ${chatFolders.userId})::int` })
+        .from(chatFolders);
+      const usersWithFolders = usersWithFoldersResult?.count || 0;
+
+      // Average folders per user (only users who have folders)
+      const averageFoldersPerUser = usersWithFolders > 0 
+        ? Math.round((totalFolders / usersWithFolders) * 100) / 100 
+        : 0;
+
+      // Most popular folder names
+      const popularNames = await db
+        .select({
+          name: chatFolders.name,
+          count: sql<number>`count(*)::int`
+        })
+        .from(chatFolders)
+        .groupBy(chatFolders.name)
+        .orderBy(sql`count(*) desc`)
+        .limit(10);
+
+      // Most popular icons
+      const popularIcons = await db
+        .select({
+          iconName: chatFolders.iconName,
+          count: sql<number>`count(*)::int`
+        })
+        .from(chatFolders)
+        .where(sql`${chatFolders.iconName} is not null`)
+        .groupBy(chatFolders.iconName)
+        .orderBy(sql`count(*) desc`)
+        .limit(10);
+
+      // Users with most folders
+      const topUsers = await db
+        .select({
+          userId: chatFolders.userId,
+          folderCount: sql<number>`count(*)::int`,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl
+        })
+        .from(chatFolders)
+        .innerJoin(users, eq(chatFolders.userId, users.id))
+        .groupBy(chatFolders.userId, users.username, users.displayName, users.avatarUrl)
+        .orderBy(sql`count(*) desc`)
+        .limit(10);
+
+      // Total conversations in folders
+      const [conversationsResult] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(chatFolderConversations);
+      const totalConversationsInFolders = conversationsResult?.count || 0;
+
+      // Folders created in last 7 days
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const [recentResult] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(chatFolders)
+        .where(gte(chatFolders.createdAt, sevenDaysAgo));
+      const foldersCreatedLast7Days = recentResult?.count || 0;
+
+      res.json({
+        totalFolders,
+        usersWithFolders,
+        averageFoldersPerUser,
+        totalConversationsInFolders,
+        foldersCreatedLast7Days,
+        popularNames,
+        popularIcons,
+        topUsers
+      });
+    } catch (error) {
+      console.error("Failed to get chat folder stats:", error);
+      res.status(500).json({ message: "Failed to get chat folder statistics" });
+    }
+  });
+
+  // List all chat folders (pagination, with owner info)
+  app.get("/api/admin/messaging/chat-folders", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "messaging.view")) {
+        return res.status(403).json({ message: "Missing permission: messaging.view" });
+      }
+
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+      const search = req.query.search as string | undefined;
+
+      let query = db
+        .select({
+          id: chatFolders.id,
+          userId: chatFolders.userId,
+          name: chatFolders.name,
+          iconName: chatFolders.iconName,
+          sortOrder: chatFolders.sortOrder,
+          createdAt: chatFolders.createdAt,
+          ownerUsername: users.username,
+          ownerDisplayName: users.displayName,
+          ownerAvatarUrl: users.avatarUrl,
+          conversationCount: sql<number>`(
+            SELECT count(*)::int FROM chat_folder_conversations 
+            WHERE chat_folder_conversations.folder_id = ${chatFolders.id}
+          )`
+        })
+        .from(chatFolders)
+        .innerJoin(users, eq(chatFolders.userId, users.id))
+        .orderBy(desc(chatFolders.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      // Apply search filter if provided
+      const folders = search
+        ? await db
+            .select({
+              id: chatFolders.id,
+              userId: chatFolders.userId,
+              name: chatFolders.name,
+              iconName: chatFolders.iconName,
+              sortOrder: chatFolders.sortOrder,
+              createdAt: chatFolders.createdAt,
+              ownerUsername: users.username,
+              ownerDisplayName: users.displayName,
+              ownerAvatarUrl: users.avatarUrl,
+              conversationCount: sql<number>`(
+                SELECT count(*)::int FROM chat_folder_conversations 
+                WHERE chat_folder_conversations.folder_id = ${chatFolders.id}
+              )`
+            })
+            .from(chatFolders)
+            .innerJoin(users, eq(chatFolders.userId, users.id))
+            .where(
+              or(
+                ilike(chatFolders.name, `%${search}%`),
+                ilike(users.username, `%${search}%`),
+                ilike(users.displayName, `%${search}%`)
+              )
+            )
+            .orderBy(desc(chatFolders.createdAt))
+            .limit(limit)
+            .offset(offset)
+        : await query;
+
+      // Get total count for pagination
+      const [countResult] = search
+        ? await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(chatFolders)
+            .innerJoin(users, eq(chatFolders.userId, users.id))
+            .where(
+              or(
+                ilike(chatFolders.name, `%${search}%`),
+                ilike(users.username, `%${search}%`),
+                ilike(users.displayName, `%${search}%`)
+              )
+            )
+        : await db.select({ count: sql<number>`count(*)::int` }).from(chatFolders);
+
+      res.json({
+        folders,
+        total: countResult?.count || 0,
+        limit,
+        offset
+      });
+    } catch (error) {
+      console.error("Failed to get chat folders:", error);
+      res.status(500).json({ message: "Failed to get chat folders" });
+    }
+  });
+
+  // Get all folders for a specific user
+  app.get("/api/admin/messaging/chat-folders/user/:userId", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "messaging.view")) {
+        return res.status(403).json({ message: "Missing permission: messaging.view" });
+      }
+
+      const targetUserId = req.params.userId;
+
+      // Verify user exists
+      const targetUser = await storage.getUser(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const folders = await db
+        .select({
+          id: chatFolders.id,
+          userId: chatFolders.userId,
+          name: chatFolders.name,
+          iconName: chatFolders.iconName,
+          sortOrder: chatFolders.sortOrder,
+          createdAt: chatFolders.createdAt,
+          conversationCount: sql<number>`(
+            SELECT count(*)::int FROM chat_folder_conversations 
+            WHERE chat_folder_conversations.folder_id = ${chatFolders.id}
+          )`
+        })
+        .from(chatFolders)
+        .where(eq(chatFolders.userId, targetUserId))
+        .orderBy(asc(chatFolders.sortOrder));
+
+      res.json({
+        user: {
+          id: targetUser.id,
+          username: targetUser.username,
+          displayName: targetUser.displayName,
+          avatarUrl: targetUser.avatarUrl
+        },
+        folders,
+        totalFolders: folders.length
+      });
+    } catch (error) {
+      console.error("Failed to get user chat folders:", error);
+      res.status(500).json({ message: "Failed to get user chat folders" });
+    }
+  });
+
+  // Get folder details with conversations
+  app.get("/api/admin/messaging/chat-folders/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "messaging.view")) {
+        return res.status(403).json({ message: "Missing permission: messaging.view" });
+      }
+
+      const folderId = req.params.id;
+
+      // Get folder with owner info
+      const [folder] = await db
+        .select({
+          id: chatFolders.id,
+          userId: chatFolders.userId,
+          name: chatFolders.name,
+          iconName: chatFolders.iconName,
+          sortOrder: chatFolders.sortOrder,
+          createdAt: chatFolders.createdAt,
+          ownerUsername: users.username,
+          ownerDisplayName: users.displayName,
+          ownerAvatarUrl: users.avatarUrl
+        })
+        .from(chatFolders)
+        .innerJoin(users, eq(chatFolders.userId, users.id))
+        .where(eq(chatFolders.id, folderId));
+
+      if (!folder) {
+        return res.status(404).json({ message: "Chat folder not found" });
+      }
+
+      // Get conversations in this folder
+      const folderConversations = await db
+        .select({
+          id: chatFolderConversations.id,
+          conversationId: chatFolderConversations.conversationId,
+          addedAt: chatFolderConversations.createdAt,
+          participant1Id: conversations.participant1Id,
+          participant2Id: conversations.participant2Id,
+          lastMessageAt: conversations.lastMessageAt
+        })
+        .from(chatFolderConversations)
+        .innerJoin(conversations, eq(chatFolderConversations.conversationId, conversations.id))
+        .where(eq(chatFolderConversations.folderId, folderId))
+        .orderBy(desc(chatFolderConversations.createdAt));
+
+      // Get participant details for each conversation
+      const conversationsWithParticipants = await Promise.all(
+        folderConversations.map(async (conv) => {
+          const [p1, p2] = await Promise.all([
+            storage.getUser(conv.participant1Id),
+            storage.getUser(conv.participant2Id)
+          ]);
+          return {
+            ...conv,
+            participant1: p1 ? {
+              id: p1.id,
+              username: p1.username,
+              displayName: p1.displayName,
+              avatarUrl: p1.avatarUrl
+            } : null,
+            participant2: p2 ? {
+              id: p2.id,
+              username: p2.username,
+              displayName: p2.displayName,
+              avatarUrl: p2.avatarUrl
+            } : null
+          };
+        })
+      );
+
+      res.json({
+        folder: {
+          ...folder,
+          owner: {
+            id: folder.userId,
+            username: folder.ownerUsername,
+            displayName: folder.ownerDisplayName,
+            avatarUrl: folder.ownerAvatarUrl
+          }
+        },
+        conversations: conversationsWithParticipants,
+        conversationCount: folderConversations.length
+      });
+    } catch (error) {
+      console.error("Failed to get chat folder details:", error);
+      res.status(500).json({ message: "Failed to get chat folder details" });
+    }
+  });
+
+  // Delete a folder (admin moderation)
+  app.delete("/api/admin/messaging/chat-folders/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "messaging.moderate")) {
+        return res.status(403).json({ message: "Missing permission: messaging.moderate" });
+      }
+
+      const folderId = req.params.id;
+      const { reason } = req.body;
+
+      // Get folder details before deletion
+      const [folder] = await db
+        .select()
+        .from(chatFolders)
+        .where(eq(chatFolders.id, folderId));
+
+      if (!folder) {
+        return res.status(404).json({ message: "Chat folder not found" });
+      }
+
+      // Get conversation count for audit log
+      const [convCount] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(chatFolderConversations)
+        .where(eq(chatFolderConversations.folderId, folderId));
+
+      // Delete folder (cascade will remove folder conversations)
+      await db.delete(chatFolders).where(eq(chatFolders.id, folderId));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "chat_folder",
+        folderId,
+        { 
+          name: folder.name, 
+          userId: folder.userId, 
+          iconName: folder.iconName,
+          conversationCount: convCount?.count || 0,
+          reason: reason || "Admin moderation"
+        },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      res.json({ message: "Chat folder deleted successfully" });
+    } catch (error) {
+      console.error("Failed to delete chat folder:", error);
+      res.status(500).json({ message: "Failed to delete chat folder" });
+    }
+  });
+
+  // Update folder details (name, icon)
+  app.patch("/api/admin/messaging/chat-folders/:id", requireAdmin, async (req, res) => {
+    try {
+      const adminUser = await storage.getUser(req.session.userId!);
+      if (!await hasRbacPermission(adminUser!, "messaging.moderate")) {
+        return res.status(403).json({ message: "Missing permission: messaging.moderate" });
+      }
+
+      const folderId = req.params.id;
+      const { name, iconName, sortOrder } = req.body;
+
+      // Get existing folder
+      const [existingFolder] = await db
+        .select()
+        .from(chatFolders)
+        .where(eq(chatFolders.id, folderId));
+
+      if (!existingFolder) {
+        return res.status(404).json({ message: "Chat folder not found" });
+      }
+
+      // Build update object
+      const updateData: Partial<{ name: string; iconName: string | null; sortOrder: number }> = {};
+      if (name !== undefined && name.trim()) {
+        if (name.length > 50) {
+          return res.status(400).json({ message: "Folder name cannot exceed 50 characters" });
+        }
+        updateData.name = name.trim();
+      }
+      if (iconName !== undefined) {
+        updateData.iconName = iconName || null;
+      }
+      if (sortOrder !== undefined && typeof sortOrder === "number") {
+        updateData.sortOrder = sortOrder;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update" });
+      }
+
+      // Update folder
+      const [updatedFolder] = await db
+        .update(chatFolders)
+        .set(updateData)
+        .where(eq(chatFolders.id, folderId))
+        .returning();
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "chat_folder",
+        folderId,
+        { 
+          previousValues: {
+            name: existingFolder.name,
+            iconName: existingFolder.iconName,
+            sortOrder: existingFolder.sortOrder
+          },
+          newValues: updateData,
+          userId: existingFolder.userId
+        },
+        req.ip,
+        req.headers["user-agent"]
+      );
+
+      // Get owner info for response
+      const owner = await storage.getUser(updatedFolder.userId);
+
+      res.json({
+        ...updatedFolder,
+        owner: owner ? {
+          id: owner.id,
+          username: owner.username,
+          displayName: owner.displayName,
+          avatarUrl: owner.avatarUrl
+        } : null
+      });
+    } catch (error) {
+      console.error("Failed to update chat folder:", error);
+      res.status(500).json({ message: "Failed to update chat folder" });
+    }
+  });
+
   // ===== ADMIN PLATFORM ANALYTICS =====
 
   // Get platform analytics overview
@@ -18463,6 +18926,555 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===== ADMIN: SOCIAL FEATURES (POKES, BFF, CLOSE FRIENDS) =====
+
+  // GET /api/admin/social/pokes/stats - Get pokes statistics
+  app.get("/api/admin/social/pokes/stats", requireAdmin, async (req, res) => {
+    try {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      const [stats] = await db.select({
+        totalPokes: sql<number>`COUNT(*)::int`,
+        todayPokes: sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today})::int`,
+        weekPokes: sql<number>`COUNT(*) FILTER (WHERE created_at >= ${weekAgo})::int`,
+        seenPokes: sql<number>`COUNT(*) FILTER (WHERE seen_at IS NOT NULL)::int`,
+        unseenPokes: sql<number>`COUNT(*) FILTER (WHERE seen_at IS NULL)::int`,
+      }).from(pokes);
+
+      const topPokers = await db.select({
+        userId: pokes.senderId,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        pokeCount: sql<number>`COUNT(*)::int`,
+      })
+      .from(pokes)
+      .innerJoin(users, eq(pokes.senderId, users.id))
+      .groupBy(pokes.senderId, users.id, users.username, users.displayName, users.avatarUrl)
+      .orderBy(desc(sql`COUNT(*)`))
+      .limit(10);
+
+      const topPoked = await db.select({
+        userId: pokes.recipientId,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        pokeCount: sql<number>`COUNT(*)::int`,
+      })
+      .from(pokes)
+      .innerJoin(users, eq(pokes.recipientId, users.id))
+      .groupBy(pokes.recipientId, users.id, users.username, users.displayName, users.avatarUrl)
+      .orderBy(desc(sql`COUNT(*)`))
+      .limit(10);
+
+      res.json({
+        ...stats,
+        topPokers,
+        topPoked,
+      });
+    } catch (error: any) {
+      console.error("Failed to get pokes stats:", error);
+      res.status(500).json({ message: error.message || "Failed to get pokes statistics" });
+    }
+  });
+
+  // GET /api/admin/social/pokes - List all pokes with sender/receiver info
+  app.get("/api/admin/social/pokes", requireAdmin, async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+      const userId = req.query.userId as string | undefined;
+
+      const senderAlias = db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      }).from(users).as("sender");
+
+      const recipientAlias = db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      }).from(users).as("recipient");
+
+      let whereCondition = undefined;
+      if (userId) {
+        whereCondition = or(eq(pokes.senderId, userId), eq(pokes.recipientId, userId));
+      }
+
+      const pokesList = await db.select({
+        id: pokes.id,
+        senderId: pokes.senderId,
+        recipientId: pokes.recipientId,
+        pokeType: pokes.pokeType,
+        seenAt: pokes.seenAt,
+        createdAt: pokes.createdAt,
+        senderUsername: senderAlias.username,
+        senderDisplayName: senderAlias.displayName,
+        senderAvatarUrl: senderAlias.avatarUrl,
+        recipientUsername: recipientAlias.username,
+        recipientDisplayName: recipientAlias.displayName,
+        recipientAvatarUrl: recipientAlias.avatarUrl,
+      })
+      .from(pokes)
+      .innerJoin(senderAlias, eq(pokes.senderId, senderAlias.id))
+      .innerJoin(recipientAlias, eq(pokes.recipientId, recipientAlias.id))
+      .where(whereCondition)
+      .orderBy(desc(pokes.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+      const [countResult] = await db.select({
+        count: sql<number>`COUNT(*)::int`,
+      }).from(pokes).where(whereCondition);
+
+      res.json({
+        pokes: pokesList.map(p => ({
+          id: p.id,
+          pokeType: p.pokeType,
+          seenAt: p.seenAt,
+          createdAt: p.createdAt,
+          sender: {
+            id: p.senderId,
+            username: p.senderUsername,
+            displayName: p.senderDisplayName,
+            avatarUrl: p.senderAvatarUrl,
+          },
+          recipient: {
+            id: p.recipientId,
+            username: p.recipientUsername,
+            displayName: p.recipientDisplayName,
+            avatarUrl: p.recipientAvatarUrl,
+          },
+        })),
+        total: countResult?.count || 0,
+        limit,
+        offset,
+      });
+    } catch (error: any) {
+      console.error("Failed to list pokes:", error);
+      res.status(500).json({ message: error.message || "Failed to list pokes" });
+    }
+  });
+
+  // DELETE /api/admin/social/pokes/:id - Delete a poke
+  app.delete("/api/admin/social/pokes/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const [deletedPoke] = await db.delete(pokes).where(eq(pokes.id, id)).returning();
+      
+      if (!deletedPoke) {
+        return res.status(404).json({ message: "Poke not found" });
+      }
+
+      res.json({ success: true, deletedPoke });
+    } catch (error: any) {
+      console.error("Failed to delete poke:", error);
+      res.status(500).json({ message: error.message || "Failed to delete poke" });
+    }
+  });
+
+  // GET /api/admin/social/pokes/user/:userId - Get all pokes for a specific user
+  app.get("/api/admin/social/pokes/user/:userId", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const sentPokes = await db.select({
+        id: pokes.id,
+        recipientId: pokes.recipientId,
+        pokeType: pokes.pokeType,
+        seenAt: pokes.seenAt,
+        createdAt: pokes.createdAt,
+        recipientUsername: users.username,
+        recipientDisplayName: users.displayName,
+        recipientAvatarUrl: users.avatarUrl,
+      })
+      .from(pokes)
+      .innerJoin(users, eq(pokes.recipientId, users.id))
+      .where(eq(pokes.senderId, userId))
+      .orderBy(desc(pokes.createdAt));
+
+      const receivedPokes = await db.select({
+        id: pokes.id,
+        senderId: pokes.senderId,
+        pokeType: pokes.pokeType,
+        seenAt: pokes.seenAt,
+        createdAt: pokes.createdAt,
+        senderUsername: users.username,
+        senderDisplayName: users.displayName,
+        senderAvatarUrl: users.avatarUrl,
+      })
+      .from(pokes)
+      .innerJoin(users, eq(pokes.senderId, users.id))
+      .where(eq(pokes.recipientId, userId))
+      .orderBy(desc(pokes.createdAt));
+
+      res.json({
+        user: { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl },
+        sent: sentPokes.map(p => ({
+          id: p.id,
+          pokeType: p.pokeType,
+          seenAt: p.seenAt,
+          createdAt: p.createdAt,
+          recipient: { id: p.recipientId, username: p.recipientUsername, displayName: p.recipientDisplayName, avatarUrl: p.recipientAvatarUrl },
+        })),
+        received: receivedPokes.map(p => ({
+          id: p.id,
+          pokeType: p.pokeType,
+          seenAt: p.seenAt,
+          createdAt: p.createdAt,
+          sender: { id: p.senderId, username: p.senderUsername, displayName: p.senderDisplayName, avatarUrl: p.senderAvatarUrl },
+        })),
+        totalSent: sentPokes.length,
+        totalReceived: receivedPokes.length,
+      });
+    } catch (error: any) {
+      console.error("Failed to get user pokes:", error);
+      res.status(500).json({ message: error.message || "Failed to get user pokes" });
+    }
+  });
+
+  // GET /api/admin/social/bff/stats - Get BFF statistics
+  app.get("/api/admin/social/bff/stats", requireAdmin, async (req, res) => {
+    try {
+      const [stats] = await db.select({
+        totalPairs: sql<number>`COUNT(*)::int`,
+        avgStreak: sql<number>`COALESCE(AVG(streak_count), 0)::real`,
+        maxStreak: sql<number>`COALESCE(MAX(streak_count), 0)::int`,
+        activeToday: sql<number>`COUNT(*) FILTER (WHERE last_interaction_at >= CURRENT_DATE)::int`,
+      }).from(bffStatus);
+
+      const longestStreaks = await db.select({
+        id: bffStatus.id,
+        streakCount: bffStatus.streakCount,
+        lastInteractionAt: bffStatus.lastInteractionAt,
+        becameBffAt: bffStatus.becameBffAt,
+        userId: bffStatus.userId,
+        bffId: bffStatus.bffId,
+      })
+      .from(bffStatus)
+      .orderBy(desc(bffStatus.streakCount))
+      .limit(10);
+
+      const longestStreaksWithUsers = await Promise.all(longestStreaks.map(async (bff) => {
+        const [user, bffUser] = await Promise.all([
+          storage.getUser(bff.userId),
+          storage.getUser(bff.bffId),
+        ]);
+        return {
+          id: bff.id,
+          streakCount: bff.streakCount,
+          lastInteractionAt: bff.lastInteractionAt,
+          becameBffAt: bff.becameBffAt,
+          user: user ? { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl } : null,
+          bff: bffUser ? { id: bffUser.id, username: bffUser.username, displayName: bffUser.displayName, avatarUrl: bffUser.avatarUrl } : null,
+        };
+      }));
+
+      res.json({
+        totalPairs: stats?.totalPairs || 0,
+        avgStreak: stats?.avgStreak || 0,
+        maxStreak: stats?.maxStreak || 0,
+        activeToday: stats?.activeToday || 0,
+        longestStreaks: longestStreaksWithUsers,
+      });
+    } catch (error: any) {
+      console.error("Failed to get BFF stats:", error);
+      res.status(500).json({ message: error.message || "Failed to get BFF statistics" });
+    }
+  });
+
+  // GET /api/admin/social/bff - List all BFF relationships with user info
+  app.get("/api/admin/social/bff", requireAdmin, async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const bffList = await db.select()
+        .from(bffStatus)
+        .orderBy(desc(bffStatus.streakCount))
+        .limit(limit)
+        .offset(offset);
+
+      const [countResult] = await db.select({
+        count: sql<number>`COUNT(*)::int`,
+      }).from(bffStatus);
+
+      const bffWithUsers = await Promise.all(bffList.map(async (bff) => {
+        const [user, bffUser] = await Promise.all([
+          storage.getUser(bff.userId),
+          storage.getUser(bff.bffId),
+        ]);
+        return {
+          id: bff.id,
+          streakCount: bff.streakCount,
+          lastInteractionAt: bff.lastInteractionAt,
+          becameBffAt: bff.becameBffAt,
+          user: user ? { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl } : null,
+          bff: bffUser ? { id: bffUser.id, username: bffUser.username, displayName: bffUser.displayName, avatarUrl: bffUser.avatarUrl } : null,
+        };
+      }));
+
+      res.json({
+        bffRelationships: bffWithUsers,
+        total: countResult?.count || 0,
+        limit,
+        offset,
+      });
+    } catch (error: any) {
+      console.error("Failed to list BFF relationships:", error);
+      res.status(500).json({ message: error.message || "Failed to list BFF relationships" });
+    }
+  });
+
+  // DELETE /api/admin/social/bff/:id - Remove a BFF relationship
+  app.delete("/api/admin/social/bff/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const [deletedBff] = await db.delete(bffStatus).where(eq(bffStatus.id, id)).returning();
+      
+      if (!deletedBff) {
+        return res.status(404).json({ message: "BFF relationship not found" });
+      }
+
+      res.json({ success: true, deletedBff });
+    } catch (error: any) {
+      console.error("Failed to delete BFF relationship:", error);
+      res.status(500).json({ message: error.message || "Failed to delete BFF relationship" });
+    }
+  });
+
+  // GET /api/admin/social/bff/user/:userId - Get BFF status for a specific user
+  app.get("/api/admin/social/bff/user/:userId", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const bffRelationships = await db.select()
+        .from(bffStatus)
+        .where(or(eq(bffStatus.userId, userId), eq(bffStatus.bffId, userId)))
+        .orderBy(desc(bffStatus.streakCount));
+
+      const bffWithUsers = await Promise.all(bffRelationships.map(async (bff) => {
+        const otherUserId = bff.userId === userId ? bff.bffId : bff.userId;
+        const otherUser = await storage.getUser(otherUserId);
+        return {
+          id: bff.id,
+          streakCount: bff.streakCount,
+          lastInteractionAt: bff.lastInteractionAt,
+          becameBffAt: bff.becameBffAt,
+          bffWith: otherUser ? { id: otherUser.id, username: otherUser.username, displayName: otherUser.displayName, avatarUrl: otherUser.avatarUrl } : null,
+        };
+      }));
+
+      res.json({
+        user: { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl },
+        bffRelationships: bffWithUsers,
+        totalBffs: bffRelationships.length,
+      });
+    } catch (error: any) {
+      console.error("Failed to get user BFF status:", error);
+      res.status(500).json({ message: error.message || "Failed to get user BFF status" });
+    }
+  });
+
+  // GET /api/admin/social/close-friends/stats - Get close friends statistics
+  app.get("/api/admin/social/close-friends/stats", requireAdmin, async (req, res) => {
+    try {
+      const [stats] = await db.select({
+        totalRelationships: sql<number>`COUNT(*)::int`,
+        uniqueUsers: sql<number>`COUNT(DISTINCT user_id)::int`,
+      }).from(closeFriends);
+
+      const avgPerUser = stats?.uniqueUsers && stats.uniqueUsers > 0 
+        ? Number((stats.totalRelationships / stats.uniqueUsers).toFixed(2))
+        : 0;
+
+      const topUsers = await db.select({
+        userId: closeFriends.userId,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        closeFriendsCount: sql<number>`COUNT(*)::int`,
+      })
+      .from(closeFriends)
+      .innerJoin(users, eq(closeFriends.userId, users.id))
+      .groupBy(closeFriends.userId, users.id, users.username, users.displayName, users.avatarUrl)
+      .orderBy(desc(sql`COUNT(*)`))
+      .limit(10);
+
+      res.json({
+        totalRelationships: stats?.totalRelationships || 0,
+        uniqueUsers: stats?.uniqueUsers || 0,
+        avgPerUser,
+        topUsers,
+      });
+    } catch (error: any) {
+      console.error("Failed to get close friends stats:", error);
+      res.status(500).json({ message: error.message || "Failed to get close friends statistics" });
+    }
+  });
+
+  // GET /api/admin/social/close-friends - List all close friend relationships
+  app.get("/api/admin/social/close-friends", requireAdmin, async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const userAlias = db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      }).from(users).as("owner");
+
+      const friendAlias = db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      }).from(users).as("friend");
+
+      const cfList = await db.select({
+        id: closeFriends.id,
+        userId: closeFriends.userId,
+        friendId: closeFriends.friendId,
+        createdAt: closeFriends.createdAt,
+        ownerUsername: userAlias.username,
+        ownerDisplayName: userAlias.displayName,
+        ownerAvatarUrl: userAlias.avatarUrl,
+        friendUsername: friendAlias.username,
+        friendDisplayName: friendAlias.displayName,
+        friendAvatarUrl: friendAlias.avatarUrl,
+      })
+      .from(closeFriends)
+      .innerJoin(userAlias, eq(closeFriends.userId, userAlias.id))
+      .innerJoin(friendAlias, eq(closeFriends.friendId, friendAlias.id))
+      .orderBy(desc(closeFriends.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+      const [countResult] = await db.select({
+        count: sql<number>`COUNT(*)::int`,
+      }).from(closeFriends);
+
+      res.json({
+        closeFriends: cfList.map(cf => ({
+          id: cf.id,
+          createdAt: cf.createdAt,
+          user: {
+            id: cf.userId,
+            username: cf.ownerUsername,
+            displayName: cf.ownerDisplayName,
+            avatarUrl: cf.ownerAvatarUrl,
+          },
+          friend: {
+            id: cf.friendId,
+            username: cf.friendUsername,
+            displayName: cf.friendDisplayName,
+            avatarUrl: cf.friendAvatarUrl,
+          },
+        })),
+        total: countResult?.count || 0,
+        limit,
+        offset,
+      });
+    } catch (error: any) {
+      console.error("Failed to list close friends:", error);
+      res.status(500).json({ message: error.message || "Failed to list close friends" });
+    }
+  });
+
+  // GET /api/admin/social/close-friends/user/:userId - Get close friends for a specific user
+  app.get("/api/admin/social/close-friends/user/:userId", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const userCloseFriends = await db.select({
+        id: closeFriends.id,
+        friendId: closeFriends.friendId,
+        createdAt: closeFriends.createdAt,
+        friendUsername: users.username,
+        friendDisplayName: users.displayName,
+        friendAvatarUrl: users.avatarUrl,
+      })
+      .from(closeFriends)
+      .innerJoin(users, eq(closeFriends.friendId, users.id))
+      .where(eq(closeFriends.userId, userId))
+      .orderBy(desc(closeFriends.createdAt));
+
+      const addedByOthers = await db.select({
+        id: closeFriends.id,
+        userId: closeFriends.userId,
+        createdAt: closeFriends.createdAt,
+        ownerUsername: users.username,
+        ownerDisplayName: users.displayName,
+        ownerAvatarUrl: users.avatarUrl,
+      })
+      .from(closeFriends)
+      .innerJoin(users, eq(closeFriends.userId, users.id))
+      .where(eq(closeFriends.friendId, userId))
+      .orderBy(desc(closeFriends.createdAt));
+
+      res.json({
+        user: { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl },
+        closeFriends: userCloseFriends.map(cf => ({
+          id: cf.id,
+          createdAt: cf.createdAt,
+          friend: { id: cf.friendId, username: cf.friendUsername, displayName: cf.friendDisplayName, avatarUrl: cf.friendAvatarUrl },
+        })),
+        addedByOthers: addedByOthers.map(cf => ({
+          id: cf.id,
+          createdAt: cf.createdAt,
+          addedBy: { id: cf.userId, username: cf.ownerUsername, displayName: cf.ownerDisplayName, avatarUrl: cf.ownerAvatarUrl },
+        })),
+        totalCloseFriends: userCloseFriends.length,
+        addedByOthersCount: addedByOthers.length,
+      });
+    } catch (error: any) {
+      console.error("Failed to get user close friends:", error);
+      res.status(500).json({ message: error.message || "Failed to get user close friends" });
+    }
+  });
+
+  // DELETE /api/admin/social/close-friends/:id - Remove a close friend relationship
+  app.delete("/api/admin/social/close-friends/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const [deletedCf] = await db.delete(closeFriends).where(eq(closeFriends.id, id)).returning();
+      
+      if (!deletedCf) {
+        return res.status(404).json({ message: "Close friend relationship not found" });
+      }
+
+      res.json({ success: true, deletedCloseFriend: deletedCf });
+    } catch (error: any) {
+      console.error("Failed to delete close friend relationship:", error);
+      res.status(500).json({ message: error.message || "Failed to delete close friend relationship" });
+    }
+  });
+
   // ===== ADMIN: ECONOMY DASHBOARD =====
 
   // GET /api/admin/economy/stats - Get economy statistics
@@ -22967,6 +23979,676 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Failed to add reaction:", error);
       res.status(500).json({ message: error.message || "Failed to add reaction" });
+    }
+  });
+
+  // ===== ADMIN: DIGITAL WELLNESS (FOCUS MODE) ENDPOINTS =====
+
+  // GET /api/admin/wellness/stats - Platform-wide wellness statistics
+  app.get("/api/admin/wellness/stats", requireAdmin, async (req, res) => {
+    try {
+      // Total users with focus mode enabled
+      const [enabledCount] = await db.select({
+        count: sql<number>`count(*)::int`
+      })
+        .from(focusModeSettings)
+        .where(eq(focusModeSettings.isEnabled, true));
+
+      // Average daily limit set by users (only those who have set a limit)
+      const [avgLimit] = await db.select({
+        average: sql<number>`ROUND(AVG(${focusModeSettings.dailyLimitMinutes})::numeric, 1)::float`
+      })
+        .from(focusModeSettings)
+        .where(sql`${focusModeSettings.dailyLimitMinutes} IS NOT NULL`);
+
+      // Most common quiet hours - aggregate by hour ranges
+      const quietHoursData = await db.select({
+        quietHoursStart: focusModeSettings.quietHoursStart,
+        quietHoursEnd: focusModeSettings.quietHoursEnd,
+        count: sql<number>`count(*)::int`
+      })
+        .from(focusModeSettings)
+        .where(sql`${focusModeSettings.quietHoursStart} IS NOT NULL AND ${focusModeSettings.quietHoursEnd} IS NOT NULL`)
+        .groupBy(focusModeSettings.quietHoursStart, focusModeSettings.quietHoursEnd)
+        .orderBy(desc(sql`count(*)`))
+        .limit(5);
+
+      // Get today's date for usage comparison
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Users who exceeded their daily limits today
+      const exceededLimits = await db.select({
+        userId: usageStats.userId,
+        screenTimeMinutes: usageStats.screenTimeMinutes,
+        dailyLimitMinutes: focusModeSettings.dailyLimitMinutes,
+        username: users.username,
+        displayName: users.displayName,
+      })
+        .from(usageStats)
+        .innerJoin(focusModeSettings, eq(usageStats.userId, focusModeSettings.userId))
+        .innerJoin(users, eq(usageStats.userId, users.id))
+        .where(and(
+          gte(usageStats.date, today),
+          sql`${focusModeSettings.dailyLimitMinutes} IS NOT NULL`,
+          sql`${usageStats.screenTimeMinutes} > ${focusModeSettings.dailyLimitMinutes}`
+        ))
+        .orderBy(desc(sql`${usageStats.screenTimeMinutes} - ${focusModeSettings.dailyLimitMinutes}`))
+        .limit(10);
+
+      // Total users with focus mode settings
+      const [totalSettingsCount] = await db.select({
+        count: sql<number>`count(*)::int`
+      })
+        .from(focusModeSettings);
+
+      // Break reminder usage
+      const [breakReminderCount] = await db.select({
+        count: sql<number>`count(*)::int`
+      })
+        .from(focusModeSettings)
+        .where(sql`${focusModeSettings.breakReminderMinutes} IS NOT NULL`);
+
+      // Hide notification counts usage
+      const [hideNotificationsCount] = await db.select({
+        count: sql<number>`count(*)::int`
+      })
+        .from(focusModeSettings)
+        .where(eq(focusModeSettings.hideNotificationCounts, true));
+
+      res.json({
+        totalUsersWithSettings: totalSettingsCount?.count || 0,
+        focusModeEnabled: enabledCount?.count || 0,
+        averageDailyLimitMinutes: avgLimit?.average || null,
+        mostCommonQuietHours: quietHoursData,
+        usersExceededLimitsToday: exceededLimits,
+        breakReminderUsers: breakReminderCount?.count || 0,
+        hideNotificationCountsUsers: hideNotificationsCount?.count || 0,
+      });
+    } catch (error: any) {
+      console.error("Failed to get wellness stats:", error);
+      res.status(500).json({ message: error.message || "Failed to get wellness stats" });
+    }
+  });
+
+  // GET /api/admin/wellness/focus-mode - List all focus mode settings with pagination
+  app.get("/api/admin/wellness/focus-mode", requireAdmin, async (req, res) => {
+    try {
+      const { limit = "20", offset = "0", enabled, search } = req.query;
+      const limitNum = Math.min(parseInt(limit as string) || 20, 100);
+      const offsetNum = parseInt(offset as string) || 0;
+
+      let conditions: SQL[] = [];
+
+      if (enabled === "true") {
+        conditions.push(eq(focusModeSettings.isEnabled, true));
+      } else if (enabled === "false") {
+        conditions.push(eq(focusModeSettings.isEnabled, false));
+      }
+
+      if (search && typeof search === "string" && search.trim()) {
+        conditions.push(or(
+          ilike(users.username, `%${search.trim()}%`),
+          ilike(users.displayName, `%${search.trim()}%`)
+        )!);
+      }
+
+      const settings = await db.select({
+        id: focusModeSettings.id,
+        userId: focusModeSettings.userId,
+        isEnabled: focusModeSettings.isEnabled,
+        dailyLimitMinutes: focusModeSettings.dailyLimitMinutes,
+        breakReminderMinutes: focusModeSettings.breakReminderMinutes,
+        quietHoursStart: focusModeSettings.quietHoursStart,
+        quietHoursEnd: focusModeSettings.quietHoursEnd,
+        hideNotificationCounts: focusModeSettings.hideNotificationCounts,
+        updatedAt: focusModeSettings.updatedAt,
+        user: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          email: users.email,
+        },
+      })
+        .from(focusModeSettings)
+        .innerJoin(users, eq(focusModeSettings.userId, users.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(focusModeSettings.updatedAt))
+        .limit(limitNum)
+        .offset(offsetNum);
+
+      // Get total count
+      const [totalCount] = await db.select({
+        count: sql<number>`count(*)::int`
+      })
+        .from(focusModeSettings)
+        .innerJoin(users, eq(focusModeSettings.userId, users.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({
+        data: settings,
+        pagination: {
+          total: totalCount?.count || 0,
+          limit: limitNum,
+          offset: offsetNum,
+        },
+      });
+    } catch (error: any) {
+      console.error("Failed to list focus mode settings:", error);
+      res.status(500).json({ message: error.message || "Failed to list focus mode settings" });
+    }
+  });
+
+  // GET /api/admin/wellness/focus-mode/:userId - Get focus mode settings for specific user
+  app.get("/api/admin/wellness/focus-mode/:userId", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      const [settings] = await db.select({
+        id: focusModeSettings.id,
+        userId: focusModeSettings.userId,
+        isEnabled: focusModeSettings.isEnabled,
+        dailyLimitMinutes: focusModeSettings.dailyLimitMinutes,
+        breakReminderMinutes: focusModeSettings.breakReminderMinutes,
+        quietHoursStart: focusModeSettings.quietHoursStart,
+        quietHoursEnd: focusModeSettings.quietHoursEnd,
+        hideNotificationCounts: focusModeSettings.hideNotificationCounts,
+        updatedAt: focusModeSettings.updatedAt,
+        user: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          email: users.email,
+        },
+      })
+        .from(focusModeSettings)
+        .innerJoin(users, eq(focusModeSettings.userId, users.id))
+        .where(eq(focusModeSettings.userId, userId))
+        .limit(1);
+
+      if (!settings) {
+        // Check if user exists
+        const [user] = await db.select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        
+        if (!user) {
+          return res.status(404).json({ message: "User not found" });
+        }
+        
+        return res.json({ 
+          userId,
+          isEnabled: false,
+          dailyLimitMinutes: null,
+          breakReminderMinutes: null,
+          quietHoursStart: null,
+          quietHoursEnd: null,
+          hideNotificationCounts: false,
+          message: "No focus mode settings configured for this user"
+        });
+      }
+
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Failed to get user focus mode settings:", error);
+      res.status(500).json({ message: error.message || "Failed to get user focus mode settings" });
+    }
+  });
+
+  // PATCH /api/admin/wellness/focus-mode/:userId - Override/update user's focus mode settings
+  app.patch("/api/admin/wellness/focus-mode/:userId", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { isEnabled, dailyLimitMinutes, breakReminderMinutes, quietHoursStart, quietHoursEnd, hideNotificationCounts } = req.body;
+
+      // Verify user exists
+      const [user] = await db.select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Check if settings exist
+      const [existingSettings] = await db.select({ id: focusModeSettings.id })
+        .from(focusModeSettings)
+        .where(eq(focusModeSettings.userId, userId))
+        .limit(1);
+
+      const updateData: Record<string, any> = { updatedAt: new Date() };
+
+      if (isEnabled !== undefined) updateData.isEnabled = isEnabled;
+      if (dailyLimitMinutes !== undefined) updateData.dailyLimitMinutes = dailyLimitMinutes;
+      if (breakReminderMinutes !== undefined) updateData.breakReminderMinutes = breakReminderMinutes;
+      if (quietHoursStart !== undefined) updateData.quietHoursStart = quietHoursStart;
+      if (quietHoursEnd !== undefined) updateData.quietHoursEnd = quietHoursEnd;
+      if (hideNotificationCounts !== undefined) updateData.hideNotificationCounts = hideNotificationCounts;
+
+      let result;
+      if (existingSettings) {
+        [result] = await db.update(focusModeSettings)
+          .set(updateData)
+          .where(eq(focusModeSettings.userId, userId))
+          .returning();
+      } else {
+        [result] = await db.insert(focusModeSettings)
+          .values({
+            userId,
+            isEnabled: isEnabled ?? false,
+            dailyLimitMinutes: dailyLimitMinutes ?? null,
+            breakReminderMinutes: breakReminderMinutes ?? null,
+            quietHoursStart: quietHoursStart ?? null,
+            quietHoursEnd: quietHoursEnd ?? null,
+            hideNotificationCounts: hideNotificationCounts ?? false,
+          })
+          .returning();
+      }
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Failed to update user focus mode settings:", error);
+      res.status(500).json({ message: error.message || "Failed to update user focus mode settings" });
+    }
+  });
+
+  // POST /api/admin/wellness/focus-mode/:userId/reset - Reset user's focus mode to defaults
+  app.post("/api/admin/wellness/focus-mode/:userId/reset", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      // Verify user exists
+      const [user] = await db.select({ id: users.id, username: users.username })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Delete existing settings or update to defaults
+      const [existingSettings] = await db.select({ id: focusModeSettings.id })
+        .from(focusModeSettings)
+        .where(eq(focusModeSettings.userId, userId))
+        .limit(1);
+
+      if (existingSettings) {
+        const [result] = await db.update(focusModeSettings)
+          .set({
+            isEnabled: false,
+            dailyLimitMinutes: null,
+            breakReminderMinutes: null,
+            quietHoursStart: null,
+            quietHoursEnd: null,
+            hideNotificationCounts: false,
+            updatedAt: new Date(),
+          })
+          .where(eq(focusModeSettings.userId, userId))
+          .returning();
+
+        res.json({
+          message: `Focus mode settings reset to defaults for user ${user.username}`,
+          settings: result,
+        });
+      } else {
+        res.json({
+          message: `No focus mode settings found for user ${user.username}. Already at defaults.`,
+          settings: {
+            userId,
+            isEnabled: false,
+            dailyLimitMinutes: null,
+            breakReminderMinutes: null,
+            quietHoursStart: null,
+            quietHoursEnd: null,
+            hideNotificationCounts: false,
+          },
+        });
+      }
+    } catch (error: any) {
+      console.error("Failed to reset user focus mode settings:", error);
+      res.status(500).json({ message: error.message || "Failed to reset user focus mode settings" });
+    }
+  });
+
+  // ===== ADMIN: USAGE STATS ENDPOINTS =====
+
+  // GET /api/admin/wellness/usage-stats/overview - Platform-wide usage statistics
+  app.get("/api/admin/wellness/usage-stats/overview", requireAdmin, async (req, res) => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+
+      // Total screen time today
+      const [todayStats] = await db.select({
+        totalScreenTime: sql<number>`COALESCE(SUM(${usageStats.screenTimeMinutes}), 0)::int`,
+        totalSessions: sql<number>`COALESCE(SUM(${usageStats.sessionsCount}), 0)::int`,
+        activeUsers: sql<number>`COUNT(DISTINCT ${usageStats.userId})::int`,
+      })
+        .from(usageStats)
+        .where(gte(usageStats.date, today));
+
+      // Total screen time this week
+      const [weekStats] = await db.select({
+        totalScreenTime: sql<number>`COALESCE(SUM(${usageStats.screenTimeMinutes}), 0)::int`,
+        totalSessions: sql<number>`COALESCE(SUM(${usageStats.sessionsCount}), 0)::int`,
+        activeUsers: sql<number>`COUNT(DISTINCT ${usageStats.userId})::int`,
+      })
+        .from(usageStats)
+        .where(gte(usageStats.date, weekAgo));
+
+      // Average session duration (screen time / sessions)
+      const [avgSession] = await db.select({
+        avgDuration: sql<number>`ROUND(AVG(CASE WHEN ${usageStats.sessionsCount} > 0 THEN ${usageStats.screenTimeMinutes}::float / ${usageStats.sessionsCount} ELSE 0 END)::numeric, 1)::float`
+      })
+        .from(usageStats)
+        .where(and(
+          gte(usageStats.date, weekAgo),
+          gt(usageStats.sessionsCount, 0)
+        ));
+
+      // Peak usage hours - analyze by extracting hour from timestamp (approximate based on session distribution)
+      // Since we don't have hourly data, we'll use aggregate metrics
+      const peakHoursNote = "Hourly breakdown not available - showing aggregate metrics";
+
+      // Most active users this week
+      const mostActiveUsers = await db.select({
+        userId: usageStats.userId,
+        totalScreenTime: sql<number>`SUM(${usageStats.screenTimeMinutes})::int`,
+        totalSessions: sql<number>`SUM(${usageStats.sessionsCount})::int`,
+        totalPostsViewed: sql<number>`SUM(${usageStats.postsViewed})::int`,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      })
+        .from(usageStats)
+        .innerJoin(users, eq(usageStats.userId, users.id))
+        .where(gte(usageStats.date, weekAgo))
+        .groupBy(usageStats.userId, users.username, users.displayName, users.avatarUrl)
+        .orderBy(desc(sql`SUM(${usageStats.screenTimeMinutes})`))
+        .limit(10);
+
+      // Content engagement metrics
+      const [engagementStats] = await db.select({
+        totalPostsViewed: sql<number>`COALESCE(SUM(${usageStats.postsViewed}), 0)::int`,
+        totalStoriesViewed: sql<number>`COALESCE(SUM(${usageStats.storiesViewed}), 0)::int`,
+        totalMessagesSent: sql<number>`COALESCE(SUM(${usageStats.messagesSent}), 0)::int`,
+        totalNotifications: sql<number>`COALESCE(SUM(${usageStats.notificationsReceived}), 0)::int`,
+      })
+        .from(usageStats)
+        .where(gte(usageStats.date, weekAgo));
+
+      res.json({
+        today: {
+          totalScreenTimeMinutes: todayStats?.totalScreenTime || 0,
+          totalSessions: todayStats?.totalSessions || 0,
+          activeUsers: todayStats?.activeUsers || 0,
+        },
+        thisWeek: {
+          totalScreenTimeMinutes: weekStats?.totalScreenTime || 0,
+          totalSessions: weekStats?.totalSessions || 0,
+          activeUsers: weekStats?.activeUsers || 0,
+        },
+        averageSessionDurationMinutes: avgSession?.avgDuration || 0,
+        peakUsageHours: peakHoursNote,
+        mostActiveUsers,
+        engagement: {
+          postsViewed: engagementStats?.totalPostsViewed || 0,
+          storiesViewed: engagementStats?.totalStoriesViewed || 0,
+          messagesSent: engagementStats?.totalMessagesSent || 0,
+          notificationsReceived: engagementStats?.totalNotifications || 0,
+        },
+      });
+    } catch (error: any) {
+      console.error("Failed to get usage stats overview:", error);
+      res.status(500).json({ message: error.message || "Failed to get usage stats overview" });
+    }
+  });
+
+  // GET /api/admin/wellness/usage-stats - List usage stats by user with pagination and date range filter
+  app.get("/api/admin/wellness/usage-stats", requireAdmin, async (req, res) => {
+    try {
+      const { limit = "20", offset = "0", startDate, endDate, search } = req.query;
+      const limitNum = Math.min(parseInt(limit as string) || 20, 100);
+      const offsetNum = parseInt(offset as string) || 0;
+
+      let conditions: SQL[] = [];
+
+      if (startDate && typeof startDate === "string") {
+        const start = new Date(startDate);
+        if (!isNaN(start.getTime())) {
+          conditions.push(gte(usageStats.date, start));
+        }
+      }
+
+      if (endDate && typeof endDate === "string") {
+        const end = new Date(endDate);
+        if (!isNaN(end.getTime())) {
+          conditions.push(lte(usageStats.date, end));
+        }
+      }
+
+      if (search && typeof search === "string" && search.trim()) {
+        conditions.push(or(
+          ilike(users.username, `%${search.trim()}%`),
+          ilike(users.displayName, `%${search.trim()}%`)
+        )!);
+      }
+
+      // Aggregate stats by user
+      const stats = await db.select({
+        userId: usageStats.userId,
+        totalScreenTime: sql<number>`SUM(${usageStats.screenTimeMinutes})::int`,
+        totalSessions: sql<number>`SUM(${usageStats.sessionsCount})::int`,
+        totalPostsViewed: sql<number>`SUM(${usageStats.postsViewed})::int`,
+        totalStoriesViewed: sql<number>`SUM(${usageStats.storiesViewed})::int`,
+        totalMessagesSent: sql<number>`SUM(${usageStats.messagesSent})::int`,
+        totalNotifications: sql<number>`SUM(${usageStats.notificationsReceived})::int`,
+        daysActive: sql<number>`COUNT(DISTINCT DATE(${usageStats.date}))::int`,
+        firstActivity: sql<Date>`MIN(${usageStats.date})`,
+        lastActivity: sql<Date>`MAX(${usageStats.date})`,
+        user: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          email: users.email,
+        },
+      })
+        .from(usageStats)
+        .innerJoin(users, eq(usageStats.userId, users.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .groupBy(usageStats.userId, users.id, users.username, users.displayName, users.avatarUrl, users.email)
+        .orderBy(desc(sql`SUM(${usageStats.screenTimeMinutes})`))
+        .limit(limitNum)
+        .offset(offsetNum);
+
+      // Get total count of unique users
+      const [totalCount] = await db.select({
+        count: sql<number>`COUNT(DISTINCT ${usageStats.userId})::int`
+      })
+        .from(usageStats)
+        .innerJoin(users, eq(usageStats.userId, users.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({
+        data: stats,
+        pagination: {
+          total: totalCount?.count || 0,
+          limit: limitNum,
+          offset: offsetNum,
+        },
+      });
+    } catch (error: any) {
+      console.error("Failed to list usage stats:", error);
+      res.status(500).json({ message: error.message || "Failed to list usage stats" });
+    }
+  });
+
+  // GET /api/admin/wellness/usage-stats/trends - Usage trends over time (daily averages for past 30 days)
+  app.get("/api/admin/wellness/usage-stats/trends", requireAdmin, async (req, res) => {
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      thirtyDaysAgo.setHours(0, 0, 0, 0);
+
+      // Daily aggregates
+      const dailyTrends = await db.select({
+        date: sql<string>`DATE(${usageStats.date})::text`,
+        totalScreenTime: sql<number>`SUM(${usageStats.screenTimeMinutes})::int`,
+        avgScreenTimePerUser: sql<number>`ROUND(AVG(${usageStats.screenTimeMinutes})::numeric, 1)::float`,
+        totalSessions: sql<number>`SUM(${usageStats.sessionsCount})::int`,
+        activeUsers: sql<number>`COUNT(DISTINCT ${usageStats.userId})::int`,
+        totalPostsViewed: sql<number>`SUM(${usageStats.postsViewed})::int`,
+        totalStoriesViewed: sql<number>`SUM(${usageStats.storiesViewed})::int`,
+        totalMessagesSent: sql<number>`SUM(${usageStats.messagesSent})::int`,
+      })
+        .from(usageStats)
+        .where(gte(usageStats.date, thirtyDaysAgo))
+        .groupBy(sql`DATE(${usageStats.date})`)
+        .orderBy(asc(sql`DATE(${usageStats.date})`));
+
+      // Calculate summary stats
+      const [summary] = await db.select({
+        totalDays: sql<number>`COUNT(DISTINCT DATE(${usageStats.date}))::int`,
+        avgDailyScreenTime: sql<number>`ROUND(AVG(daily_totals.total_screen_time)::numeric, 1)::float`,
+        avgDailyActiveUsers: sql<number>`ROUND(AVG(daily_totals.active_users)::numeric, 1)::float`,
+      })
+        .from(
+          db.select({
+            date: sql`DATE(${usageStats.date})`,
+            total_screen_time: sql<number>`SUM(${usageStats.screenTimeMinutes})`,
+            active_users: sql<number>`COUNT(DISTINCT ${usageStats.userId})`,
+          })
+            .from(usageStats)
+            .where(gte(usageStats.date, thirtyDaysAgo))
+            .groupBy(sql`DATE(${usageStats.date})`)
+            .as("daily_totals")
+        );
+
+      res.json({
+        period: {
+          start: thirtyDaysAgo.toISOString(),
+          end: new Date().toISOString(),
+          days: 30,
+        },
+        summary: {
+          daysWithData: summary?.totalDays || 0,
+          avgDailyScreenTimeMinutes: summary?.avgDailyScreenTime || 0,
+          avgDailyActiveUsers: summary?.avgDailyActiveUsers || 0,
+        },
+        dailyTrends,
+      });
+    } catch (error: any) {
+      console.error("Failed to get usage stats trends:", error);
+      res.status(500).json({ message: error.message || "Failed to get usage stats trends" });
+    }
+  });
+
+  // GET /api/admin/wellness/usage-stats/:userId - Detailed usage stats for specific user
+  app.get("/api/admin/wellness/usage-stats/:userId", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { startDate, endDate, limit = "30" } = req.query;
+      const limitNum = Math.min(parseInt(limit as string) || 30, 90);
+
+      // Verify user exists
+      const [user] = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        email: users.email,
+      })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      let conditions: SQL[] = [eq(usageStats.userId, userId)];
+
+      if (startDate && typeof startDate === "string") {
+        const start = new Date(startDate);
+        if (!isNaN(start.getTime())) {
+          conditions.push(gte(usageStats.date, start));
+        }
+      }
+
+      if (endDate && typeof endDate === "string") {
+        const end = new Date(endDate);
+        if (!isNaN(end.getTime())) {
+          conditions.push(lte(usageStats.date, end));
+        }
+      }
+
+      // Get daily breakdown
+      const dailyStats = await db.select({
+        id: usageStats.id,
+        date: usageStats.date,
+        screenTimeMinutes: usageStats.screenTimeMinutes,
+        sessionsCount: usageStats.sessionsCount,
+        postsViewed: usageStats.postsViewed,
+        storiesViewed: usageStats.storiesViewed,
+        messagesSent: usageStats.messagesSent,
+        notificationsReceived: usageStats.notificationsReceived,
+      })
+        .from(usageStats)
+        .where(and(...conditions))
+        .orderBy(desc(usageStats.date))
+        .limit(limitNum);
+
+      // Get aggregate totals
+      const [totals] = await db.select({
+        totalScreenTime: sql<number>`COALESCE(SUM(${usageStats.screenTimeMinutes}), 0)::int`,
+        totalSessions: sql<number>`COALESCE(SUM(${usageStats.sessionsCount}), 0)::int`,
+        totalPostsViewed: sql<number>`COALESCE(SUM(${usageStats.postsViewed}), 0)::int`,
+        totalStoriesViewed: sql<number>`COALESCE(SUM(${usageStats.storiesViewed}), 0)::int`,
+        totalMessagesSent: sql<number>`COALESCE(SUM(${usageStats.messagesSent}), 0)::int`,
+        totalNotifications: sql<number>`COALESCE(SUM(${usageStats.notificationsReceived}), 0)::int`,
+        daysActive: sql<number>`COUNT(*)::int`,
+        avgScreenTimePerDay: sql<number>`ROUND(AVG(${usageStats.screenTimeMinutes})::numeric, 1)::float`,
+        avgSessionsPerDay: sql<number>`ROUND(AVG(${usageStats.sessionsCount})::numeric, 1)::float`,
+      })
+        .from(usageStats)
+        .where(and(...conditions));
+
+      // Get focus mode settings for this user
+      const [focusSettings] = await db.select()
+        .from(focusModeSettings)
+        .where(eq(focusModeSettings.userId, userId))
+        .limit(1);
+
+      res.json({
+        user,
+        totals: {
+          screenTimeMinutes: totals?.totalScreenTime || 0,
+          sessions: totals?.totalSessions || 0,
+          postsViewed: totals?.totalPostsViewed || 0,
+          storiesViewed: totals?.totalStoriesViewed || 0,
+          messagesSent: totals?.totalMessagesSent || 0,
+          notificationsReceived: totals?.totalNotifications || 0,
+          daysActive: totals?.daysActive || 0,
+        },
+        averages: {
+          screenTimePerDayMinutes: totals?.avgScreenTimePerDay || 0,
+          sessionsPerDay: totals?.avgSessionsPerDay || 0,
+        },
+        focusModeSettings: focusSettings || null,
+        dailyBreakdown: dailyStats,
+      });
+    } catch (error: any) {
+      console.error("Failed to get user usage stats:", error);
+      res.status(500).json({ message: error.message || "Failed to get user usage stats" });
     }
   });
 
