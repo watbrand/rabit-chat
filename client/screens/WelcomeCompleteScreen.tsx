@@ -171,7 +171,7 @@ export default function WelcomeCompleteScreen() {
   const [showConfetti, setShowConfetti] = useState(true);
   const [isEntering, setIsEntering] = useState(false);
 
-  const { data: onboardingStatus, error: onboardingError, refetch: refetchOnboarding } = useQuery<OnboardingStatus>({
+  const { data: onboardingStatus, isLoading: isLoadingOnboarding, error: onboardingError, refetch: refetchOnboarding } = useQuery<OnboardingStatus>({
     queryKey: ["/api/onboarding/status"],
   });
 
@@ -215,6 +215,14 @@ export default function WelcomeCompleteScreen() {
     { delay: 600, startX: width * 0.8, startY: height * 0.65 },
     { delay: 300, startX: width * 0.5, startY: height * 0.1 },
   ];
+
+  if (isLoadingOnboarding) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <LoadingIndicator />
+      </View>
+    );
+  }
 
   if (onboardingError) {
     return (
@@ -370,6 +378,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: Spacing.xl,
+  },
+  centered: {
+    justifyContent: "center",
+    alignItems: "center",
   },
   errorText: {
     marginTop: Spacing.md,
