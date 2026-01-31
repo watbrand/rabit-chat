@@ -109,6 +109,8 @@ export default function BlockedAccountsScreen() {
     onSuccess: () => {
       setUnblockingUserId(null);
       queryClient.invalidateQueries({ queryKey: ["/api/me/blocked"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/discover/people"] });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
     onError: (error: any) => {

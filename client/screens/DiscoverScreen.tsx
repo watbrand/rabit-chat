@@ -856,6 +856,7 @@ function ReelsTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/discover/reels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
     },
   });
 
@@ -869,6 +870,7 @@ function ReelsTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/discover/reels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookmarks"] });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     },
   });
@@ -1054,6 +1056,9 @@ function TrendsTab() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/discover/people"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/me/profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
     },
   });
 
@@ -1074,6 +1079,7 @@ function TrendsTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/discover/trends"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
     },
   });
 
@@ -1409,6 +1415,9 @@ function DiscoverPeopleTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/discover/people"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/me/profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
     },
   });
 
@@ -1423,6 +1432,9 @@ function DiscoverPeopleTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/discover/people"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/me/profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
     },
   });
 

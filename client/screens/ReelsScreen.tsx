@@ -309,6 +309,7 @@ export default function ReelsScreen() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts/videos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
     },
   });
 

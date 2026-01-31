@@ -291,6 +291,9 @@ export default function UserProfileScreen() {
     onSuccess: (shouldBlock) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/me/blocked"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/discover/people"] });
       if (shouldBlock) {
         Alert.alert("User blocked. You won't see their content anymore.");
       }

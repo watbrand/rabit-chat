@@ -171,6 +171,7 @@ export default function StoryViewerScreen() {
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
       setReplyText("");
       Keyboard.dismiss();
       setIsReplyFocused(false);

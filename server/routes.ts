@@ -138,6 +138,14 @@ import {
   dataExportSchema,
   storyReactionSchema,
   dataImportSchema,
+  updatePostSchema,
+  updateGroupSchema,
+  updateEventSchema,
+  validateWithdrawSchema,
+  validateStakeSchema,
+  validateGiftSchema,
+  validateUserUpdateSchema,
+  sendGiftSchema,
 } from "./validation";
 
 /**
@@ -2135,7 +2143,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/users/me", requireAuth, async (req, res) => {
+  app.put("/api/users/me", requireAuth, validateBody(validateUserUpdateSchema), async (req, res) => {
     try {
       const { displayName, bio, avatarUrl, coverUrl, netWorth, linkUrl, location, pronouns, category, username } = req.body;
       
@@ -2152,10 +2160,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       if (username !== undefined) {
-        const usernameRegex = /^[a-zA-Z0-9_]{3,30}$/;
-        if (!usernameRegex.test(username)) {
-          return res.status(400).json({ message: "Username must be 3-30 characters, alphanumeric and underscores only" });
-        }
         const currentUser = await storage.getUser(req.session.userId!);
         if (currentUser && currentUser.username !== username) {
           const existingUser = await storage.getUserByUsername(username);
@@ -2967,7 +2971,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Edit post (owner only)
-  app.patch("/api/posts/:id", requireAuth, async (req, res) => {
+  app.patch("/api/posts/:id", requireAuth, validateBody(updatePostSchema), async (req, res) => {
     try {
       const post = await storage.getPost(req.params.id);
       if (!post) {
@@ -2978,9 +2982,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { content, caption } = req.body;
-      if (content === undefined && caption === undefined) {
-        return res.status(400).json({ message: "Nothing to update" });
-      }
 
       const updates: { content?: string; caption?: string } = {};
       if (content !== undefined) updates.content = content;
@@ -16428,7 +16429,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/gifts/send - Send a gift
-  app.post("/api/gifts/send", requireAuth, async (req, res) => {
+  app.post("/api/gifts/send", requireAuth, validateBody(sendGiftSchema), async (req, res) => {
     try {
       // Check if gifts are enabled (emergency control)
       const config = await storage.getEconomyConfig();
@@ -16438,10 +16439,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const senderId = req.session.userId!;
       const { recipientId, giftTypeId, quantity, contextType, contextId, message } = req.body;
-      
-      if (!recipientId || !giftTypeId) {
-        return res.status(400).json({ message: "recipientId and giftTypeId are required" });
-      }
       
       if (recipientId === senderId) {
         return res.status(400).json({ message: "You cannot send a gift to yourself" });
@@ -27475,6 +27472,1316 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error fetching boosts:", error);
       res.status(500).json({ message: error?.message || "Failed to fetch boosts" });
+    }
+  });
+
+  // ===== ADDITIONAL ADMIN CONTROL ENDPOINTS =====
+
+  // ===== VOICE/VIDEO CALL MANAGEMENT =====
+
+  // GET /api/admin/calls - List all active and recent calls
+  app.get("/api/admin/calls", requireAdmin, async (req, res) => {
+    try {
+      const { status, page = "1", limit = "50" } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      const conditions: SQL[] = [];
+      if (status && typeof status === "string") {
+        conditions.push(eq(videoCalls.status, status as any));
+      }
+
+      const calls = await db.select({
+        id: videoCalls.id,
+        callerId: videoCalls.callerId,
+        calleeId: videoCalls.calleeId,
+        callType: videoCalls.callType,
+        status: videoCalls.status,
+        roomId: videoCalls.roomId,
+        durationSeconds: videoCalls.durationSeconds,
+        startedAt: videoCalls.startedAt,
+        endedAt: videoCalls.endedAt,
+        createdAt: videoCalls.createdAt,
+      })
+        .from(videoCalls)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(videoCalls.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const userIds = [...new Set([...calls.map(c => c.callerId), ...calls.map(c => c.calleeId)])];
+      const callUsers = userIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      }).from(users).where(inArray(users.id, userIds)) : [];
+
+      const userMap = new Map(callUsers.map(u => [u.id, u]));
+
+      const callsWithUsers = calls.map(call => ({
+        ...call,
+        caller: userMap.get(call.callerId) || null,
+        callee: userMap.get(call.calleeId) || null,
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      }).from(videoCalls).where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({
+        calls: callsWithUsers,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching calls:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch calls" });
+    }
+  });
+
+  // POST /api/admin/calls/:id/end - Force end a call
+  app.post("/api/admin/calls/:id/end", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const call = await db.select().from(videoCalls).where(eq(videoCalls.id, id)).limit(1);
+      
+      if (call.length === 0) {
+        return res.status(404).json({ message: "Call not found" });
+      }
+
+      if (call[0].status === "ENDED") {
+        return res.status(400).json({ message: "Call already ended" });
+      }
+
+      const now = new Date();
+      const startedAt = call[0].startedAt || call[0].createdAt;
+      const durationSeconds = startedAt ? Math.floor((now.getTime() - new Date(startedAt).getTime()) / 1000) : 0;
+
+      await db.update(videoCalls)
+        .set({
+          status: "ENDED",
+          endedAt: now,
+          durationSeconds,
+        })
+        .where(eq(videoCalls.id, id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "video_call",
+        id,
+        { action: "force_end", previousStatus: call[0].status },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] Call ${id} force ended by admin ${req.session.userId}`);
+      res.json({ message: "Call ended successfully" });
+    } catch (error: any) {
+      console.error("Error ending call:", error);
+      res.status(500).json({ message: error?.message || "Failed to end call" });
+    }
+  });
+
+  // GET /api/admin/calls/stats - Call statistics
+  app.get("/api/admin/calls/stats", requireAdmin, async (req, res) => {
+    try {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const [stats] = await db.select({
+        totalCalls: sql<number>`count(*)::int`,
+        activeCalls: sql<number>`count(*) filter (where ${videoCalls.status} in ('RINGING', 'ONGOING'))::int`,
+        completedCalls: sql<number>`count(*) filter (where ${videoCalls.status} = 'ENDED')::int`,
+        missedCalls: sql<number>`count(*) filter (where ${videoCalls.status} = 'MISSED')::int`,
+        videoCalls: sql<number>`count(*) filter (where ${videoCalls.callType} = 'VIDEO')::int`,
+        voiceCalls: sql<number>`count(*) filter (where ${videoCalls.callType} = 'VOICE')::int`,
+        avgDuration: sql<number>`avg(${videoCalls.durationSeconds})`,
+        todayCalls: sql<number>`count(*) filter (where ${videoCalls.createdAt} >= ${todayStart})::int`,
+        weekCalls: sql<number>`count(*) filter (where ${videoCalls.createdAt} >= ${weekStart})::int`,
+        monthCalls: sql<number>`count(*) filter (where ${videoCalls.createdAt} >= ${monthStart})::int`,
+      }).from(videoCalls);
+
+      res.json({
+        total: stats?.totalCalls || 0,
+        active: stats?.activeCalls || 0,
+        completed: stats?.completedCalls || 0,
+        missed: stats?.missedCalls || 0,
+        byType: {
+          video: stats?.videoCalls || 0,
+          voice: stats?.voiceCalls || 0,
+        },
+        avgDurationSeconds: Math.round(stats?.avgDuration || 0),
+        daily: stats?.todayCalls || 0,
+        weekly: stats?.weekCalls || 0,
+        monthly: stats?.monthCalls || 0,
+      });
+    } catch (error: any) {
+      console.error("Error fetching call stats:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch call stats" });
+    }
+  });
+
+  // ===== STAKING MANAGEMENT =====
+
+  // GET /api/admin/staking - List all staking positions
+  app.get("/api/admin/staking", requireAdmin, async (req, res) => {
+    try {
+      const { status, page = "1", limit = "50" } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      const conditions: SQL[] = [];
+      if (status && typeof status === "string") {
+        conditions.push(eq(giftStakes.status, status as any));
+      }
+
+      const stakes = await db.select({
+        id: giftStakes.id,
+        userId: giftStakes.userId,
+        giftTransactionId: giftStakes.giftTransactionId,
+        stakedCoins: giftStakes.stakedCoins,
+        stakeDurationDays: giftStakes.stakeDurationDays,
+        bonusPercent: giftStakes.bonusPercent,
+        expectedReturn: giftStakes.expectedReturn,
+        status: giftStakes.status,
+        stakedAt: giftStakes.stakedAt,
+        maturesAt: giftStakes.maturesAt,
+        claimedAt: giftStakes.claimedAt,
+      })
+        .from(giftStakes)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(giftStakes.stakedAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const userIds = [...new Set(stakes.map(s => s.userId))];
+      const stakeUsers = userIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      }).from(users).where(inArray(users.id, userIds)) : [];
+
+      const userMap = new Map(stakeUsers.map(u => [u.id, u]));
+
+      const stakesWithUsers = stakes.map(stake => ({
+        ...stake,
+        user: userMap.get(stake.userId) || null,
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      }).from(giftStakes).where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({
+        stakes: stakesWithUsers,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching staking positions:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch staking positions" });
+    }
+  });
+
+  // POST /api/admin/staking/:id/unlock - Force unlock staked coins
+  app.post("/api/admin/staking/:id/unlock", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const stake = await db.select().from(giftStakes).where(eq(giftStakes.id, id)).limit(1);
+      
+      if (stake.length === 0) {
+        return res.status(404).json({ message: "Staking position not found" });
+      }
+
+      if (stake[0].status !== "ACTIVE") {
+        return res.status(400).json({ message: "Stake is not active" });
+      }
+
+      await db.update(giftStakes)
+        .set({
+          status: "CLAIMED",
+          claimedAt: new Date(),
+        })
+        .where(eq(giftStakes.id, id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "gift_stake",
+        id,
+        { action: "force_unlock", userId: stake[0].userId, stakedCoins: stake[0].stakedCoins },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] Stake ${id} force unlocked by admin ${req.session.userId}`);
+      res.json({ message: "Stake unlocked successfully" });
+    } catch (error: any) {
+      console.error("Error unlocking stake:", error);
+      res.status(500).json({ message: error?.message || "Failed to unlock stake" });
+    }
+  });
+
+  // GET /api/admin/staking/stats - Staking statistics
+  app.get("/api/admin/staking/stats", requireAdmin, async (req, res) => {
+    try {
+      const [stats] = await db.select({
+        totalStakes: sql<number>`count(*)::int`,
+        activeStakes: sql<number>`count(*) filter (where ${giftStakes.status} = 'ACTIVE')::int`,
+        claimedStakes: sql<number>`count(*) filter (where ${giftStakes.status} = 'CLAIMED')::int`,
+        expiredStakes: sql<number>`count(*) filter (where ${giftStakes.status} = 'EXPIRED')::int`,
+        totalStakedCoins: sql<number>`sum(${giftStakes.stakedCoins}) filter (where ${giftStakes.status} = 'ACTIVE')::bigint`,
+        totalExpectedReturns: sql<number>`sum(${giftStakes.expectedReturn}) filter (where ${giftStakes.status} = 'ACTIVE')::bigint`,
+        avgBonusPercent: sql<number>`avg(${giftStakes.bonusPercent})`,
+        avgDurationDays: sql<number>`avg(${giftStakes.stakeDurationDays})`,
+      }).from(giftStakes);
+
+      const tiers = await db.select({
+        id: stakingTiers.id,
+        name: stakingTiers.name,
+        durationDays: stakingTiers.durationDays,
+        bonusPercent: stakingTiers.bonusPercent,
+        minCoins: stakingTiers.minCoins,
+        isActive: stakingTiers.isActive,
+      }).from(stakingTiers).orderBy(asc(stakingTiers.sortOrder));
+
+      res.json({
+        total: stats?.totalStakes || 0,
+        active: stats?.activeStakes || 0,
+        claimed: stats?.claimedStakes || 0,
+        expired: stats?.expiredStakes || 0,
+        totalStakedCoins: stats?.totalStakedCoins || 0,
+        totalExpectedReturns: stats?.totalExpectedReturns || 0,
+        avgBonusPercent: parseFloat((stats?.avgBonusPercent || 0).toFixed(2)),
+        avgDurationDays: Math.round(stats?.avgDurationDays || 0),
+        tiers,
+      });
+    } catch (error: any) {
+      console.error("Error fetching staking stats:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch staking stats" });
+    }
+  });
+
+  // ===== WITHDRAWAL MANAGEMENT =====
+
+  // GET /api/admin/withdrawals - List all withdrawal requests
+  app.get("/api/admin/withdrawals", requireAdmin, async (req, res) => {
+    try {
+      const { status, page = "1", limit = "50" } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      const conditions: SQL[] = [];
+      if (status && typeof status === "string") {
+        conditions.push(eq(withdrawalRequests.status, status as any));
+      }
+
+      const withdrawals = await db.select()
+        .from(withdrawalRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(withdrawalRequests.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const userIds = [...new Set(withdrawals.map(w => w.userId))];
+      const withdrawalUsers = userIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      }).from(users).where(inArray(users.id, userIds)) : [];
+
+      const userMap = new Map(withdrawalUsers.map(u => [u.id, u]));
+
+      const withdrawalsWithUsers = withdrawals.map(w => ({
+        ...w,
+        user: userMap.get(w.userId) || null,
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      }).from(withdrawalRequests).where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({
+        withdrawals: withdrawalsWithUsers,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching withdrawals:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch withdrawals" });
+    }
+  });
+
+  // POST /api/admin/withdrawals/:id/approve - Approve withdrawal
+  app.post("/api/admin/withdrawals/:id/approve", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { transactionReference } = req.body;
+
+      const withdrawal = await db.select().from(withdrawalRequests).where(eq(withdrawalRequests.id, id)).limit(1);
+      
+      if (withdrawal.length === 0) {
+        return res.status(404).json({ message: "Withdrawal request not found" });
+      }
+
+      if (withdrawal[0].status !== "PENDING") {
+        return res.status(400).json({ message: "Withdrawal is not pending" });
+      }
+
+      await db.update(withdrawalRequests)
+        .set({
+          status: "APPROVED",
+          processedAt: new Date(),
+          processedById: req.session.userId,
+          transactionReference: transactionReference || null,
+        })
+        .where(eq(withdrawalRequests.id, id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "withdrawal_request",
+        id,
+        { action: "approve", userId: withdrawal[0].userId, amount: withdrawal[0].amountCoins },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] Withdrawal ${id} approved by admin ${req.session.userId}`);
+      res.json({ message: "Withdrawal approved successfully" });
+    } catch (error: any) {
+      console.error("Error approving withdrawal:", error);
+      res.status(500).json({ message: error?.message || "Failed to approve withdrawal" });
+    }
+  });
+
+  // POST /api/admin/withdrawals/:id/reject - Reject withdrawal
+  app.post("/api/admin/withdrawals/:id/reject", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+
+      const withdrawal = await db.select().from(withdrawalRequests).where(eq(withdrawalRequests.id, id)).limit(1);
+      
+      if (withdrawal.length === 0) {
+        return res.status(404).json({ message: "Withdrawal request not found" });
+      }
+
+      if (withdrawal[0].status !== "PENDING") {
+        return res.status(400).json({ message: "Withdrawal is not pending" });
+      }
+
+      await db.update(withdrawalRequests)
+        .set({
+          status: "REJECTED",
+          processedAt: new Date(),
+          processedById: req.session.userId,
+          rejectionReason: reason || "Rejected by admin",
+        })
+        .where(eq(withdrawalRequests.id, id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "withdrawal_request",
+        id,
+        { action: "reject", userId: withdrawal[0].userId, amount: withdrawal[0].amountCoins, reason },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] Withdrawal ${id} rejected by admin ${req.session.userId}`);
+      res.json({ message: "Withdrawal rejected successfully" });
+    } catch (error: any) {
+      console.error("Error rejecting withdrawal:", error);
+      res.status(500).json({ message: error?.message || "Failed to reject withdrawal" });
+    }
+  });
+
+  // GET /api/admin/withdrawals/stats - Withdrawal statistics
+  app.get("/api/admin/withdrawals/stats", requireAdmin, async (req, res) => {
+    try {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const [stats] = await db.select({
+        totalRequests: sql<number>`count(*)::int`,
+        pendingRequests: sql<number>`count(*) filter (where ${withdrawalRequests.status} = 'PENDING')::int`,
+        approvedRequests: sql<number>`count(*) filter (where ${withdrawalRequests.status} = 'APPROVED')::int`,
+        rejectedRequests: sql<number>`count(*) filter (where ${withdrawalRequests.status} = 'REJECTED')::int`,
+        completedRequests: sql<number>`count(*) filter (where ${withdrawalRequests.status} = 'COMPLETED')::int`,
+        totalCoinsWithdrawn: sql<number>`sum(${withdrawalRequests.amountCoins}) filter (where ${withdrawalRequests.status} in ('APPROVED', 'COMPLETED'))::bigint`,
+        totalFees: sql<number>`sum(${withdrawalRequests.platformFeeCoins}) filter (where ${withdrawalRequests.status} in ('APPROVED', 'COMPLETED'))::bigint`,
+        todayRequests: sql<number>`count(*) filter (where ${withdrawalRequests.createdAt} >= ${todayStart})::int`,
+        weekRequests: sql<number>`count(*) filter (where ${withdrawalRequests.createdAt} >= ${weekStart})::int`,
+        monthRequests: sql<number>`count(*) filter (where ${withdrawalRequests.createdAt} >= ${monthStart})::int`,
+      }).from(withdrawalRequests);
+
+      res.json({
+        total: stats?.totalRequests || 0,
+        pending: stats?.pendingRequests || 0,
+        approved: stats?.approvedRequests || 0,
+        rejected: stats?.rejectedRequests || 0,
+        completed: stats?.completedRequests || 0,
+        totalCoinsWithdrawn: stats?.totalCoinsWithdrawn || 0,
+        totalFees: stats?.totalFees || 0,
+        daily: stats?.todayRequests || 0,
+        weekly: stats?.weekRequests || 0,
+        monthly: stats?.monthRequests || 0,
+      });
+    } catch (error: any) {
+      console.error("Error fetching withdrawal stats:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch withdrawal stats" });
+    }
+  });
+
+  // ===== KYC MANAGEMENT =====
+
+  // GET /api/admin/kyc - List KYC submissions
+  app.get("/api/admin/kyc", requireAdmin, async (req, res) => {
+    try {
+      const { status, page = "1", limit = "50" } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      const conditions: SQL[] = [];
+      if (status && typeof status === "string") {
+        conditions.push(eq(userKyc.status, status as any));
+      }
+
+      const kycList = await db.select()
+        .from(userKyc)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(userKyc.submittedAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const userIds = [...new Set(kycList.map(k => k.userId))];
+      const kycUsers = userIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        email: users.email,
+      }).from(users).where(inArray(users.id, userIds)) : [];
+
+      const userMap = new Map(kycUsers.map(u => [u.id, u]));
+
+      const kycWithUsers = kycList.map(kyc => ({
+        ...kyc,
+        user: userMap.get(kyc.userId) || null,
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      }).from(userKyc).where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({
+        kyc: kycWithUsers,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching KYC submissions:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch KYC submissions" });
+    }
+  });
+
+  // POST /api/admin/kyc/:id/approve - Approve KYC
+  app.post("/api/admin/kyc/:id/approve", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const kyc = await db.select().from(userKyc).where(eq(userKyc.id, id)).limit(1);
+      
+      if (kyc.length === 0) {
+        return res.status(404).json({ message: "KYC submission not found" });
+      }
+
+      if (kyc[0].status === "VERIFIED") {
+        return res.status(400).json({ message: "KYC already verified" });
+      }
+
+      await db.update(userKyc)
+        .set({
+          status: "VERIFIED",
+          verifiedAt: new Date(),
+          reviewedById: req.session.userId,
+        })
+        .where(eq(userKyc.id, id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "user_kyc",
+        id,
+        { action: "approve", userId: kyc[0].userId },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] KYC ${id} approved by admin ${req.session.userId}`);
+      res.json({ message: "KYC approved successfully" });
+    } catch (error: any) {
+      console.error("Error approving KYC:", error);
+      res.status(500).json({ message: error?.message || "Failed to approve KYC" });
+    }
+  });
+
+  // POST /api/admin/kyc/:id/reject - Reject KYC
+  app.post("/api/admin/kyc/:id/reject", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+
+      const kyc = await db.select().from(userKyc).where(eq(userKyc.id, id)).limit(1);
+      
+      if (kyc.length === 0) {
+        return res.status(404).json({ message: "KYC submission not found" });
+      }
+
+      await db.update(userKyc)
+        .set({
+          status: "REJECTED",
+          rejectionReason: reason || "Rejected by admin",
+          reviewedById: req.session.userId,
+        })
+        .where(eq(userKyc.id, id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "user_kyc",
+        id,
+        { action: "reject", userId: kyc[0].userId, reason },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] KYC ${id} rejected by admin ${req.session.userId}`);
+      res.json({ message: "KYC rejected successfully" });
+    } catch (error: any) {
+      console.error("Error rejecting KYC:", error);
+      res.status(500).json({ message: error?.message || "Failed to reject KYC" });
+    }
+  });
+
+  // GET /api/admin/kyc/pending - Pending KYC count
+  app.get("/api/admin/kyc/pending", requireAdmin, async (req, res) => {
+    try {
+      const [stats] = await db.select({
+        pending: sql<number>`count(*) filter (where ${userKyc.status} = 'PENDING_REVIEW')::int`,
+        total: sql<number>`count(*)::int`,
+        verified: sql<number>`count(*) filter (where ${userKyc.status} = 'VERIFIED')::int`,
+        rejected: sql<number>`count(*) filter (where ${userKyc.status} = 'REJECTED')::int`,
+      }).from(userKyc);
+
+      res.json({
+        pending: stats?.pending || 0,
+        total: stats?.total || 0,
+        verified: stats?.verified || 0,
+        rejected: stats?.rejected || 0,
+      });
+    } catch (error: any) {
+      console.error("Error fetching pending KYC count:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch pending KYC count" });
+    }
+  });
+
+  // ===== LIVE STREAMS MANAGEMENT =====
+
+  // GET /api/admin/streams - List all streams
+  app.get("/api/admin/streams", requireAdmin, async (req, res) => {
+    try {
+      const { status, page = "1", limit = "50" } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      const conditions: SQL[] = [];
+      if (status && typeof status === "string") {
+        conditions.push(eq(liveStreams.status, status as any));
+      }
+
+      const streams = await db.select({
+        id: liveStreams.id,
+        hostId: liveStreams.hostId,
+        coHostId: liveStreams.coHostId,
+        title: liveStreams.title,
+        description: liveStreams.description,
+        thumbnailUrl: liveStreams.thumbnailUrl,
+        status: liveStreams.status,
+        viewerCount: liveStreams.viewerCount,
+        peakViewerCount: liveStreams.peakViewerCount,
+        startedAt: liveStreams.startedAt,
+        endedAt: liveStreams.endedAt,
+        createdAt: liveStreams.createdAt,
+      })
+        .from(liveStreams)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(liveStreams.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const hostIds = [...new Set([...streams.map(s => s.hostId), ...streams.map(s => s.coHostId).filter(Boolean)])];
+      const streamUsers = hostIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      }).from(users).where(inArray(users.id, hostIds as string[])) : [];
+
+      const userMap = new Map(streamUsers.map(u => [u.id, u]));
+
+      const streamsWithUsers = streams.map(stream => ({
+        ...stream,
+        host: userMap.get(stream.hostId) || null,
+        coHost: stream.coHostId ? userMap.get(stream.coHostId) || null : null,
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      }).from(liveStreams).where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({
+        streams: streamsWithUsers,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching streams:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch streams" });
+    }
+  });
+
+  // POST /api/admin/streams/:id/end - Force end stream
+  app.post("/api/admin/streams/:id/end", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const stream = await db.select().from(liveStreams).where(eq(liveStreams.id, id)).limit(1);
+      
+      if (stream.length === 0) {
+        return res.status(404).json({ message: "Stream not found" });
+      }
+
+      if (stream[0].status === "ENDED") {
+        return res.status(400).json({ message: "Stream already ended" });
+      }
+
+      await db.update(liveStreams)
+        .set({
+          status: "ENDED",
+          endedAt: new Date(),
+        })
+        .where(eq(liveStreams.id, id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "live_stream",
+        id,
+        { action: "force_end", hostId: stream[0].hostId, previousStatus: stream[0].status },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] Stream ${id} force ended by admin ${req.session.userId}`);
+      res.json({ message: "Stream ended successfully" });
+    } catch (error: any) {
+      console.error("Error ending stream:", error);
+      res.status(500).json({ message: error?.message || "Failed to end stream" });
+    }
+  });
+
+  // ===== ELITE CIRCLE MANAGEMENT =====
+
+  // GET /api/admin/elite-circle - List elite members
+  app.get("/api/admin/elite-circle", requireAdmin, async (req, res) => {
+    try {
+      const { clubId, page = "1", limit = "50" } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      const conditions: SQL[] = [];
+      if (clubId && typeof clubId === "string") {
+        conditions.push(eq(userWealthClub.clubId, clubId));
+      }
+
+      const members = await db.select({
+        id: userWealthClub.id,
+        userId: userWealthClub.userId,
+        clubId: userWealthClub.clubId,
+        joinedAt: userWealthClub.joinedAt,
+        updatedAt: userWealthClub.updatedAt,
+      })
+        .from(userWealthClub)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(userWealthClub.joinedAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const userIds = members.map(m => m.userId);
+      const clubIds = [...new Set(members.map(m => m.clubId))];
+
+      const [memberUsers, clubs] = await Promise.all([
+        userIds.length > 0 ? db.select({
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          netWorth: users.netWorth,
+          isVerified: users.isVerified,
+        }).from(users).where(inArray(users.id, userIds)) : [],
+        clubIds.length > 0 ? db.select().from(wealthClubs).where(inArray(wealthClubs.id, clubIds)) : [],
+      ]);
+
+      const userMap = new Map(memberUsers.map(u => [u.id, u]));
+      const clubMap = new Map(clubs.map(c => [c.id, c]));
+
+      const membersWithDetails = members.map(member => ({
+        ...member,
+        user: userMap.get(member.userId) || null,
+        club: clubMap.get(member.clubId) || null,
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      }).from(userWealthClub).where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const allClubs = await db.select().from(wealthClubs).orderBy(asc(wealthClubs.minNetWorth));
+
+      res.json({
+        members: membersWithDetails,
+        clubs: allClubs,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching elite circle members:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch elite circle members" });
+    }
+  });
+
+  // POST /api/admin/elite-circle/add - Add user to elite
+  app.post("/api/admin/elite-circle/add", requireAdmin, async (req, res) => {
+    try {
+      const { userId, clubId } = req.body;
+
+      if (!userId || !clubId) {
+        return res.status(400).json({ message: "userId and clubId are required" });
+      }
+
+      const [user, club] = await Promise.all([
+        db.select().from(users).where(eq(users.id, userId)).limit(1),
+        db.select().from(wealthClubs).where(eq(wealthClubs.id, clubId)).limit(1),
+      ]);
+
+      if (user.length === 0) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (club.length === 0) {
+        return res.status(404).json({ message: "Club not found" });
+      }
+
+      const existingMembership = await db.select()
+        .from(userWealthClub)
+        .where(eq(userWealthClub.userId, userId))
+        .limit(1);
+
+      if (existingMembership.length > 0) {
+        await db.update(userWealthClub)
+          .set({ clubId, updatedAt: new Date() })
+          .where(eq(userWealthClub.userId, userId));
+      } else {
+        await db.insert(userWealthClub).values({
+          userId,
+          clubId,
+          joinedAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "CREATE",
+        "user_wealth_club",
+        `${userId}-${clubId}`,
+        { action: "add_to_elite", userId, clubId, clubName: club[0].name },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] User ${userId} added to elite club ${clubId} by admin ${req.session.userId}`);
+      res.json({ message: "User added to elite circle successfully" });
+    } catch (error: any) {
+      console.error("Error adding user to elite circle:", error);
+      res.status(500).json({ message: error?.message || "Failed to add user to elite circle" });
+    }
+  });
+
+  // ===== ACHIEVEMENTS MANAGEMENT =====
+
+  // GET /api/admin/achievements - List achievements
+  app.get("/api/admin/achievements", requireAdmin, async (req, res) => {
+    try {
+      const { category, page = "1", limit = "50" } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      const conditions: SQL[] = [];
+      if (category && typeof category === "string") {
+        conditions.push(eq(achievements.category, category as any));
+      }
+
+      const achievementList = await db.select()
+        .from(achievements)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(asc(achievements.sortOrder))
+        .limit(limitNum)
+        .offset(offset);
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      }).from(achievements).where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const [stats] = await db.select({
+        totalAwarded: sql<number>`count(distinct ${userAchievements.id})::int`,
+        uniqueUsers: sql<number>`count(distinct ${userAchievements.userId})::int`,
+      }).from(userAchievements);
+
+      res.json({
+        achievements: achievementList,
+        stats: {
+          totalAwarded: stats?.totalAwarded || 0,
+          uniqueUsers: stats?.uniqueUsers || 0,
+        },
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching achievements:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch achievements" });
+    }
+  });
+
+  // POST /api/admin/achievements/:id/award - Award achievement to user
+  app.post("/api/admin/achievements/:id/award", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { userId } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({ message: "userId is required" });
+      }
+
+      const [achievement, user] = await Promise.all([
+        db.select().from(achievements).where(eq(achievements.id, id)).limit(1),
+        db.select().from(users).where(eq(users.id, userId)).limit(1),
+      ]);
+
+      if (achievement.length === 0) {
+        return res.status(404).json({ message: "Achievement not found" });
+      }
+
+      if (user.length === 0) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const existing = await db.select()
+        .from(userAchievements)
+        .where(and(
+          eq(userAchievements.userId, userId),
+          eq(userAchievements.achievementId, id)
+        ))
+        .limit(1);
+
+      if (existing.length > 0) {
+        return res.status(400).json({ message: "User already has this achievement" });
+      }
+
+      await db.insert(userAchievements).values({
+        userId,
+        achievementId: id,
+        progress: 100,
+        progressMax: 100,
+        isCompleted: true,
+        completedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "CREATE",
+        "user_achievement",
+        `${userId}-${id}`,
+        { action: "award", userId, achievementId: id, achievementName: achievement[0].name },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] Achievement ${id} awarded to user ${userId} by admin ${req.session.userId}`);
+      res.json({ message: "Achievement awarded successfully" });
+    } catch (error: any) {
+      console.error("Error awarding achievement:", error);
+      res.status(500).json({ message: error?.message || "Failed to award achievement" });
+    }
+  });
+
+  // ===== BROADCAST CHANNELS MANAGEMENT =====
+
+  // GET /api/admin/broadcast-channels - List channels
+  app.get("/api/admin/broadcast-channels", requireAdmin, async (req, res) => {
+    try {
+      const { page = "1", limit = "50" } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      const channels = await db.select({
+        id: broadcastChannels.id,
+        ownerId: broadcastChannels.ownerId,
+        name: broadcastChannels.name,
+        description: broadcastChannels.description,
+        avatarUrl: broadcastChannels.avatarUrl,
+        subscriberCount: broadcastChannels.subscriberCount,
+        messageCount: broadcastChannels.messageCount,
+        isActive: broadcastChannels.isActive,
+        createdAt: broadcastChannels.createdAt,
+        updatedAt: broadcastChannels.updatedAt,
+      })
+        .from(broadcastChannels)
+        .orderBy(desc(broadcastChannels.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const ownerIds = [...new Set(channels.map(c => c.ownerId))];
+      const channelOwners = ownerIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+      }).from(users).where(inArray(users.id, ownerIds)) : [];
+
+      const ownerMap = new Map(channelOwners.map(u => [u.id, u]));
+
+      const channelsWithOwners = channels.map(channel => ({
+        ...channel,
+        owner: ownerMap.get(channel.ownerId) || null,
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      }).from(broadcastChannels);
+
+      res.json({
+        channels: channelsWithOwners,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching broadcast channels:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch broadcast channels" });
+    }
+  });
+
+  // POST /api/admin/broadcast-channels/:id/delete - Delete channel
+  app.post("/api/admin/broadcast-channels/:id/delete", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const channel = await db.select().from(broadcastChannels).where(eq(broadcastChannels.id, id)).limit(1);
+      
+      if (channel.length === 0) {
+        return res.status(404).json({ message: "Channel not found" });
+      }
+
+      await db.delete(broadcastChannels).where(eq(broadcastChannels.id, id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "broadcast_channel",
+        id,
+        { ownerId: channel[0].ownerId, name: channel[0].name },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] Broadcast channel ${id} deleted by admin ${req.session.userId}`);
+      res.json({ message: "Channel deleted successfully" });
+    } catch (error: any) {
+      console.error("Error deleting channel:", error);
+      res.status(500).json({ message: error?.message || "Failed to delete channel" });
+    }
+  });
+
+  // ===== PORTFOLIOS MANAGEMENT =====
+
+  // GET /api/admin/portfolios - List portfolios (net worth ledger entries)
+  app.get("/api/admin/portfolios", requireAdmin, async (req, res) => {
+    try {
+      const { userId, page = "1", limit = "50" } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      const conditions: SQL[] = [];
+      if (userId && typeof userId === "string") {
+        conditions.push(eq(netWorthLedger.userId, userId));
+      }
+
+      const portfolioEntries = await db.select()
+        .from(netWorthLedger)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(netWorthLedger.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const userIds = [...new Set(portfolioEntries.map(e => e.userId))];
+      const portfolioUsers = userIds.length > 0 ? await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        netWorth: users.netWorth,
+      }).from(users).where(inArray(users.id, userIds)) : [];
+
+      const userMap = new Map(portfolioUsers.map(u => [u.id, u]));
+
+      const entriesWithUsers = portfolioEntries.map(entry => ({
+        ...entry,
+        user: userMap.get(entry.userId) || null,
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      }).from(netWorthLedger).where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      res.json({
+        entries: entriesWithUsers,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching portfolios:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch portfolios" });
+    }
+  });
+
+  // POST /api/admin/portfolios/:id/feature - Feature a user's portfolio
+  app.post("/api/admin/portfolios/:id/feature", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { featured } = req.body;
+
+      const user = await db.select().from(users).where(eq(users.id, id)).limit(1);
+      
+      if (user.length === 0) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      await db.update(users)
+        .set({
+          isVerified: featured !== false,
+        })
+        .where(eq(users.id, id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "user",
+        id,
+        { action: "feature_portfolio", featured: featured !== false },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] Portfolio ${id} ${featured !== false ? 'featured' : 'unfeatured'} by admin ${req.session.userId}`);
+      res.json({ message: `Portfolio ${featured !== false ? 'featured' : 'unfeatured'} successfully` });
+    } catch (error: any) {
+      console.error("Error featuring portfolio:", error);
+      res.status(500).json({ message: error?.message || "Failed to feature portfolio" });
+    }
+  });
+
+  // ===== GOSSIP DMS MANAGEMENT =====
+
+  // GET /api/admin/gossip-dms - List anonymous DMs (for abuse review)
+  app.get("/api/admin/gossip-dms", requireAdmin, async (req, res) => {
+    try {
+      const { page = "1", limit = "50" } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      const dms = await db.select({
+        id: gossipDMMessages.id,
+        conversationId: gossipDMMessages.conversationId,
+        senderHash: gossipDMMessages.senderHash,
+        content: gossipDMMessages.content,
+        isRead: gossipDMMessages.isRead,
+        createdAt: gossipDMMessages.createdAt,
+      })
+        .from(gossipDMMessages)
+        .orderBy(desc(gossipDMMessages.createdAt))
+        .limit(limitNum)
+        .offset(offset);
+
+      const conversationIds = [...new Set(dms.map(d => d.conversationId))];
+      const convos = conversationIds.length > 0 ? await db.select()
+        .from(gossipDMConversations)
+        .where(inArray(gossipDMConversations.id, conversationIds)) : [];
+
+      const convoMap = new Map(convos.map(c => [c.id, c]));
+
+      const dmsWithConversations = dms.map(dm => ({
+        ...dm,
+        conversation: convoMap.get(dm.conversationId) || null,
+      }));
+
+      const [countResult] = await db.select({
+        total: sql<number>`count(*)::int`
+      }).from(gossipDMMessages);
+
+      res.json({
+        messages: dmsWithConversations,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: countResult?.total || 0,
+          totalPages: Math.ceil((countResult?.total || 0) / limitNum)
+        }
+      });
+    } catch (error: any) {
+      console.error("Error fetching gossip DMs:", error);
+      res.status(500).json({ message: error?.message || "Failed to fetch gossip DMs" });
+    }
+  });
+
+  // POST /api/admin/gossip-dms/:id/delete - Delete abusive DM
+  app.post("/api/admin/gossip-dms/:id/delete", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const dm = await db.select().from(gossipDMMessages).where(eq(gossipDMMessages.id, id)).limit(1);
+      
+      if (dm.length === 0) {
+        return res.status(404).json({ message: "Message not found" });
+      }
+
+      await db.delete(gossipDMMessages).where(eq(gossipDMMessages.id, id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "DELETE",
+        "gossip_dm_message",
+        id,
+        { conversationId: dm[0].conversationId, senderHash: dm[0].senderHash },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] Gossip DM ${id} deleted by admin ${req.session.userId}`);
+      res.json({ message: "Message deleted successfully" });
+    } catch (error: any) {
+      console.error("Error deleting gossip DM:", error);
+      res.status(500).json({ message: error?.message || "Failed to delete message" });
+    }
+  });
+
+  // ===== BOOSTS MANAGEMENT (Cancel endpoint) =====
+
+  // POST /api/admin/boosts/:id/cancel - Cancel boost
+  app.post("/api/admin/boosts/:id/cancel", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const boost = await db.select().from(adCampaigns).where(eq(adCampaigns.id, id)).limit(1);
+      
+      if (boost.length === 0) {
+        return res.status(404).json({ message: "Boost not found" });
+      }
+
+      if (boost[0].status === "CANCELLED" || boost[0].status === "COMPLETED") {
+        return res.status(400).json({ message: "Boost is already cancelled or completed" });
+      }
+
+      await db.update(adCampaigns)
+        .set({
+          status: "CANCELLED",
+          updatedAt: new Date(),
+        })
+        .where(eq(adCampaigns.id, id));
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UPDATE",
+        "ad_campaign",
+        id,
+        { action: "cancel_boost", previousStatus: boost[0].status, advertiserId: boost[0].advertiserId },
+        req.ip,
+        req.get("user-agent")
+      );
+
+      console.log(`[Admin] Boost ${id} cancelled by admin ${req.session.userId}`);
+      res.json({ message: "Boost cancelled successfully" });
+    } catch (error: any) {
+      console.error("Error cancelling boost:", error);
+      res.status(500).json({ message: error?.message || "Failed to cancel boost" });
     }
   });
 

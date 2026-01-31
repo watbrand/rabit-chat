@@ -669,6 +669,144 @@ export const dataImportSchema = z.object({
   overwrite: z.boolean().optional().default(false),
 });
 
+// ===== POST UPDATE VALIDATION =====
+
+export const updatePostSchema = z.object({
+  content: z.string().max(5000, "Post content too long").optional().nullable(),
+  caption: z.string().max(500, "Caption too long").optional().nullable(),
+}).refine(data => data.content !== undefined || data.caption !== undefined, {
+  message: "At least content or caption must be provided for update",
+});
+
+// ===== GROUP UPDATE VALIDATION =====
+
+export const updateGroupSchema = z.object({
+  name: z.string()
+    .min(3, "Group name must be at least 3 characters")
+    .max(50, "Group name cannot exceed 50 characters")
+    .transform(val => val.trim())
+    .optional(),
+  description: z.string()
+    .max(500, "Description cannot exceed 500 characters")
+    .transform(val => val?.trim() || null)
+    .optional()
+    .nullable(),
+  isPrivate: z.boolean().optional(),
+  category: z.enum([
+    "SOCIAL", "BUSINESS", "ENTERTAINMENT", "EDUCATION", "GAMING",
+    "SPORTS", "MUSIC", "ART", "TECHNOLOGY", "LIFESTYLE", "OTHER"
+  ]).optional(),
+  avatarUrl: z.string().url("Invalid avatar URL").optional().nullable(),
+});
+
+// ===== EVENT UPDATE VALIDATION =====
+
+export const updateEventSchema = z.object({
+  title: z.string()
+    .min(3, "Event title must be at least 3 characters")
+    .max(100, "Event title cannot exceed 100 characters")
+    .transform(val => val.trim())
+    .optional(),
+  description: z.string()
+    .max(1000, "Description cannot exceed 1000 characters")
+    .transform(val => val?.trim() || null)
+    .optional()
+    .nullable(),
+  startDate: z.string()
+    .refine(val => !isNaN(new Date(val).getTime()), "Invalid start date format")
+    .optional(),
+  endDate: z.string()
+    .refine(val => !val || !isNaN(new Date(val).getTime()), "Invalid end date format")
+    .optional()
+    .nullable(),
+  location: z.string().max(200, "Location too long").optional().nullable(),
+  isVirtual: z.boolean().optional(),
+  maxAttendees: z.union([z.number().int().positive(), z.string().transform(v => parseInt(v, 10))])
+    .optional()
+    .nullable()
+    .refine(val => !val || (val > 0 && val <= 100000), "Invalid attendee limit"),
+});
+
+// ===== WALLET VALIDATION =====
+
+const withdrawalMethodEnum = z.enum(["BANK_TRANSFER", "MOBILE_MONEY", "PAYPAL", "CRYPTO"]);
+
+export const validateWithdrawSchema = z.object({
+  amount: z.number()
+    .int("Amount must be a whole number")
+    .positive("Amount must be positive")
+    .min(100, "Minimum withdrawal is 100 coins"),
+  method: withdrawalMethodEnum,
+  bankName: z.string().min(2, "Bank name required").max(100, "Bank name too long").optional(),
+  accountNumber: z.string().min(5, "Invalid account number").max(30, "Account number too long").optional(),
+  accountHolder: z.string().min(2, "Account holder name required").max(100, "Name too long").optional(),
+}).refine(data => {
+  if (data.method === "BANK_TRANSFER") {
+    return data.bankName && data.accountNumber && data.accountHolder;
+  }
+  return true;
+}, {
+  message: "Bank details required for bank transfer",
+  path: ["bankName"],
+});
+
+export const validateStakeSchema = z.object({
+  amount: z.number()
+    .int("Amount must be a whole number")
+    .positive("Amount must be positive")
+    .min(10, "Minimum stake is 10 coins"),
+  tierId: z.string().uuid("Invalid tier ID").optional(),
+  durationDays: z.number().int().min(7).max(365).optional(),
+});
+
+export const validateGiftSchema = z.object({
+  recipientId: z.string().uuid("Invalid recipient ID"),
+  giftTypeId: z.string().uuid("Invalid gift type ID"),
+  amount: z.number()
+    .int("Amount must be a whole number")
+    .positive("Amount must be positive")
+    .optional()
+    .default(1),
+  message: z.string().max(200, "Gift message too long").optional(),
+  quantity: z.number().int().positive().max(100).optional().default(1),
+});
+
+// ===== MESSAGE UPDATE VALIDATION =====
+
+export const updateMessageSchema = z.object({
+  content: z.string()
+    .min(1, "Message content is required")
+    .max(2000, "Message content too long")
+    .optional(),
+});
+
+// ===== COMMENT CREATE VALIDATION (stricter) =====
+
+export const validateCommentCreateSchema = z.object({
+  content: z.string()
+    .min(1, "Comment is required")
+    .max(1000, "Comment cannot exceed 1000 characters"),
+});
+
+// ===== USER PROFILE UPDATE VALIDATION =====
+
+export const validateUserUpdateSchema = z.object({
+  displayName: z.string().max(50, "Display name too long").optional(),
+  bio: z.string().max(500, "Bio too long").optional().nullable(),
+  avatarUrl: z.string().url("Invalid avatar URL").optional().nullable(),
+  coverUrl: z.string().url("Invalid cover URL").optional().nullable(),
+  netWorth: z.number().min(0, "Net worth cannot be negative").optional(),
+  linkUrl: z.string().url("Invalid link URL").max(200, "Link URL too long").optional().nullable(),
+  location: z.string().max(100, "Location too long").optional().nullable(),
+  pronouns: z.string().max(30, "Pronouns too long").optional().nullable(),
+  category: z.enum(["PERSONAL", "CREATOR", "BUSINESS"]).optional(),
+  username: z.string()
+    .min(3, "Username must be at least 3 characters")
+    .max(30, "Username must be at most 30 characters")
+    .regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores")
+    .optional(),
+});
+
 // ===== REEL VALIDATION =====
 
 export const createReelSchema = z.object({
