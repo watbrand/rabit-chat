@@ -40,7 +40,7 @@ import {
   hasPermission,
   createPolicyError,
 } from "./policy";
-import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes, userSettings, venues, checkIns, userLocations } from "@shared/schema";
+import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes, userSettings, venues, checkIns, userLocations, chatFolders, chatFolderConversations, usageStats, focusModeSettings, pokes, bffStatus, closeFriends, webhooks, webhookDeliveries, postThreads, threadPosts, duetStitchPosts, arFilters } from "@shared/schema";
 import cloudinary, {
   uploadToCloudinary,
   uploadToCloudinaryFromFile,
@@ -20552,6 +20552,1694 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Failed to create venue:", error);
       res.status(500).json({ message: error.message || "Failed to create venue" });
+    }
+  });
+
+  // =============================================
+  // DIGITAL WELLNESS ENDPOINTS
+  // =============================================
+
+  // GET /api/focus-mode - Get user's focus mode settings
+  app.get("/api/focus-mode", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      const [settings] = await db.select()
+        .from(focusModeSettings)
+        .where(eq(focusModeSettings.userId, userId))
+        .limit(1);
+      
+      if (!settings) {
+        return res.json({
+          isEnabled: false,
+          dailyLimitMinutes: null,
+          breakReminderMinutes: null,
+          quietHoursStart: null,
+          quietHoursEnd: null,
+          hideNotificationCounts: false,
+        });
+      }
+      
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Failed to get focus mode settings:", error);
+      res.status(500).json({ message: error.message || "Failed to get focus mode settings" });
+    }
+  });
+
+  // PUT /api/focus-mode - Update focus mode settings
+  app.put("/api/focus-mode", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { enabled, startTime, endTime, allowedContacts, dailyLimitMinutes, breakReminderMinutes, hideNotificationCounts } = req.body;
+      
+      const [existing] = await db.select()
+        .from(focusModeSettings)
+        .where(eq(focusModeSettings.userId, userId))
+        .limit(1);
+      
+      const updateData: Record<string, any> = {
+        updatedAt: new Date(),
+      };
+      
+      if (typeof enabled === "boolean") updateData.isEnabled = enabled;
+      if (startTime !== undefined) updateData.quietHoursStart = startTime;
+      if (endTime !== undefined) updateData.quietHoursEnd = endTime;
+      if (typeof dailyLimitMinutes === "number" || dailyLimitMinutes === null) updateData.dailyLimitMinutes = dailyLimitMinutes;
+      if (typeof breakReminderMinutes === "number" || breakReminderMinutes === null) updateData.breakReminderMinutes = breakReminderMinutes;
+      if (typeof hideNotificationCounts === "boolean") updateData.hideNotificationCounts = hideNotificationCounts;
+      
+      let settings;
+      if (existing) {
+        [settings] = await db.update(focusModeSettings)
+          .set(updateData)
+          .where(eq(focusModeSettings.userId, userId))
+          .returning();
+      } else {
+        [settings] = await db.insert(focusModeSettings)
+          .values({
+            userId,
+            isEnabled: enabled ?? false,
+            quietHoursStart: startTime ?? null,
+            quietHoursEnd: endTime ?? null,
+            dailyLimitMinutes: dailyLimitMinutes ?? null,
+            breakReminderMinutes: breakReminderMinutes ?? null,
+            hideNotificationCounts: hideNotificationCounts ?? false,
+          })
+          .returning();
+      }
+      
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Failed to update focus mode settings:", error);
+      res.status(500).json({ message: error.message || "Failed to update focus mode settings" });
+    }
+  });
+
+  // GET /api/usage-stats - Get user's usage statistics
+  app.get("/api/usage-stats", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const days = Math.min(parseInt(req.query.days as string) || 7, 30);
+      
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      startDate.setHours(0, 0, 0, 0);
+      
+      const stats = await db.select()
+        .from(usageStats)
+        .where(and(
+          eq(usageStats.userId, userId),
+          gte(usageStats.date, startDate)
+        ))
+        .orderBy(desc(usageStats.date));
+      
+      const totals = stats.reduce((acc, stat) => ({
+        screenTimeMinutes: acc.screenTimeMinutes + stat.screenTimeMinutes,
+        sessionsCount: acc.sessionsCount + stat.sessionsCount,
+        postsViewed: acc.postsViewed + stat.postsViewed,
+        storiesViewed: acc.storiesViewed + stat.storiesViewed,
+        messagesSent: acc.messagesSent + stat.messagesSent,
+        notificationsReceived: acc.notificationsReceived + stat.notificationsReceived,
+      }), {
+        screenTimeMinutes: 0,
+        sessionsCount: 0,
+        postsViewed: 0,
+        storiesViewed: 0,
+        messagesSent: 0,
+        notificationsReceived: 0,
+      });
+      
+      res.json({
+        daily: stats,
+        totals,
+        averageScreenTimeMinutes: stats.length > 0 ? Math.round(totals.screenTimeMinutes / stats.length) : 0,
+        averageSessionsPerDay: stats.length > 0 ? Math.round(totals.sessionsCount / stats.length) : 0,
+      });
+    } catch (error: any) {
+      console.error("Failed to get usage stats:", error);
+      res.status(500).json({ message: error.message || "Failed to get usage stats" });
+    }
+  });
+
+  // =============================================
+  // CHAT FOLDERS ENDPOINTS
+  // =============================================
+
+  // GET /api/chat-folders - List user's chat folders
+  app.get("/api/chat-folders", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      const folders = await db.select()
+        .from(chatFolders)
+        .where(eq(chatFolders.userId, userId))
+        .orderBy(asc(chatFolders.sortOrder), asc(chatFolders.createdAt));
+      
+      const foldersWithConversations = await Promise.all(folders.map(async (folder) => {
+        const folderConversations = await db.select({
+          conversationId: chatFolderConversations.conversationId,
+        })
+          .from(chatFolderConversations)
+          .where(eq(chatFolderConversations.folderId, folder.id));
+        
+        return {
+          ...folder,
+          conversationIds: folderConversations.map(fc => fc.conversationId),
+        };
+      }));
+      
+      res.json(foldersWithConversations);
+    } catch (error: any) {
+      console.error("Failed to get chat folders:", error);
+      res.status(500).json({ message: error.message || "Failed to get chat folders" });
+    }
+  });
+
+  // POST /api/chat-folders - Create a folder
+  app.post("/api/chat-folders", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { name, color, icon } = req.body;
+      
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ message: "name is required" });
+      }
+      
+      if (name.trim().length > 50) {
+        return res.status(400).json({ message: "name must be 50 characters or less" });
+      }
+      
+      const existingFolders = await db.select()
+        .from(chatFolders)
+        .where(eq(chatFolders.userId, userId));
+      
+      const maxSortOrder = existingFolders.reduce((max, f) => Math.max(max, f.sortOrder), -1);
+      
+      const [folder] = await db.insert(chatFolders)
+        .values({
+          userId,
+          name: name.trim(),
+          iconName: icon || null,
+          sortOrder: maxSortOrder + 1,
+        })
+        .returning();
+      
+      res.status(201).json({ ...folder, conversationIds: [] });
+    } catch (error: any) {
+      console.error("Failed to create chat folder:", error);
+      res.status(500).json({ message: error.message || "Failed to create chat folder" });
+    }
+  });
+
+  // DELETE /api/chat-folders/:id - Delete a folder
+  app.delete("/api/chat-folders/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const folderId = req.params.id;
+      
+      const [folder] = await db.select()
+        .from(chatFolders)
+        .where(and(
+          eq(chatFolders.id, folderId),
+          eq(chatFolders.userId, userId)
+        ))
+        .limit(1);
+      
+      if (!folder) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      
+      await db.delete(chatFolders)
+        .where(eq(chatFolders.id, folderId));
+      
+      res.json({ message: "Folder deleted" });
+    } catch (error: any) {
+      console.error("Failed to delete chat folder:", error);
+      res.status(500).json({ message: error.message || "Failed to delete chat folder" });
+    }
+  });
+
+  // POST /api/chat-folders/:id/conversations - Add conversation to folder
+  app.post("/api/chat-folders/:id/conversations", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const folderId = req.params.id;
+      const { conversationId } = req.body;
+      
+      if (!conversationId || typeof conversationId !== "string") {
+        return res.status(400).json({ message: "conversationId is required" });
+      }
+      
+      const [folder] = await db.select()
+        .from(chatFolders)
+        .where(and(
+          eq(chatFolders.id, folderId),
+          eq(chatFolders.userId, userId)
+        ))
+        .limit(1);
+      
+      if (!folder) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      
+      const [conversation] = await db.select()
+        .from(conversations)
+        .where(and(
+          eq(conversations.id, conversationId),
+          or(
+            eq(conversations.participant1Id, userId),
+            eq(conversations.participant2Id, userId)
+          )
+        ))
+        .limit(1);
+      
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+      
+      const [existing] = await db.select()
+        .from(chatFolderConversations)
+        .where(and(
+          eq(chatFolderConversations.folderId, folderId),
+          eq(chatFolderConversations.conversationId, conversationId)
+        ))
+        .limit(1);
+      
+      if (existing) {
+        return res.status(400).json({ message: "Conversation already in folder" });
+      }
+      
+      await db.insert(chatFolderConversations)
+        .values({
+          folderId,
+          conversationId,
+        });
+      
+      res.status(201).json({ message: "Conversation added to folder" });
+    } catch (error: any) {
+      console.error("Failed to add conversation to folder:", error);
+      res.status(500).json({ message: error.message || "Failed to add conversation to folder" });
+    }
+  });
+
+  // DELETE /api/chat-folders/:id/conversations/:conversationId - Remove conversation from folder
+  app.delete("/api/chat-folders/:id/conversations/:conversationId", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const folderId = req.params.id;
+      const conversationId = req.params.conversationId;
+      
+      const [folder] = await db.select()
+        .from(chatFolders)
+        .where(and(
+          eq(chatFolders.id, folderId),
+          eq(chatFolders.userId, userId)
+        ))
+        .limit(1);
+      
+      if (!folder) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      
+      await db.delete(chatFolderConversations)
+        .where(and(
+          eq(chatFolderConversations.folderId, folderId),
+          eq(chatFolderConversations.conversationId, conversationId)
+        ));
+      
+      res.json({ message: "Conversation removed from folder" });
+    } catch (error: any) {
+      console.error("Failed to remove conversation from folder:", error);
+      res.status(500).json({ message: error.message || "Failed to remove conversation from folder" });
+    }
+  });
+
+  // =============================================
+  // SOCIAL FEATURES ENDPOINTS
+  // =============================================
+
+  // GET /api/pokes - Get received pokes
+  app.get("/api/pokes", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      const receivedPokes = await db.select({
+        poke: pokes,
+        sender: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(pokes)
+        .innerJoin(users, eq(pokes.senderId, users.id))
+        .where(eq(pokes.recipientId, userId))
+        .orderBy(desc(pokes.createdAt));
+      
+      const result = receivedPokes.map(row => ({
+        ...row.poke,
+        sender: row.sender,
+      }));
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Failed to get pokes:", error);
+      res.status(500).json({ message: error.message || "Failed to get pokes" });
+    }
+  });
+
+  // POST /api/pokes - Send a poke
+  app.post("/api/pokes", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { targetUserId, type } = req.body;
+      
+      if (!targetUserId || typeof targetUserId !== "string") {
+        return res.status(400).json({ message: "targetUserId is required" });
+      }
+      
+      if (targetUserId === userId) {
+        return res.status(400).json({ message: "Cannot poke yourself" });
+      }
+      
+      const [targetUser] = await db.select()
+        .from(users)
+        .where(eq(users.id, targetUserId))
+        .limit(1);
+      
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const validTypes = ["WAVE", "POKE", "NUDGE", "WINK", "HI"];
+      const pokeType = validTypes.includes(type) ? type : "WAVE";
+      
+      const [poke] = await db.insert(pokes)
+        .values({
+          senderId: userId,
+          recipientId: targetUserId,
+          pokeType,
+        })
+        .returning();
+      
+      const [sender] = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+      })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      
+      broadcastToUser(targetUserId, {
+        type: "poke:received",
+        payload: { ...poke, sender },
+      });
+      
+      res.status(201).json({ ...poke, sender });
+    } catch (error: any) {
+      console.error("Failed to send poke:", error);
+      res.status(500).json({ message: error.message || "Failed to send poke" });
+    }
+  });
+
+  // DELETE /api/pokes/:id - Delete a poke
+  app.delete("/api/pokes/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const pokeId = req.params.id;
+      
+      const [poke] = await db.select()
+        .from(pokes)
+        .where(and(
+          eq(pokes.id, pokeId),
+          or(
+            eq(pokes.senderId, userId),
+            eq(pokes.recipientId, userId)
+          )
+        ))
+        .limit(1);
+      
+      if (!poke) {
+        return res.status(404).json({ message: "Poke not found" });
+      }
+      
+      await db.delete(pokes)
+        .where(eq(pokes.id, pokeId));
+      
+      res.json({ message: "Poke deleted" });
+    } catch (error: any) {
+      console.error("Failed to delete poke:", error);
+      res.status(500).json({ message: error.message || "Failed to delete poke" });
+    }
+  });
+
+  // GET /api/bff - Get user's BFF list (mutual close friends)
+  app.get("/api/bff", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      const bffList = await db.select({
+        bff: bffStatus,
+        friend: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(bffStatus)
+        .innerJoin(users, eq(bffStatus.bffId, users.id))
+        .where(eq(bffStatus.userId, userId))
+        .orderBy(desc(bffStatus.streakCount));
+      
+      const result = bffList.map(row => ({
+        ...row.bff,
+        friend: row.friend,
+      }));
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Failed to get BFF list:", error);
+      res.status(500).json({ message: error.message || "Failed to get BFF list" });
+    }
+  });
+
+  // GET /api/close-friends - Get user's close friends list
+  app.get("/api/close-friends", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      const closeFriendsList = await db.select({
+        closeFriend: closeFriends,
+        friend: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(closeFriends)
+        .innerJoin(users, eq(closeFriends.friendId, users.id))
+        .where(eq(closeFriends.userId, userId))
+        .orderBy(desc(closeFriends.createdAt));
+      
+      const result = closeFriendsList.map(row => ({
+        ...row.closeFriend,
+        friend: row.friend,
+      }));
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Failed to get close friends:", error);
+      res.status(500).json({ message: error.message || "Failed to get close friends" });
+    }
+  });
+
+  // POST /api/close-friends - Add to close friends
+  app.post("/api/close-friends", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { userId: friendId } = req.body;
+      
+      if (!friendId || typeof friendId !== "string") {
+        return res.status(400).json({ message: "userId is required" });
+      }
+      
+      if (friendId === userId) {
+        return res.status(400).json({ message: "Cannot add yourself as close friend" });
+      }
+      
+      const [friendUser] = await db.select()
+        .from(users)
+        .where(eq(users.id, friendId))
+        .limit(1);
+      
+      if (!friendUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const [existing] = await db.select()
+        .from(closeFriends)
+        .where(and(
+          eq(closeFriends.userId, userId),
+          eq(closeFriends.friendId, friendId)
+        ))
+        .limit(1);
+      
+      if (existing) {
+        return res.status(400).json({ message: "User is already in close friends" });
+      }
+      
+      const [closeFriend] = await db.insert(closeFriends)
+        .values({
+          userId,
+          friendId,
+        })
+        .returning();
+      
+      const { password: _, ...safeFriend } = friendUser;
+      
+      res.status(201).json({
+        ...closeFriend,
+        friend: {
+          id: safeFriend.id,
+          username: safeFriend.username,
+          displayName: safeFriend.displayName,
+          avatarUrl: safeFriend.avatarUrl,
+          isVerified: safeFriend.isVerified,
+        },
+      });
+    } catch (error: any) {
+      console.error("Failed to add close friend:", error);
+      res.status(500).json({ message: error.message || "Failed to add close friend" });
+    }
+  });
+
+  // DELETE /api/close-friends/:userId - Remove from close friends
+  app.delete("/api/close-friends/:userId", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const friendId = req.params.userId;
+      
+      const [existing] = await db.select()
+        .from(closeFriends)
+        .where(and(
+          eq(closeFriends.userId, userId),
+          eq(closeFriends.friendId, friendId)
+        ))
+        .limit(1);
+      
+      if (!existing) {
+        return res.status(404).json({ message: "Close friend not found" });
+      }
+      
+      await db.delete(closeFriends)
+        .where(and(
+          eq(closeFriends.userId, userId),
+          eq(closeFriends.friendId, friendId)
+        ));
+      
+      res.json({ message: "Close friend removed" });
+    } catch (error: any) {
+      console.error("Failed to remove close friend:", error);
+      res.status(500).json({ message: error.message || "Failed to remove close friend" });
+    }
+  });
+
+  // ===== BROADCAST CHANNELS API =====
+
+  // GET /api/broadcast-channels/subscribed - List channels user is subscribed to
+  app.get("/api/broadcast-channels/subscribed", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      const subscriptions = await db.select({
+        subscription: broadcastChannelSubscribers,
+        channel: broadcastChannels,
+        owner: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(broadcastChannelSubscribers)
+        .innerJoin(broadcastChannels, eq(broadcastChannelSubscribers.channelId, broadcastChannels.id))
+        .innerJoin(users, eq(broadcastChannels.ownerId, users.id))
+        .where(eq(broadcastChannelSubscribers.userId, userId))
+        .orderBy(desc(broadcastChannelSubscribers.subscribedAt));
+      
+      const result = subscriptions.map(row => ({
+        ...row.channel,
+        owner: row.owner,
+        subscription: {
+          muteNotifications: row.subscription.muteNotifications,
+          subscribedAt: row.subscription.subscribedAt,
+        },
+      }));
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Failed to get subscribed channels:", error);
+      res.status(500).json({ message: error.message || "Failed to get subscribed channels" });
+    }
+  });
+
+  // GET /api/broadcast-channels - List channels (optionally filter by owner)
+  app.get("/api/broadcast-channels", requireAuth, async (req, res) => {
+    try {
+      const { ownerId } = req.query;
+      
+      let query = db.select({
+        channel: broadcastChannels,
+        owner: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(broadcastChannels)
+        .innerJoin(users, eq(broadcastChannels.ownerId, users.id))
+        .where(eq(broadcastChannels.isActive, true))
+        .orderBy(desc(broadcastChannels.createdAt));
+      
+      if (ownerId && typeof ownerId === "string") {
+        query = db.select({
+          channel: broadcastChannels,
+          owner: {
+            id: users.id,
+            username: users.username,
+            displayName: users.displayName,
+            avatarUrl: users.avatarUrl,
+            isVerified: users.isVerified,
+          },
+        })
+          .from(broadcastChannels)
+          .innerJoin(users, eq(broadcastChannels.ownerId, users.id))
+          .where(and(
+            eq(broadcastChannels.isActive, true),
+            eq(broadcastChannels.ownerId, ownerId)
+          ))
+          .orderBy(desc(broadcastChannels.createdAt));
+      }
+      
+      const channels = await query;
+      
+      const result = channels.map(row => ({
+        ...row.channel,
+        owner: row.owner,
+      }));
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Failed to get broadcast channels:", error);
+      res.status(500).json({ message: error.message || "Failed to get broadcast channels" });
+    }
+  });
+
+  // POST /api/broadcast-channels - Create a channel
+  app.post("/api/broadcast-channels", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { name, description } = req.body;
+      
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ message: "Channel name is required" });
+      }
+      
+      if (name.length > 100) {
+        return res.status(400).json({ message: "Channel name must be 100 characters or less" });
+      }
+      
+      const [channel] = await db.insert(broadcastChannels)
+        .values({
+          ownerId: userId,
+          name: name.trim(),
+          description: description?.trim() || null,
+        })
+        .returning();
+      
+      const [owner] = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+      })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      
+      res.status(201).json({
+        ...channel,
+        owner,
+      });
+    } catch (error: any) {
+      console.error("Failed to create broadcast channel:", error);
+      res.status(500).json({ message: error.message || "Failed to create broadcast channel" });
+    }
+  });
+
+  // GET /api/broadcast-channels/:id - Get channel details
+  app.get("/api/broadcast-channels/:id", requireAuth, async (req, res) => {
+    try {
+      const channelId = req.params.id;
+      const userId = req.session.userId!;
+      
+      const [result] = await db.select({
+        channel: broadcastChannels,
+        owner: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(broadcastChannels)
+        .innerJoin(users, eq(broadcastChannels.ownerId, users.id))
+        .where(eq(broadcastChannels.id, channelId))
+        .limit(1);
+      
+      if (!result) {
+        return res.status(404).json({ message: "Channel not found" });
+      }
+      
+      const [subscription] = await db.select()
+        .from(broadcastChannelSubscribers)
+        .where(and(
+          eq(broadcastChannelSubscribers.channelId, channelId),
+          eq(broadcastChannelSubscribers.userId, userId)
+        ))
+        .limit(1);
+      
+      res.json({
+        ...result.channel,
+        owner: result.owner,
+        isSubscribed: !!subscription,
+        subscription: subscription ? {
+          muteNotifications: subscription.muteNotifications,
+          subscribedAt: subscription.subscribedAt,
+        } : null,
+      });
+    } catch (error: any) {
+      console.error("Failed to get broadcast channel:", error);
+      res.status(500).json({ message: error.message || "Failed to get broadcast channel" });
+    }
+  });
+
+  // PATCH /api/broadcast-channels/:id - Update channel
+  app.patch("/api/broadcast-channels/:id", requireAuth, async (req, res) => {
+    try {
+      const channelId = req.params.id;
+      const userId = req.session.userId!;
+      const { name, description, avatarUrl, isActive } = req.body;
+      
+      const [channel] = await db.select()
+        .from(broadcastChannels)
+        .where(eq(broadcastChannels.id, channelId))
+        .limit(1);
+      
+      if (!channel) {
+        return res.status(404).json({ message: "Channel not found" });
+      }
+      
+      if (channel.ownerId !== userId) {
+        return res.status(403).json({ message: "Only the channel owner can update it" });
+      }
+      
+      const updates: Partial<typeof broadcastChannels.$inferInsert> = {
+        updatedAt: new Date(),
+      };
+      
+      if (name !== undefined) {
+        if (typeof name !== "string" || name.trim().length === 0) {
+          return res.status(400).json({ message: "Channel name cannot be empty" });
+        }
+        if (name.length > 100) {
+          return res.status(400).json({ message: "Channel name must be 100 characters or less" });
+        }
+        updates.name = name.trim();
+      }
+      
+      if (description !== undefined) {
+        updates.description = description?.trim() || null;
+      }
+      
+      if (avatarUrl !== undefined) {
+        updates.avatarUrl = avatarUrl || null;
+      }
+      
+      if (isActive !== undefined) {
+        updates.isActive = Boolean(isActive);
+      }
+      
+      const [updated] = await db.update(broadcastChannels)
+        .set(updates)
+        .where(eq(broadcastChannels.id, channelId))
+        .returning();
+      
+      const [owner] = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+      })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      
+      res.json({
+        ...updated,
+        owner,
+      });
+    } catch (error: any) {
+      console.error("Failed to update broadcast channel:", error);
+      res.status(500).json({ message: error.message || "Failed to update broadcast channel" });
+    }
+  });
+
+  // DELETE /api/broadcast-channels/:id - Delete channel
+  app.delete("/api/broadcast-channels/:id", requireAuth, async (req, res) => {
+    try {
+      const channelId = req.params.id;
+      const userId = req.session.userId!;
+      
+      const [channel] = await db.select()
+        .from(broadcastChannels)
+        .where(eq(broadcastChannels.id, channelId))
+        .limit(1);
+      
+      if (!channel) {
+        return res.status(404).json({ message: "Channel not found" });
+      }
+      
+      if (channel.ownerId !== userId) {
+        return res.status(403).json({ message: "Only the channel owner can delete it" });
+      }
+      
+      await db.delete(broadcastChannels)
+        .where(eq(broadcastChannels.id, channelId));
+      
+      res.json({ message: "Channel deleted" });
+    } catch (error: any) {
+      console.error("Failed to delete broadcast channel:", error);
+      res.status(500).json({ message: error.message || "Failed to delete broadcast channel" });
+    }
+  });
+
+  // POST /api/broadcast-channels/:id/subscribe - Subscribe to channel
+  app.post("/api/broadcast-channels/:id/subscribe", requireAuth, async (req, res) => {
+    try {
+      const channelId = req.params.id;
+      const userId = req.session.userId!;
+      
+      const [channel] = await db.select()
+        .from(broadcastChannels)
+        .where(eq(broadcastChannels.id, channelId))
+        .limit(1);
+      
+      if (!channel) {
+        return res.status(404).json({ message: "Channel not found" });
+      }
+      
+      if (!channel.isActive) {
+        return res.status(400).json({ message: "Cannot subscribe to inactive channel" });
+      }
+      
+      const [existing] = await db.select()
+        .from(broadcastChannelSubscribers)
+        .where(and(
+          eq(broadcastChannelSubscribers.channelId, channelId),
+          eq(broadcastChannelSubscribers.userId, userId)
+        ))
+        .limit(1);
+      
+      if (existing) {
+        return res.status(400).json({ message: "Already subscribed to this channel" });
+      }
+      
+      const [subscription] = await db.insert(broadcastChannelSubscribers)
+        .values({
+          channelId,
+          userId,
+        })
+        .returning();
+      
+      await db.update(broadcastChannels)
+        .set({
+          subscriberCount: sql`${broadcastChannels.subscriberCount} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(broadcastChannels.id, channelId));
+      
+      res.status(201).json({
+        message: "Subscribed to channel",
+        subscription,
+      });
+    } catch (error: any) {
+      console.error("Failed to subscribe to channel:", error);
+      res.status(500).json({ message: error.message || "Failed to subscribe to channel" });
+    }
+  });
+
+  // POST /api/broadcast-channels/:id/unsubscribe - Unsubscribe from channel
+  app.post("/api/broadcast-channels/:id/unsubscribe", requireAuth, async (req, res) => {
+    try {
+      const channelId = req.params.id;
+      const userId = req.session.userId!;
+      
+      const [existing] = await db.select()
+        .from(broadcastChannelSubscribers)
+        .where(and(
+          eq(broadcastChannelSubscribers.channelId, channelId),
+          eq(broadcastChannelSubscribers.userId, userId)
+        ))
+        .limit(1);
+      
+      if (!existing) {
+        return res.status(400).json({ message: "Not subscribed to this channel" });
+      }
+      
+      await db.delete(broadcastChannelSubscribers)
+        .where(and(
+          eq(broadcastChannelSubscribers.channelId, channelId),
+          eq(broadcastChannelSubscribers.userId, userId)
+        ));
+      
+      await db.update(broadcastChannels)
+        .set({
+          subscriberCount: sql`GREATEST(${broadcastChannels.subscriberCount} - 1, 0)`,
+          updatedAt: new Date(),
+        })
+        .where(eq(broadcastChannels.id, channelId));
+      
+      res.json({ message: "Unsubscribed from channel" });
+    } catch (error: any) {
+      console.error("Failed to unsubscribe from channel:", error);
+      res.status(500).json({ message: error.message || "Failed to unsubscribe from channel" });
+    }
+  });
+
+  // GET /api/broadcast-channels/:id/subscribers - List channel subscribers
+  app.get("/api/broadcast-channels/:id/subscribers", requireAuth, async (req, res) => {
+    try {
+      const channelId = req.params.id;
+      const userId = req.session.userId!;
+      
+      const [channel] = await db.select()
+        .from(broadcastChannels)
+        .where(eq(broadcastChannels.id, channelId))
+        .limit(1);
+      
+      if (!channel) {
+        return res.status(404).json({ message: "Channel not found" });
+      }
+      
+      if (channel.ownerId !== userId) {
+        return res.status(403).json({ message: "Only the channel owner can view subscribers" });
+      }
+      
+      const subscribers = await db.select({
+        subscription: broadcastChannelSubscribers,
+        user: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(broadcastChannelSubscribers)
+        .innerJoin(users, eq(broadcastChannelSubscribers.userId, users.id))
+        .where(eq(broadcastChannelSubscribers.channelId, channelId))
+        .orderBy(desc(broadcastChannelSubscribers.subscribedAt));
+      
+      const result = subscribers.map(row => ({
+        ...row.subscription,
+        user: row.user,
+      }));
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Failed to get channel subscribers:", error);
+      res.status(500).json({ message: error.message || "Failed to get channel subscribers" });
+    }
+  });
+
+  // ===== WEBHOOKS API =====
+
+  // GET /api/webhooks - List user's webhooks
+  app.get("/api/webhooks", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      const userWebhooks = await db.select()
+        .from(webhooks)
+        .where(eq(webhooks.userId, userId))
+        .orderBy(desc(webhooks.createdAt));
+      
+      const sanitized = userWebhooks.map(webhook => ({
+        ...webhook,
+        secret: undefined,
+      }));
+      
+      res.json(sanitized);
+    } catch (error: any) {
+      console.error("Failed to get webhooks:", error);
+      res.status(500).json({ message: error.message || "Failed to get webhooks" });
+    }
+  });
+
+  // POST /api/webhooks - Create a webhook
+  app.post("/api/webhooks", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { url, secret, events } = req.body;
+      
+      if (!url || typeof url !== "string") {
+        return res.status(400).json({ message: "Webhook URL is required" });
+      }
+      
+      try {
+        new URL(url);
+      } catch {
+        return res.status(400).json({ message: "Invalid webhook URL" });
+      }
+      
+      if (!secret || typeof secret !== "string" || secret.length < 16) {
+        return res.status(400).json({ message: "Webhook secret must be at least 16 characters" });
+      }
+      
+      if (secret.length > 100) {
+        return res.status(400).json({ message: "Webhook secret must be 100 characters or less" });
+      }
+      
+      if (!events || !Array.isArray(events) || events.length === 0) {
+        return res.status(400).json({ message: "At least one event type is required" });
+      }
+      
+      const validEvents = events.filter(e => typeof e === "string" && e.trim().length > 0);
+      if (validEvents.length === 0) {
+        return res.status(400).json({ message: "At least one valid event type is required" });
+      }
+      
+      const [webhook] = await db.insert(webhooks)
+        .values({
+          userId,
+          url: url.trim(),
+          secret,
+          events: validEvents,
+        })
+        .returning();
+      
+      res.status(201).json({
+        ...webhook,
+        secret: undefined,
+      });
+    } catch (error: any) {
+      console.error("Failed to create webhook:", error);
+      res.status(500).json({ message: error.message || "Failed to create webhook" });
+    }
+  });
+
+  // GET /api/webhooks/:id - Get webhook details
+  app.get("/api/webhooks/:id", requireAuth, async (req, res) => {
+    try {
+      const webhookId = req.params.id;
+      const userId = req.session.userId!;
+      
+      const [webhook] = await db.select()
+        .from(webhooks)
+        .where(eq(webhooks.id, webhookId))
+        .limit(1);
+      
+      if (!webhook) {
+        return res.status(404).json({ message: "Webhook not found" });
+      }
+      
+      if (webhook.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      res.json({
+        ...webhook,
+        secret: undefined,
+      });
+    } catch (error: any) {
+      console.error("Failed to get webhook:", error);
+      res.status(500).json({ message: error.message || "Failed to get webhook" });
+    }
+  });
+
+  // PATCH /api/webhooks/:id - Update webhook
+  app.patch("/api/webhooks/:id", requireAuth, async (req, res) => {
+    try {
+      const webhookId = req.params.id;
+      const userId = req.session.userId!;
+      const { url, secret, events, isActive } = req.body;
+      
+      const [webhook] = await db.select()
+        .from(webhooks)
+        .where(eq(webhooks.id, webhookId))
+        .limit(1);
+      
+      if (!webhook) {
+        return res.status(404).json({ message: "Webhook not found" });
+      }
+      
+      if (webhook.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      const updates: Partial<typeof webhooks.$inferInsert> = {
+        updatedAt: new Date(),
+      };
+      
+      if (url !== undefined) {
+        if (typeof url !== "string") {
+          return res.status(400).json({ message: "Invalid URL" });
+        }
+        try {
+          new URL(url);
+        } catch {
+          return res.status(400).json({ message: "Invalid webhook URL" });
+        }
+        updates.url = url.trim();
+      }
+      
+      if (secret !== undefined) {
+        if (typeof secret !== "string" || secret.length < 16) {
+          return res.status(400).json({ message: "Webhook secret must be at least 16 characters" });
+        }
+        if (secret.length > 100) {
+          return res.status(400).json({ message: "Webhook secret must be 100 characters or less" });
+        }
+        updates.secret = secret;
+      }
+      
+      if (events !== undefined) {
+        if (!Array.isArray(events) || events.length === 0) {
+          return res.status(400).json({ message: "At least one event type is required" });
+        }
+        const validEvents = events.filter(e => typeof e === "string" && e.trim().length > 0);
+        if (validEvents.length === 0) {
+          return res.status(400).json({ message: "At least one valid event type is required" });
+        }
+        updates.events = validEvents;
+      }
+      
+      if (isActive !== undefined) {
+        updates.isActive = Boolean(isActive);
+      }
+      
+      const [updated] = await db.update(webhooks)
+        .set(updates)
+        .where(eq(webhooks.id, webhookId))
+        .returning();
+      
+      res.json({
+        ...updated,
+        secret: undefined,
+      });
+    } catch (error: any) {
+      console.error("Failed to update webhook:", error);
+      res.status(500).json({ message: error.message || "Failed to update webhook" });
+    }
+  });
+
+  // DELETE /api/webhooks/:id - Delete webhook
+  app.delete("/api/webhooks/:id", requireAuth, async (req, res) => {
+    try {
+      const webhookId = req.params.id;
+      const userId = req.session.userId!;
+      
+      const [webhook] = await db.select()
+        .from(webhooks)
+        .where(eq(webhooks.id, webhookId))
+        .limit(1);
+      
+      if (!webhook) {
+        return res.status(404).json({ message: "Webhook not found" });
+      }
+      
+      if (webhook.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      await db.delete(webhooks)
+        .where(eq(webhooks.id, webhookId));
+      
+      res.json({ message: "Webhook deleted" });
+    } catch (error: any) {
+      console.error("Failed to delete webhook:", error);
+      res.status(500).json({ message: error.message || "Failed to delete webhook" });
+    }
+  });
+
+  // GET /api/webhooks/:id/deliveries - Get webhook delivery history
+  app.get("/api/webhooks/:id/deliveries", requireAuth, async (req, res) => {
+    try {
+      const webhookId = req.params.id;
+      const userId = req.session.userId!;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+      
+      const [webhook] = await db.select()
+        .from(webhooks)
+        .where(eq(webhooks.id, webhookId))
+        .limit(1);
+      
+      if (!webhook) {
+        return res.status(404).json({ message: "Webhook not found" });
+      }
+      
+      if (webhook.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      const deliveries = await db.select()
+        .from(webhookDeliveries)
+        .where(eq(webhookDeliveries.webhookId, webhookId))
+        .orderBy(desc(webhookDeliveries.createdAt))
+        .limit(limit)
+        .offset(offset);
+      
+      res.json(deliveries);
+    } catch (error: any) {
+      console.error("Failed to get webhook deliveries:", error);
+      res.status(500).json({ message: error.message || "Failed to get webhook deliveries" });
+    }
+  });
+
+  // ===== CONTENT FEATURES: THREADS =====
+
+  // GET /api/threads - List threads (optionally filter by authorId)
+  app.get("/api/threads", requireAuth, async (req, res) => {
+    try {
+      const { authorId, limit: limitParam, offset: offsetParam } = req.query;
+      const limit = Math.min(parseInt(limitParam as string) || 20, 50);
+      const offset = parseInt(offsetParam as string) || 0;
+
+      let query = db.select({
+        thread: postThreads,
+        author: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(postThreads)
+        .innerJoin(users, eq(postThreads.authorId, users.id))
+        .orderBy(desc(postThreads.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      if (authorId) {
+        query = query.where(eq(postThreads.authorId, authorId as string)) as typeof query;
+      }
+
+      const threads = await query;
+
+      res.json(threads.map(t => ({
+        ...t.thread,
+        author: t.author,
+      })));
+    } catch (error: any) {
+      console.error("Failed to get threads:", error);
+      res.status(500).json({ message: error.message || "Failed to get threads" });
+    }
+  });
+
+  // POST /api/threads - Create a new thread
+  app.post("/api/threads", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { title, content, parentId } = req.body;
+
+      if (!title || typeof title !== "string" || title.trim().length === 0) {
+        return res.status(400).json({ message: "Title is required" });
+      }
+
+      // Create the thread
+      const [thread] = await db.insert(postThreads)
+        .values({
+          authorId: userId,
+          title: title.trim(),
+          postCount: content ? 1 : 0,
+        })
+        .returning();
+
+      // If content is provided, create the first post and link it
+      if (content && typeof content === "string" && content.trim().length > 0) {
+        const [post] = await db.insert(posts)
+          .values({
+            authorId: userId,
+            type: "TEXT",
+            content: content.trim(),
+            visibility: "PUBLIC",
+          })
+          .returning();
+
+        await db.insert(threadPosts)
+          .values({
+            threadId: thread.id,
+            postId: post.id,
+            position: 1,
+          });
+      }
+
+      res.status(201).json(thread);
+    } catch (error: any) {
+      console.error("Failed to create thread:", error);
+      res.status(500).json({ message: error.message || "Failed to create thread" });
+    }
+  });
+
+  // GET /api/threads/:id - Get thread details with posts
+  app.get("/api/threads/:id", requireAuth, async (req, res) => {
+    try {
+      const threadId = req.params.id;
+
+      const [thread] = await db.select({
+        thread: postThreads,
+        author: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(postThreads)
+        .innerJoin(users, eq(postThreads.authorId, users.id))
+        .where(eq(postThreads.id, threadId))
+        .limit(1);
+
+      if (!thread) {
+        return res.status(404).json({ message: "Thread not found" });
+      }
+
+      // Get thread posts
+      const threadPostsData = await db.select({
+        threadPost: threadPosts,
+        post: posts,
+      })
+        .from(threadPosts)
+        .innerJoin(posts, eq(threadPosts.postId, posts.id))
+        .where(eq(threadPosts.threadId, threadId))
+        .orderBy(asc(threadPosts.position));
+
+      res.json({
+        ...thread.thread,
+        author: thread.author,
+        posts: threadPostsData.map(tp => ({
+          ...tp.post,
+          position: tp.threadPost.position,
+        })),
+      });
+    } catch (error: any) {
+      console.error("Failed to get thread:", error);
+      res.status(500).json({ message: error.message || "Failed to get thread" });
+    }
+  });
+
+  // DELETE /api/threads/:id - Delete a thread
+  app.delete("/api/threads/:id", requireAuth, async (req, res) => {
+    try {
+      const threadId = req.params.id;
+      const userId = req.session.userId!;
+
+      const [thread] = await db.select()
+        .from(postThreads)
+        .where(eq(postThreads.id, threadId))
+        .limit(1);
+
+      if (!thread) {
+        return res.status(404).json({ message: "Thread not found" });
+      }
+
+      if (thread.authorId !== userId) {
+        const user = await storage.getUser(userId);
+        if (!user?.isAdmin) {
+          return res.status(403).json({ message: "Not authorized to delete this thread" });
+        }
+      }
+
+      // Delete thread (cascade will handle threadPosts)
+      await db.delete(postThreads)
+        .where(eq(postThreads.id, threadId));
+
+      res.json({ message: "Thread deleted" });
+    } catch (error: any) {
+      console.error("Failed to delete thread:", error);
+      res.status(500).json({ message: error.message || "Failed to delete thread" });
+    }
+  });
+
+  // ===== CONTENT FEATURES: DUETS/STITCHES =====
+
+  // GET /api/duets - List duet/stitch posts
+  app.get("/api/duets", requireAuth, async (req, res) => {
+    try {
+      const { originalPostId, type, limit: limitParam, offset: offsetParam } = req.query;
+      const limit = Math.min(parseInt(limitParam as string) || 20, 50);
+      const offset = parseInt(offsetParam as string) || 0;
+
+      let conditions: SQL[] = [];
+      if (originalPostId) {
+        conditions.push(eq(duetStitchPosts.originalPostId, originalPostId as string));
+      }
+      if (type && (type === "DUET" || type === "STITCH")) {
+        conditions.push(eq(duetStitchPosts.type, type));
+      }
+
+      const duets = await db.select({
+        duet: duetStitchPosts,
+        post: posts,
+        author: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(duetStitchPosts)
+        .innerJoin(posts, eq(duetStitchPosts.postId, posts.id))
+        .innerJoin(users, eq(posts.authorId, users.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(duetStitchPosts.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      res.json(duets.map(d => ({
+        ...d.duet,
+        post: d.post,
+        author: d.author,
+      })));
+    } catch (error: any) {
+      console.error("Failed to get duets:", error);
+      res.status(500).json({ message: error.message || "Failed to get duets" });
+    }
+  });
+
+  // POST /api/duets - Create a duet/stitch
+  app.post("/api/duets", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { originalPostId, type, videoUrl } = req.body;
+
+      if (!originalPostId || typeof originalPostId !== "string") {
+        return res.status(400).json({ message: "originalPostId is required" });
+      }
+      if (!type || (type !== "DUET" && type !== "STITCH")) {
+        return res.status(400).json({ message: "type must be 'DUET' or 'STITCH'" });
+      }
+      if (!videoUrl || typeof videoUrl !== "string") {
+        return res.status(400).json({ message: "videoUrl is required" });
+      }
+
+      // Verify original post exists
+      const [originalPost] = await db.select()
+        .from(posts)
+        .where(eq(posts.id, originalPostId))
+        .limit(1);
+
+      if (!originalPost) {
+        return res.status(404).json({ message: "Original post not found" });
+      }
+
+      // Create the new post (the duet/stitch response)
+      const [newPost] = await db.insert(posts)
+        .values({
+          authorId: userId,
+          type: "VIDEO",
+          mediaUrl: videoUrl,
+          visibility: "PUBLIC",
+        })
+        .returning();
+
+      // Create the duet/stitch relationship
+      const [duet] = await db.insert(duetStitchPosts)
+        .values({
+          postId: newPost.id,
+          originalPostId,
+          type,
+        })
+        .returning();
+
+      res.status(201).json({
+        ...duet,
+        post: newPost,
+      });
+    } catch (error: any) {
+      console.error("Failed to create duet:", error);
+      res.status(500).json({ message: error.message || "Failed to create duet" });
+    }
+  });
+
+  // DELETE /api/duets/:id - Delete a duet/stitch
+  app.delete("/api/duets/:id", requireAuth, async (req, res) => {
+    try {
+      const duetId = req.params.id;
+      const userId = req.session.userId!;
+
+      const [duet] = await db.select({
+        duet: duetStitchPosts,
+        post: posts,
+      })
+        .from(duetStitchPosts)
+        .innerJoin(posts, eq(duetStitchPosts.postId, posts.id))
+        .where(eq(duetStitchPosts.id, duetId))
+        .limit(1);
+
+      if (!duet) {
+        return res.status(404).json({ message: "Duet not found" });
+      }
+
+      if (duet.post.authorId !== userId) {
+        const user = await storage.getUser(userId);
+        if (!user?.isAdmin) {
+          return res.status(403).json({ message: "Not authorized to delete this duet" });
+        }
+      }
+
+      // Delete the duet record and the associated post
+      await db.delete(duetStitchPosts)
+        .where(eq(duetStitchPosts.id, duetId));
+      await db.delete(posts)
+        .where(eq(posts.id, duet.duet.postId));
+
+      res.json({ message: "Duet deleted" });
+    } catch (error: any) {
+      console.error("Failed to delete duet:", error);
+      res.status(500).json({ message: error.message || "Failed to delete duet" });
+    }
+  });
+
+  // ===== CONTENT FEATURES: AR FILTERS =====
+
+  // GET /api/ar-filters - List available AR filters
+  app.get("/api/ar-filters", requireAuth, async (req, res) => {
+    try {
+      const { category, featured, limit: limitParam, offset: offsetParam } = req.query;
+      const limit = Math.min(parseInt(limitParam as string) || 20, 50);
+      const offset = parseInt(offsetParam as string) || 0;
+
+      let conditions: SQL[] = [eq(arFilters.isActive, true)];
+      if (category && typeof category === "string") {
+        conditions.push(eq(arFilters.category, category));
+      }
+      if (featured === "true") {
+        conditions.push(eq(arFilters.isFeatured, true));
+      }
+
+      const filters = await db.select({
+        filter: arFilters,
+        creator: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(arFilters)
+        .leftJoin(users, eq(arFilters.creatorId, users.id))
+        .where(and(...conditions))
+        .orderBy(desc(arFilters.usageCount), desc(arFilters.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      res.json(filters.map(f => ({
+        ...f.filter,
+        creator: f.creator,
+      })));
+    } catch (error: any) {
+      console.error("Failed to get AR filters:", error);
+      res.status(500).json({ message: error.message || "Failed to get AR filters" });
+    }
+  });
+
+  // POST /api/ar-filters - Create a custom AR filter
+  app.post("/api/ar-filters", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { name, type, effectData, thumbnailUrl } = req.body;
+
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ message: "name is required" });
+      }
+      if (!thumbnailUrl || typeof thumbnailUrl !== "string") {
+        return res.status(400).json({ message: "thumbnailUrl is required" });
+      }
+
+      const [filter] = await db.insert(arFilters)
+        .values({
+          name: name.trim(),
+          description: effectData?.description || null,
+          creatorId: userId,
+          thumbnailUrl,
+          filterUrl: effectData?.filterUrl || thumbnailUrl,
+          category: type || null,
+          usageCount: 0,
+          isActive: true,
+          isFeatured: false,
+        })
+        .returning();
+
+      res.status(201).json(filter);
+    } catch (error: any) {
+      console.error("Failed to create AR filter:", error);
+      res.status(500).json({ message: error.message || "Failed to create AR filter" });
+    }
+  });
+
+  // DELETE /api/ar-filters/:id - Delete an AR filter
+  app.delete("/api/ar-filters/:id", requireAuth, async (req, res) => {
+    try {
+      const filterId = req.params.id;
+      const userId = req.session.userId!;
+
+      const [filter] = await db.select()
+        .from(arFilters)
+        .where(eq(arFilters.id, filterId))
+        .limit(1);
+
+      if (!filter) {
+        return res.status(404).json({ message: "AR filter not found" });
+      }
+
+      // Only creator or admin can delete
+      if (filter.creatorId !== userId) {
+        const user = await storage.getUser(userId);
+        if (!user?.isAdmin) {
+          return res.status(403).json({ message: "Not authorized to delete this filter" });
+        }
+      }
+
+      await db.delete(arFilters)
+        .where(eq(arFilters.id, filterId));
+
+      res.json({ message: "AR filter deleted" });
+    } catch (error: any) {
+      console.error("Failed to delete AR filter:", error);
+      res.status(500).json({ message: error.message || "Failed to delete AR filter" });
     }
   });
 
