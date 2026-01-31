@@ -12,9 +12,9 @@ import {
   Alert,
   Modal,
   TextInput,
-  KeyboardAvoidingView,
   RefreshControl,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator, EmptyState } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -345,6 +345,7 @@ function NewPeopleTab() {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
   const tabBarHeight = useBottomTabBarHeight();
+  const insets = useSafeAreaInsets();
   const audioManager = useAudioManager();
   const viewedPostsRef = useRef<Set<string>>(new Set());
   const scrollViewRef = useRef<FlatList>(null);
@@ -1001,6 +1002,7 @@ function TrendsTab() {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
   const tabBarHeight = useBottomTabBarHeight();
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const [sessionKey, setSessionKey] = useState(() => getSessionId());
 

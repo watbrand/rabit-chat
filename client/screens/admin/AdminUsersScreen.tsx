@@ -158,8 +158,8 @@ export default function AdminUsersScreen() {
       setNoteContent("");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to add note");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to add note. Please try again.");
     },
   });
 
@@ -171,8 +171,8 @@ export default function AdminUsersScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "Data export has been triggered. The user will receive a download link via email when ready.");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to trigger data export");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to trigger data export. Please try again.");
     },
   });
 
@@ -186,8 +186,8 @@ export default function AdminUsersScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "User updated successfully");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to update user");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to update user. Please try again.");
     },
   });
 
@@ -205,8 +205,8 @@ export default function AdminUsersScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "User suspended successfully");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to suspend user");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to suspend user. Please try again.");
     },
   });
 
@@ -220,8 +220,8 @@ export default function AdminUsersScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "User unsuspended successfully");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to unsuspend user");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to unsuspend user. Please try again.");
     },
   });
 
@@ -233,8 +233,8 @@ export default function AdminUsersScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "User has been logged out from all sessions");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to force logout user");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to force logout user. Please try again.");
     },
   });
 
@@ -248,8 +248,8 @@ export default function AdminUsersScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "User account has been deactivated");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to deactivate user");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to deactivate user. Please try again.");
     },
   });
 
@@ -263,8 +263,8 @@ export default function AdminUsersScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "User account has been reactivated");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to reactivate user");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to reactivate user. Please try again.");
     },
   });
 
@@ -279,8 +279,8 @@ export default function AdminUsersScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to update role");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to update role. Please try again.");
     },
   });
 

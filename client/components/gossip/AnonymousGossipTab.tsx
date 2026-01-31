@@ -157,6 +157,9 @@ export function AnonymousGossipTab() {
     onSuccess: () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Operation failed. Please try again.");
+    },
   });
 
   const handleReact = useCallback((postId: string, type: ReactionType) => {

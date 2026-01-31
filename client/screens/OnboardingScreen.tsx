@@ -20,6 +20,7 @@ import Animated, {
 import { useTheme } from "@/hooks/useTheme";
 import { ThemedText } from "@/components/ThemedText";
 import { useOnboarding } from "@/hooks/useOnboarding";
+import { Spacing } from "@/constants/theme";
 
 const { width, height } = Dimensions.get("window");
 
@@ -151,7 +152,7 @@ export default function OnboardingScreen() {
         end={{ x: 1, y: 1 }}
       />
 
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         {!isLastSlide ? (
           <Pressable
             style={styles.skipButton}
@@ -185,7 +186,7 @@ export default function OnboardingScreen() {
         scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 30 }]}>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing["3xl"] }]}>
         {renderPageIndicator()}
 
         {isLastSlide ? (
@@ -224,11 +225,11 @@ const styles = StyleSheet.create({
     zIndex: 10,
     flexDirection: "row",
     justifyContent: "flex-end",
-    paddingHorizontal: 24,
+    paddingHorizontal: Spacing["2xl"],
   },
   skipButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
   },
   skipText: {
     fontSize: 16,
@@ -239,14 +240,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 160,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing["5xl"],
+    paddingBottom: Spacing["6xl"] + Spacing["6xl"] + Spacing["3xl"],
   },
   imageContainer: {
     width: width * 0.65,
     height: width * 0.65,
-    marginBottom: 32,
+    marginBottom: Spacing["3xl"],
   },
   image: {
     width: "100%",
@@ -261,7 +262,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: Spacing.lg,
     letterSpacing: -0.5,
     width: "100%",
   },
@@ -277,15 +278,15 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: "center",
-    paddingHorizontal: 32,
+    paddingHorizontal: Spacing["3xl"],
     zIndex: 20,
   },
   paginationContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 32,
-    gap: 8,
+    marginBottom: Spacing["3xl"],
+    gap: Spacing.sm,
   },
   dot: {
     height: 8,

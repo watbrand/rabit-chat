@@ -195,7 +195,8 @@ export function FullscreenMediaViewer({
       queryClient.invalidateQueries({ queryKey: [`/api/posts/${post.id}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
     },
-    onError: () => {
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Operation failed. Please try again.");
       setLocalLiked(post.hasLiked || false);
       setLocalLikesCount(post.likesCount);
     },

@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: 160,
+    paddingBottom: Spacing["6xl"] + Spacing["6xl"] + Spacing["3xl"],
   },
   userCard: {
     borderRadius: BorderRadius.lg,

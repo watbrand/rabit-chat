@@ -132,8 +132,8 @@ export default function AdminMusicScreen() {
       }
       Alert.alert("Success", "Music track created successfully");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to create music track");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to create music track. Please try again.");
     },
   });
 
@@ -159,8 +159,8 @@ export default function AdminMusicScreen() {
       }
       Alert.alert("Success", "Music track updated successfully");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to update music track");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to update music track. Please try again.");
     },
   });
 
@@ -175,8 +175,8 @@ export default function AdminMusicScreen() {
       }
       Alert.alert("Success", "Music track deleted successfully");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to delete music track");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to delete music track. Please try again.");
     },
   });
 
@@ -190,8 +190,8 @@ export default function AdminMusicScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to update featured status");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to update featured status. Please try again.");
     },
   });
 

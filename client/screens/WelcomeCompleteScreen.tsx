@@ -32,7 +32,7 @@ import { useNavigation, CommonActions } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { BorderRadius } from "@/constants/theme";
+import { BorderRadius, Spacing } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
 import ConfettiCelebration from "@/components/ConfettiCelebration";
 
@@ -239,7 +239,7 @@ export default function WelcomeCompleteScreen() {
         />
       ))}
 
-      <View style={[styles.content, { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 30 }]}>
+      <View style={[styles.content, { paddingTop: insets.top + Spacing["5xl"], paddingBottom: insets.bottom + Spacing["3xl"] }]}>
         <Animated.View entering={FadeInUp.delay(200).springify()} style={styles.mainContent}>
           <GlowingCheckmark />
 
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: "space-between",
-    paddingHorizontal: 24,
+    paddingHorizontal: Spacing["2xl"],
   },
   mainContent: {
     flex: 1,
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
     height: 120,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 32,
+    marginBottom: Spacing["3xl"],
   },
   checkmarkCircle: {
     width: 96,
@@ -409,46 +409,46 @@ const styles = StyleSheet.create({
   },
   textContent: {
     alignItems: "center",
-    marginBottom: 32,
+    marginBottom: Spacing["3xl"],
   },
   title: {
     fontSize: 28,
     fontWeight: "700",
     textAlign: "center",
-    marginBottom: 12,
+    marginBottom: Spacing.md,
     letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 16,
     lineHeight: 24,
     textAlign: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: Spacing.xl,
   },
   statsCard: {
     width: "100%",
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    padding: 16,
-    marginBottom: 24,
+    padding: Spacing.lg,
+    marginBottom: Spacing["2xl"],
   },
   statRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: Spacing.sm,
   },
   statRowBorder: {
     borderTopWidth: 1,
     borderTopColor: "rgba(139, 92, 246, 0.15)",
-    marginTop: 8,
-    paddingTop: 16,
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.lg,
   },
   statIcon: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: Spacing.md,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: Spacing.md,
   },
   statText: {
     flex: 1,
@@ -470,13 +470,13 @@ const styles = StyleSheet.create({
   messageGradient: {
     flexDirection: "row",
     alignItems: "flex-start",
-    padding: 16,
+    padding: Spacing.lg,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: "rgba(139, 92, 246, 0.2)",
   },
   messageIcon: {
-    marginRight: 12,
+    marginRight: Spacing.md,
     marginTop: 2,
   },
   messageText: {
@@ -485,7 +485,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   footer: {
-    paddingTop: 16,
+    paddingTop: Spacing.lg,
   },
   enterButton: {
     borderRadius: BorderRadius.xl,

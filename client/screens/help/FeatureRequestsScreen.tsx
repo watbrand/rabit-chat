@@ -257,7 +257,8 @@ export default function FeatureRequestsScreen() {
         return next;
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Operation failed. Please try again.");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     },
   });

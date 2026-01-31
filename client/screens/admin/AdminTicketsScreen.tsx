@@ -143,8 +143,8 @@ export default function AdminTicketsScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "Ticket assigned successfully");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to assign ticket");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to assign ticket. Please try again.");
     },
   });
 
@@ -159,8 +159,8 @@ export default function AdminTicketsScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "Status updated successfully");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to update status");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to update status. Please try again.");
     },
   });
 
@@ -175,8 +175,8 @@ export default function AdminTicketsScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "Priority updated successfully");
     },
-    onError: () => {
-      Alert.alert("Error", "Failed to update priority");
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message || "Failed to update priority. Please try again.");
     },
   });
 
