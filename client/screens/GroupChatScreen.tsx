@@ -6,10 +6,11 @@ import {
   FlatList,
   TextInput,
   Pressable,
-  KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { useTheme } from "@/hooks/useTheme";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
@@ -17,6 +18,7 @@ import { Feather } from "@expo/vector-icons";
 import { Avatar } from "@/components/Avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { LoadingIndicator } from "@/components/animations";
+import { Spacing } from "@/constants/theme";
 
 interface GroupMessage {
   id: string;
@@ -47,6 +49,7 @@ export default function GroupChatScreen({ route, navigation }: any) {
   const { conversationId } = route.params;
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [message, setMessage] = useState("");
@@ -146,8 +149,8 @@ export default function GroupChatScreen({ route, navigation }: any) {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={90}
+      behavior="padding"
+      keyboardVerticalOffset={0}
     >
       <View style={styles.headerInfo}>
         <View style={styles.headerAvatar}>
@@ -171,7 +174,7 @@ export default function GroupChatScreen({ route, navigation }: any) {
         data={messages}
         renderItem={renderMessage}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.messagesList}
+        contentContainerStyle={[styles.messagesList, { paddingTop: headerHeight + Spacing.md }]}
         showsVerticalScrollIndicator={false}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
         inverted={false}
@@ -186,7 +189,7 @@ export default function GroupChatScreen({ route, navigation }: any) {
         }
       />
 
-      <View style={[styles.inputContainer, { paddingBottom: insets.bottom + 8 }]}>
+      <View style={[styles.inputContainer, { paddingBottom: insets.bottom + Spacing.sm }]}>
         <Pressable style={styles.attachButton}>
           <Feather name="plus-circle" size={24} color={theme.primary} />
         </Pressable>

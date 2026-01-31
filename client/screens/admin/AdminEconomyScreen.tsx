@@ -9,6 +9,8 @@ import {
   RefreshControl,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { LoadingIndicator } from "@/components/animations";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
@@ -89,6 +91,8 @@ interface Withdrawal {
 export default function AdminEconomyScreen() {
   const { theme } = useTheme();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const [activeTab, setActiveTab] = useState<TabType>("overview");
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -921,7 +925,8 @@ export default function AdminEconomyScreen() {
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom + Spacing.xl }]}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
         }

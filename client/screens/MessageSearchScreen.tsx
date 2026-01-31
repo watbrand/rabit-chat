@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 80,
+    paddingTop: Spacing["3xl"] * 2,
     gap: Spacing.md,
   },
   emptyTitle: {

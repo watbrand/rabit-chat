@@ -3,6 +3,7 @@ import { View, FlatList, StyleSheet, RefreshControl, Image, Platform, Pressable,
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useInfiniteQuery, useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
@@ -63,6 +64,7 @@ type StoriesFeed = {
 
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
@@ -462,11 +464,11 @@ export default function FeedScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingTop: insets.top + 56 + Spacing.lg,
-          paddingBottom: 100 + Spacing.xl,
+          paddingBottom: tabBarHeight + Spacing.lg,
           paddingHorizontal: Spacing.lg,
           flexGrow: 1,
         }}
-        scrollIndicatorInsets={{ bottom: insets.bottom }}
+        scrollIndicatorInsets={{ bottom: tabBarHeight }}
         data={posts}
         keyExtractor={(item) => item.id}
         renderItem={({ item, index }) => {
