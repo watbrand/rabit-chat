@@ -9435,6 +9435,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===== ALGORITHM PREFERENCES =====
+
+  app.get("/api/algorithm/preferences", requireAuth, async (req, res) => {
+    try {
+      const settings = await storage.getOrCreateUserSettings(req.session.userId!);
+      const contentPrefs = settings.contentPreferences as any || {};
+      
+      // Return algorithm preferences with defaults
+      res.json({
+        showNetWorthPriority: contentPrefs.showNetWorthPriority ?? true,
+        showVerifiedPriority: contentPrefs.showVerifiedPriority ?? true,
+        diversifyFeed: contentPrefs.diversifyFeed ?? true,
+        showCreatorContent: contentPrefs.showCreatorContent ?? true,
+        prioritizeFollowing: contentPrefs.prioritizeFollowing ?? true,
+      });
+    } catch (error) {
+      console.error("Failed to get algorithm preferences:", error);
+      res.status(500).json({ message: "Failed to get algorithm preferences" });
+    }
+  });
+
+  app.patch("/api/algorithm/preferences", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const updates = req.body;
+      
+      const existingSettings = await storage.getOrCreateUserSettings(userId);
+      const existingContentPrefs = existingSettings.contentPreferences as any || {};
+      
+      const updatedContentPreferences = {
+        ...existingContentPrefs,
+        ...updates,
+      };
+      
+      await storage.updateUserSettings(userId, { contentPreferences: updatedContentPreferences });
+      
+      res.json({
+        showNetWorthPriority: updatedContentPreferences.showNetWorthPriority ?? true,
+        showVerifiedPriority: updatedContentPreferences.showVerifiedPriority ?? true,
+        diversifyFeed: updatedContentPreferences.diversifyFeed ?? true,
+        showCreatorContent: updatedContentPreferences.showCreatorContent ?? true,
+        prioritizeFollowing: updatedContentPreferences.prioritizeFollowing ?? true,
+      });
+    } catch (error) {
+      console.error("Failed to update algorithm preferences:", error);
+      res.status(500).json({ message: "Failed to update algorithm preferences" });
+    }
+  });
+
   // ===== PROFILE ENHANCEMENTS =====
 
   app.patch("/api/me/profile-enhancements", requireAuth, async (req, res) => {
