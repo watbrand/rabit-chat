@@ -51,6 +51,8 @@ export function UserMallAvatar({
   const { theme, isDark } = useTheme();
   const bounce = useSharedValue(0);
   const scale = useSharedValue(1);
+  const animatedX = useSharedValue(positionX);
+  const animatedY = useSharedValue(positionY);
 
   React.useEffect(() => {
     bounce.value = withRepeat(
@@ -61,7 +63,16 @@ export function UserMallAvatar({
       -1,
       true
     );
+    
+    return () => {
+      bounce.value = 0;
+    };
   }, []);
+
+  React.useEffect(() => {
+    animatedX.value = withSpring(positionX, { damping: 15, stiffness: 100 });
+    animatedY.value = withSpring(positionY, { damping: 15, stiffness: 100 });
+  }, [positionX, positionY]);
 
   const handlePressIn = () => {
     scale.value = withSpring(0.95);
@@ -72,15 +83,12 @@ export function UserMallAvatar({
   };
 
   const animatedStyle = useAnimatedStyle(() => ({
+    left: `${animatedX.value}%`,
+    top: `${animatedY.value}%`,
     transform: [
       { translateY: bounce.value },
       { scale: scale.value },
     ],
-  }));
-
-  const positionStyle = useAnimatedStyle(() => ({
-    left: `${positionX}%`,
-    top: `${positionY}%`,
   }));
 
   return (
@@ -88,8 +96,10 @@ export function UserMallAvatar({
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      style={[styles.container, positionStyle, animatedStyle]}
+      style={[styles.container, animatedStyle]}
       testID={`mall-avatar-${userId}`}
+      accessibilityLabel={`${displayName}'s avatar, net worth ${formatNetWorth(netWorth)}`}
+      accessibilityRole="button"
     >
       <View
         style={[
