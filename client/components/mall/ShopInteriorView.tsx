@@ -341,18 +341,36 @@ export function ShopInteriorView({
                   <View style={styles.quantityControls}>
                     <Pressable
                       onPress={() => setQuantity(Math.max(1, quantity - 1))}
-                      style={[styles.quantityButton, { backgroundColor: theme.glassBackground }]}
+                      style={[
+                        styles.quantityButton, 
+                        { backgroundColor: theme.glassBackground },
+                        quantity <= 1 && { opacity: 0.5 }
+                      ]}
+                      disabled={quantity <= 1}
+                      accessibilityLabel="Decrease quantity"
+                      accessibilityRole="button"
                     >
-                      <Feather name="minus" size={18} color={theme.text} />
+                      <Feather name="minus" size={18} color={quantity <= 1 ? theme.textSecondary : theme.text} />
                     </Pressable>
-                    <ThemedText style={styles.quantityText} weight="bold">
+                    <ThemedText 
+                      style={styles.quantityText} 
+                      weight="bold"
+                      accessibilityLabel={`Quantity: ${quantity}`}
+                    >
                       {quantity}
                     </ThemedText>
                     <Pressable
-                      onPress={() => setQuantity(quantity + 1)}
-                      style={[styles.quantityButton, { backgroundColor: theme.glassBackground }]}
+                      onPress={() => setQuantity(Math.min(99, quantity + 1))}
+                      style={[
+                        styles.quantityButton, 
+                        { backgroundColor: theme.glassBackground },
+                        quantity >= 99 && { opacity: 0.5 }
+                      ]}
+                      disabled={quantity >= 99}
+                      accessibilityLabel="Increase quantity"
+                      accessibilityRole="button"
                     >
-                      <Feather name="plus" size={18} color={theme.text} />
+                      <Feather name="plus" size={18} color={quantity >= 99 ? theme.textSecondary : theme.text} />
                     </Pressable>
                   </View>
                 </View>
