@@ -9,6 +9,7 @@ import {
   AppState,
   AppStateStatus,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -117,6 +118,7 @@ export function VirtualMallView({
 }: VirtualMallViewProps) {
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [mallUsers, setMallUsers] = useState<MallUser[]>([]);
   const [myPosition, setMyPosition] = useState({ x: 50, y: 85 });
   const [wsConnected, setWsConnected] = useState(false);
@@ -444,7 +446,7 @@ export function VirtualMallView({
             />
           </View>
 
-          <View style={styles.mallTitle}>
+          <View style={[styles.mallTitle, { paddingTop: insets.top + Spacing.md }]}>
             <Feather
               name="award"
               size={24}
@@ -550,7 +552,7 @@ export function VirtualMallView({
             </Animated.View>
           ) : null}
 
-          <View style={styles.instructions}>
+          <View style={[styles.instructions, { paddingBottom: insets.bottom + Spacing.md }]}>
             <View style={[styles.instructionBadge, { backgroundColor: theme.glassBackground }]}>
               <Feather name="navigation" size={14} color={theme.textSecondary} />
               <ThemedText style={[styles.instructionText, { color: theme.textSecondary }]}>
@@ -591,7 +593,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: Spacing.xl,
     paddingBottom: Spacing.md,
     gap: Spacing.sm,
   },
