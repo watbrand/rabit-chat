@@ -421,9 +421,27 @@ function setupErrorHandler(app: express.Application) {
       if (fs.existsSync(UPLOAD_TEMP_DIR)) {
         cleanupOldTempFiles(30 * 60 * 1000);
       }
-      setInterval(() => {
+      const cleanupInterval = setInterval(() => {
         cleanupOldTempFiles(30 * 60 * 1000);
       }, 30 * 60 * 1000);
+
+      // Graceful shutdown: clear intervals and close server
+      const gracefulShutdown = (signal: string) => {
+        log(`Received ${signal}, starting graceful shutdown...`);
+        clearInterval(cleanupInterval);
+        server.close(() => {
+          log('Server closed gracefully');
+          process.exit(0);
+        });
+        // Force exit after 10 seconds if graceful shutdown takes too long
+        setTimeout(() => {
+          console.error('Forced shutdown after timeout');
+          process.exit(1);
+        }, 10000).unref();
+      };
+
+      process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+      process.on('SIGINT', () => gracefulShutdown('SIGINT'));
     },
   );
 })();

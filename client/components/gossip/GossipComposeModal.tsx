@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { View, Pressable, StyleSheet, Modal, TextInput, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { View, Pressable, StyleSheet, Modal, TextInput, Platform, Alert } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";

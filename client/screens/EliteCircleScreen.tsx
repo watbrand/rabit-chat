@@ -15,7 +15,6 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Animated, {
   FadeInUp,
-  FadeInDown,
   FadeIn,
   useSharedValue,
   useAnimatedStyle,
@@ -23,7 +22,6 @@ import Animated, {
   withRepeat,
   withSequence,
   withTiming,
-  withDelay,
   Easing,
 } from "react-native-reanimated";
 import { useNavigation } from "@react-navigation/native";
@@ -33,15 +31,19 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { GradientBackground } from "@/components/GradientBackground";
 import { ThemedText } from "@/components/ThemedText";
+import { Card } from "@/components/Card";
 import { LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { useAuth } from "@/hooks/useAuth";
+import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 type RootStackParamList = {
   EliteCircle: undefined;
   SuggestedUsers: undefined;
+  Mall: undefined;
+  WealthClub: undefined;
 };
 
 interface EliteUser {
@@ -73,11 +75,28 @@ interface EliteCircleResponse {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const RANK_COLORS = [
-  { primary: "#FFD700", secondary: "#FFA500", glow: "rgba(255, 215, 0, 0.3)" }, // Gold
-  { primary: "#C0C0C0", secondary: "#A8A8A8", glow: "rgba(192, 192, 192, 0.3)" }, // Silver
-  { primary: "#CD7F32", secondary: "#8B4513", glow: "rgba(205, 127, 50, 0.3)" }, // Bronze
-  { primary: "#8B5CF6", secondary: "#7C3AED", glow: "rgba(139, 92, 246, 0.3)" }, // Purple
-  { primary: "#06B6D4", secondary: "#0891B2", glow: "rgba(6, 182, 212, 0.3)" }, // Cyan
+  { primary: "#FFD700", secondary: "#FFA500", glow: "rgba(255, 215, 0, 0.3)" },
+  { primary: "#C0C0C0", secondary: "#A8A8A8", glow: "rgba(192, 192, 192, 0.3)" },
+  { primary: "#CD7F32", secondary: "#8B4513", glow: "rgba(205, 127, 50, 0.3)" },
+  { primary: "#8B5CF6", secondary: "#7C3AED", glow: "rgba(139, 92, 246, 0.3)" },
+  { primary: "#06B6D4", secondary: "#0891B2", glow: "rgba(6, 182, 212, 0.3)" },
+];
+
+const ELITE_PERKS = [
+  { icon: "award", title: "Top 5 Recognition", description: "Featured on the Elite Circle leaderboard" },
+  { icon: "percent", title: "25% Mall Discount", description: "Exclusive discounts on all purchases" },
+  { icon: "gift", title: "20% Bonus Coins", description: "Extra coins on every transaction" },
+  { icon: "headphones", title: "Priority Support", description: "24/7 VIP customer service" },
+  { icon: "lock", title: "Exclusive Content", description: "Access to premium features and content" },
+  { icon: "star", title: "Diamond Badge", description: "Prestigious verified elite status" },
+];
+
+const ELITE_TIERS = [
+  { id: "BRONZE", name: "Bronze", minNetWorth: 0, color: "#CD7F32" },
+  { id: "SILVER", name: "Silver", minNetWorth: 10000, color: "#C0C0C0" },
+  { id: "GOLD", name: "Gold", minNetWorth: 50000, color: "#FFD700" },
+  { id: "PLATINUM", name: "Platinum", minNetWorth: 200000, color: "#E5E4E2" },
+  { id: "DIAMOND", name: "Diamond", minNetWorth: 1000000, color: "#B9F2FF" },
 ];
 
 interface EliteUserCardProps {
@@ -217,8 +236,199 @@ function EliteUserCard({ user, index }: EliteUserCardProps) {
   );
 }
 
-function EmptyState() {
+interface PerkCardProps {
+  perk: typeof ELITE_PERKS[0];
+  index: number;
+}
+
+function PerkCard({ perk, index }: PerkCardProps) {
   const { theme, isDark } = useTheme();
+
+  return (
+    <Animated.View
+      entering={FadeInUp.delay(100 + index * 50).springify()}
+      style={[
+        styles.perkCard,
+        {
+          backgroundColor: isDark ? "rgba(38, 38, 48, 0.6)" : "rgba(255, 255, 255, 0.8)",
+          borderColor: isDark ? "rgba(139, 92, 246, 0.2)" : "rgba(0, 0, 0, 0.05)",
+        },
+      ]}
+    >
+      <LinearGradient
+        colors={Gradients.primary}
+        style={styles.perkIcon}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <Feather name={perk.icon as any} size={18} color="white" />
+      </LinearGradient>
+      <View style={styles.perkInfo}>
+        <ThemedText style={[styles.perkTitle, { color: theme.text }]} numberOfLines={1}>
+          {perk.title}
+        </ThemedText>
+        <ThemedText style={[styles.perkDescription, { color: theme.textSecondary }]} numberOfLines={2}>
+          {perk.description}
+        </ThemedText>
+      </View>
+    </Animated.View>
+  );
+}
+
+function UserTierProgress() {
+  const { theme, isDark } = useTheme();
+  const { user } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+  const { data: wallet } = useQuery<{ coinBalance: number }>({
+    queryKey: ["/api/wallet"],
+  });
+
+  const netWorth = wallet?.coinBalance || 0;
+
+  const getCurrentTierIndex = () => {
+    for (let i = ELITE_TIERS.length - 1; i >= 0; i--) {
+      if (netWorth >= ELITE_TIERS[i].minNetWorth) {
+        return i;
+      }
+    }
+    return 0;
+  };
+
+  const currentTierIndex = getCurrentTierIndex();
+  const currentTier = ELITE_TIERS[currentTierIndex];
+  const nextTier = ELITE_TIERS[currentTierIndex + 1];
+  const diamondTier = ELITE_TIERS[ELITE_TIERS.length - 1];
+
+  const getProgressToElite = () => {
+    if (netWorth >= diamondTier.minNetWorth) return 100;
+    const progress = (netWorth / diamondTier.minNetWorth) * 100;
+    return Math.min(Math.max(progress, 0), 100);
+  };
+
+  const coinsToElite = diamondTier.minNetWorth - netWorth;
+  const isElite = netWorth >= diamondTier.minNetWorth;
+
+  const handleVisitMall = () => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    navigation.navigate("Mall");
+  };
+
+  const handleViewTiers = () => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    navigation.navigate("WealthClub");
+  };
+
+  return (
+    <Animated.View entering={FadeInUp.delay(300).springify()}>
+      <Card variant="glass" style={styles.progressSection}>
+        <View style={styles.progressHeader}>
+          <View style={styles.tierIndicator}>
+            <LinearGradient
+              colors={[currentTier.color, currentTier.color + "80"]}
+              style={styles.currentTierBadge}
+            >
+              <Feather name="award" size={16} color="white" />
+            </LinearGradient>
+            <View>
+              <ThemedText style={[styles.currentTierLabel, { color: theme.textSecondary }]}>
+                Your Current Tier
+              </ThemedText>
+              <ThemedText style={[styles.currentTierName, { color: currentTier.color }]}>
+                {currentTier.name}
+              </ThemedText>
+            </View>
+          </View>
+          <View style={styles.netWorthDisplay}>
+            <ThemedText style={[styles.netWorthLabel, { color: theme.textSecondary }]}>
+              Net Worth
+            </ThemedText>
+            <ThemedText style={[styles.netWorthValue, { color: theme.text }]}>
+              {netWorth.toLocaleString()}
+            </ThemedText>
+          </View>
+        </View>
+
+        {isElite ? (
+          <View style={styles.eliteStatusContainer}>
+            <LinearGradient
+              colors={Gradients.gold}
+              style={styles.eliteStatusBadge}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              <Feather name="star" size={16} color="#000" />
+              <ThemedText style={styles.eliteStatusText}>Elite Member</ThemedText>
+            </LinearGradient>
+            <ThemedText style={[styles.eliteMessage, { color: theme.textSecondary }]}>
+              You're among the top earners! Keep building your wealth to maintain your position.
+            </ThemedText>
+          </View>
+        ) : (
+          <>
+            <ThemedText style={[styles.progressTitle, { color: theme.text }]}>
+              Progress to Elite (Diamond)
+            </ThemedText>
+            <View style={[styles.progressBar, { backgroundColor: theme.backgroundSecondary }]}>
+              <LinearGradient
+                colors={Gradients.gold}
+                style={[styles.progressFill, { width: `${getProgressToElite()}%` }]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              />
+            </View>
+            <ThemedText style={[styles.progressText, { color: theme.textSecondary }]}>
+              {coinsToElite.toLocaleString()} coins to Diamond tier
+            </ThemedText>
+
+            <View style={styles.actionButtons}>
+              <Pressable
+                style={[styles.primaryActionButton]}
+                onPress={handleVisitMall}
+                testID="visit-mall-button"
+              >
+                <LinearGradient
+                  colors={Gradients.primary}
+                  style={styles.actionButtonGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Feather name="shopping-bag" size={18} color="white" />
+                  <ThemedText style={styles.actionButtonText}>Build Wealth in Mall</ThemedText>
+                </LinearGradient>
+              </Pressable>
+              <Pressable
+                style={[styles.secondaryActionButton, { borderColor: theme.border }]}
+                onPress={handleViewTiers}
+                testID="view-tiers-button"
+              >
+                <Feather name="layers" size={16} color={theme.primary} />
+                <ThemedText style={[styles.secondaryButtonText, { color: theme.primary }]}>
+                  View All Tiers
+                </ThemedText>
+              </Pressable>
+            </View>
+          </>
+        )}
+      </Card>
+    </Animated.View>
+  );
+}
+
+function EmptyState() {
+  const { theme } = useTheme();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+  const handleVisitMall = () => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    navigation.navigate("Mall");
+  };
 
   return (
     <Animated.View entering={FadeIn.delay(300)} style={styles.emptyState}>
@@ -226,11 +436,22 @@ function EmptyState() {
         <Feather name="users" size={40} color={theme.primary} />
       </View>
       <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
-        Elite Circle Coming Soon
+        Be the First Elite
       </ThemedText>
       <ThemedText style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-        Be among the first to join the elite. Build your wealth through the Mall to appear here.
+        The Elite Circle is waiting for its first members. Build your wealth through the Mall to claim your spot among the top 5!
       </ThemedText>
+      <Pressable style={styles.emptyActionButton} onPress={handleVisitMall}>
+        <LinearGradient
+          colors={Gradients.primary}
+          style={styles.emptyActionGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+        >
+          <Feather name="trending-up" size={18} color="white" />
+          <ThemedText style={styles.emptyActionText}>Start Building Wealth</ThemedText>
+        </LinearGradient>
+      </Pressable>
     </Animated.View>
   );
 }
@@ -325,6 +546,8 @@ export function EliteCircleScreen() {
           </View>
         </Animated.View>
 
+        <UserTierProgress />
+
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <LoadingIndicator size="large" />
@@ -348,6 +571,9 @@ export function EliteCircleScreen() {
           </View>
         ) : data?.eliteCircle && data.eliteCircle.length > 0 ? (
           <>
+            <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
+              Current Leaderboard
+            </ThemedText>
             <View style={styles.usersList}>
               {data.eliteCircle.map((user, index) => (
                 <EliteUserCard key={user.id} user={user} index={index} />
@@ -382,6 +608,15 @@ export function EliteCircleScreen() {
         ) : (
           <EmptyState />
         )}
+
+        <ThemedText style={[styles.sectionTitle, { color: theme.text, marginTop: Spacing.xl }]}>
+          Elite Perks & Benefits
+        </ThemedText>
+        <View style={styles.perksGrid}>
+          {ELITE_PERKS.map((perk, index) => (
+            <PerkCard key={perk.title} perk={perk} index={index} />
+          ))}
+        </View>
       </ScrollView>
 
       <Animated.View
@@ -457,6 +692,129 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
     paddingHorizontal: Spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: Spacing.md,
+  },
+  progressSection: {
+    marginBottom: Spacing.xl,
+    padding: Spacing.lg,
+  },
+  progressHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.lg,
+  },
+  tierIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  currentTierBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  currentTierLabel: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  currentTierName: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  netWorthDisplay: {
+    alignItems: "flex-end",
+  },
+  netWorthLabel: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  netWorthValue: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  progressTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: Spacing.sm,
+  },
+  progressBar: {
+    height: 10,
+    borderRadius: 5,
+    overflow: "hidden",
+    marginBottom: Spacing.xs,
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 5,
+  },
+  progressText: {
+    fontSize: 13,
+    textAlign: "center",
+    marginBottom: Spacing.lg,
+  },
+  actionButtons: {
+    gap: Spacing.sm,
+  },
+  primaryActionButton: {
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+  },
+  actionButtonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+  },
+  actionButtonText: {
+    color: "white",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  secondaryActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  secondaryButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  eliteStatusContainer: {
+    alignItems: "center",
+    gap: Spacing.md,
+  },
+  eliteStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+  },
+  eliteStatusText: {
+    color: "#000",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  eliteMessage: {
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
   },
   loadingContainer: {
     alignItems: "center",
@@ -620,6 +978,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  perksGrid: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.xl,
+  },
+  perkCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    gap: Spacing.md,
+  },
+  perkIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  perkInfo: {
+    flex: 1,
+  },
+  perkTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  perkDescription: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
   emptyState: {
     alignItems: "center",
     paddingVertical: Spacing["2xl"],
@@ -643,6 +1032,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
+    marginBottom: Spacing.lg,
+  },
+  emptyActionButton: {
+    borderRadius: BorderRadius.lg,
+    overflow: "hidden",
+  },
+  emptyActionGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+  },
+  emptyActionText: {
+    color: "white",
+    fontSize: 15,
+    fontWeight: "600",
   },
   bottomContainer: {
     position: "absolute",
