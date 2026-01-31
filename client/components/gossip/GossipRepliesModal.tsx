@@ -270,10 +270,25 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
   };
 
   const handleSubmitReply = () => {
-    if (replyText.trim().length < 2) {
-      Alert.alert("Error", "Reply must be at least 2 characters");
+    if (!deviceId) {
+      Alert.alert("Error", "Device not ready. Please try again.");
       return;
     }
+    
+    if (replyText.trim().length < 2) {
+      Alert.alert("Too Short", "Reply must be at least 2 characters.");
+      return;
+    }
+    
+    if (replyText.trim().length > 1000) {
+      Alert.alert("Too Long", "Reply can't exceed 1000 characters.");
+      return;
+    }
+    
+    if (createReplyMutation.isPending) {
+      return;
+    }
+    
     createReplyMutation.mutate(replyText.trim());
   };
 
@@ -373,19 +388,26 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
           <View
             style={[styles.inputContainer, { borderColor: theme.glassBorder }]}
           >
-            <TextInput
-              ref={inputRef}
-              style={[
-                styles.textInput,
-                { color: theme.text, backgroundColor: theme.glassBackground },
-              ]}
-              placeholder="Add a reply..."
-              placeholderTextColor={theme.textTertiary}
-              value={replyText}
-              onChangeText={setReplyText}
-              multiline
-              maxLength={500}
-            />
+            <View style={styles.inputWrapper}>
+              <TextInput
+                ref={inputRef}
+                style={[
+                  styles.textInput,
+                  { color: theme.text, backgroundColor: theme.glassBackground },
+                ]}
+                placeholder="Add a reply..."
+                placeholderTextColor={theme.textTertiary}
+                value={replyText}
+                onChangeText={setReplyText}
+                multiline
+                maxLength={1000}
+              />
+              {replyText.length > 0 ? (
+                <ThemedText style={[styles.replyCharCount, { color: replyText.length > 900 ? theme.warning : theme.textTertiary }]}>
+                  {replyText.length}/1000
+                </ThemedText>
+              ) : null}
+            </View>
             <Pressable
               style={[
                 styles.sendButton,
@@ -562,14 +584,24 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingTop: Spacing.sm,
   },
-  textInput: {
+  inputWrapper: {
     flex: 1,
+    position: "relative",
+  },
+  textInput: {
     minHeight: 40,
     maxHeight: 100,
     borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
+    paddingBottom: Spacing.lg,
     fontSize: 14,
+  },
+  replyCharCount: {
+    position: "absolute",
+    bottom: 4,
+    right: Spacing.sm,
+    fontSize: 10,
   },
   sendButton: {
     width: 40,

@@ -6,6 +6,7 @@ import {
   TextInput,
   Pressable,
   Platform,
+  Alert,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -20,6 +21,8 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
 import { LoadingIndicator, EmptyState } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
+
+const MAX_MESSAGE_LENGTH = 2000;
 
 const DEVICE_ID_KEY = "@gossip_device_id";
 
@@ -92,16 +95,20 @@ function MessageBubble({ message }: { message: GossipMessage }) {
 interface GossipDMChatProps {
   conversationId: string;
   theirAlias?: string;
+  onConnectionChange?: (isConnected: boolean) => void;
 }
 
-export function GossipDMChat({ conversationId, theirAlias }: GossipDMChatProps) {
+export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }: GossipDMChatProps) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const flatListRef = useRef<FlatList>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [messageText, setMessageText] = useState("");
+  const [isConnected, setIsConnected] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
 
   useEffect(() => {
     const loadOrCreateDeviceId = async () => {
@@ -153,9 +160,74 @@ export function GossipDMChat({ conversationId, theirAlias }: GossipDMChatProps) 
     }
   }, [messagesData?.messages?.length]);
 
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let isUnmounted = false;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+
+    const connect = () => {
+      if (isUnmounted || !deviceId) return;
+
+      const wsUrl = getApiUrl().replace("https://", "wss://").replace("http://", "ws://");
+      ws = new WebSocket(`${wsUrl}ws`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        reconnectAttempts = 0;
+        setIsConnected(true);
+        onConnectionChange?.(true);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "gossip_dm_message" && data.data.conversationId === conversationId) {
+            queryClient.invalidateQueries({
+              queryKey: ["/api/gossip/v2/dm/conversations", conversationId, "messages"],
+            });
+          }
+        } catch (error) {
+          console.error("WebSocket message parse error:", error);
+        }
+      };
+
+      ws.onclose = () => {
+        setIsConnected(false);
+        onConnectionChange?.(false);
+        if (!isUnmounted && reconnectAttempts < maxReconnectAttempts) {
+          reconnectAttempts++;
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+          reconnectTimeout = setTimeout(() => {
+            queryClient.invalidateQueries({
+              queryKey: ["/api/gossip/v2/dm/conversations", conversationId, "messages"],
+            });
+            connect();
+          }, delay);
+        }
+      };
+
+      ws.onerror = () => {
+        ws?.close();
+      };
+    };
+
+    connect();
+
+    return () => {
+      isUnmounted = true;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      ws?.close();
+    };
+  }, [deviceId, conversationId, queryClient, onConnectionChange]);
+
   const sendMutation = useMutation({
     mutationFn: async (content: string) => {
       if (!deviceId) throw new Error("No device ID");
+      if (isBlocked) throw new Error("You have blocked this user");
       const response = await fetch(
         `${getApiUrl()}/api/gossip/v2/dm/conversations/${conversationId}/messages`,
         {
@@ -167,7 +239,10 @@ export function GossipDMChat({ conversationId, theirAlias }: GossipDMChatProps) 
           body: JSON.stringify({ content }),
         }
       );
-      if (!response.ok) throw new Error("Failed to send message");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to send message");
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -177,13 +252,138 @@ export function GossipDMChat({ conversationId, theirAlias }: GossipDMChatProps) 
       });
       setMessageText("");
     },
+    onError: (error: Error) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to send message. Please try again.");
+    },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (messageId: string) => {
+      if (!deviceId) throw new Error("No device ID");
+      const response = await fetch(
+        `${getApiUrl()}/api/gossip/v2/dm/messages/${messageId}`,
+        {
+          method: "DELETE",
+          headers: { "x-device-id": deviceId },
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to delete message");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      queryClient.invalidateQueries({
+        queryKey: ["/api/gossip/v2/dm/conversations", conversationId, "messages"],
+      });
+    },
+    onError: (error: Error) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to delete message. Please try again.");
+    },
+  });
+
+  const blockMutation = useMutation({
+    mutationFn: async () => {
+      if (!deviceId) throw new Error("No device ID");
+      const response = await fetch(
+        `${getApiUrl()}/api/gossip/v2/dm/conversations/${conversationId}/block`,
+        {
+          method: "POST",
+          headers: { "x-device-id": deviceId },
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to block user");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setIsBlocked(true);
+      Alert.alert("Blocked", "You have blocked this anonymous user.");
+    },
+    onError: (error: Error) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to block user. Please try again.");
+    },
+  });
+
+  const reportMutation = useMutation({
+    mutationFn: async (reason: string) => {
+      if (!deviceId) throw new Error("No device ID");
+      const response = await fetch(
+        `${getApiUrl()}/api/gossip/v2/dm/conversations/${conversationId}/report`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-device-id": deviceId,
+          },
+          body: JSON.stringify({ reason }),
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to report user");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Reported", "Thank you for your report. We will review it shortly.");
+    },
+    onError: (error: Error) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to report. Please try again.");
+    },
+  });
+
+  const handleBlock = useCallback(() => {
+    if (isBlocked) {
+      Alert.alert("Already Blocked", "You have already blocked this user.");
+      return;
+    }
+    Alert.alert(
+      "Block User",
+      "Are you sure you want to block this anonymous user? You won't receive messages from them.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Block", style: "destructive", onPress: () => blockMutation.mutate() },
+      ]
+    );
+  }, [isBlocked, blockMutation]);
+
+  const handleReport = useCallback(() => {
+    Alert.alert(
+      "Report User",
+      "Why are you reporting this user?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Harassment", onPress: () => reportMutation.mutate("harassment") },
+        { text: "Spam", onPress: () => reportMutation.mutate("spam") },
+        { text: "Inappropriate", onPress: () => reportMutation.mutate("inappropriate") },
+      ]
+    );
+  }, [reportMutation]);
 
   const handleSend = useCallback(() => {
     const trimmed = messageText.trim();
-    if (!trimmed) return;
+    if (!trimmed || sendMutation.isPending) return;
+    if (trimmed.length > MAX_MESSAGE_LENGTH) {
+      Alert.alert("Message too long", `Messages must be under ${MAX_MESSAGE_LENGTH} characters.`);
+      return;
+    }
+    if (isBlocked) {
+      Alert.alert("Blocked", "You have blocked this user and cannot send messages.");
+      return;
+    }
     sendMutation.mutate(trimmed);
-  }, [messageText, sendMutation]);
+  }, [messageText, sendMutation, isBlocked]);
 
   const messages = (messagesData?.messages || []).reverse();
 
@@ -219,10 +419,21 @@ export function GossipDMChat({ conversationId, theirAlias }: GossipDMChatProps) 
       keyboardVerticalOffset={0}
     >
       <View style={styles.anonymousHeader}>
-        <Feather name="shield" size={14} color={theme.primary} />
-        <ThemedText style={[styles.anonymousText, { color: theme.textSecondary }]}>
-          End-to-end anonymous chat
-        </ThemedText>
+        <View style={styles.headerLeft}>
+          <Feather name="shield" size={14} color={theme.primary} />
+          <ThemedText style={[styles.anonymousText, { color: theme.textSecondary }]}>
+            End-to-end anonymous chat
+          </ThemedText>
+        </View>
+        <View style={styles.headerActions}>
+          <View style={[styles.connectionDot, { backgroundColor: isConnected ? "#22C55E" : theme.textTertiary }]} />
+          <Pressable onPress={handleReport} hitSlop={8}>
+            <Feather name="flag" size={16} color={theme.textSecondary} />
+          </Pressable>
+          <Pressable onPress={handleBlock} hitSlop={8}>
+            <Feather name="slash" size={16} color={isBlocked ? Colors.light.error : theme.textSecondary} />
+          </Pressable>
+        </View>
       </View>
 
       <FlatList
@@ -259,9 +470,10 @@ export function GossipDMChat({ conversationId, theirAlias }: GossipDMChatProps) 
             value={messageText}
             onChangeText={setMessageText}
             multiline
-            maxLength={1000}
+            maxLength={MAX_MESSAGE_LENGTH}
             returnKeyType="send"
             onSubmitEditing={handleSend}
+            editable={!isBlocked}
           />
         </View>
 
@@ -304,10 +516,25 @@ const styles = StyleSheet.create({
   anonymousHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     backgroundColor: "rgba(139, 92, 246, 0.1)",
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+  },
+  connectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   anonymousText: {
     fontSize: 12,

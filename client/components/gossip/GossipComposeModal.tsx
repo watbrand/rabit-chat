@@ -222,7 +222,30 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   };
   
   const handleSubmit = () => {
-    if (!canSubmit() || !presetLocation || !deviceId) return;
+    if (!deviceId) {
+      Alert.alert("Error", "Device not ready. Please try again.");
+      return;
+    }
+    
+    if (!presetLocation) {
+      Alert.alert("Location Required", "Please select a location before posting.");
+      return;
+    }
+    
+    if (!isVoiceMode && content.trim().length < 10) {
+      Alert.alert("Too Short", "Your gossip needs at least 10 characters.");
+      return;
+    }
+    
+    if (!isVoiceMode && content.trim().length > 2000) {
+      Alert.alert("Too Long", "Your gossip can't exceed 2000 characters.");
+      return;
+    }
+    
+    if (isVoiceMode && (!uploadedAudioUrl || isUploading)) {
+      Alert.alert("Not Ready", "Please complete your voice recording first.");
+      return;
+    }
     
     const data: any = {
       deviceHash: deviceId,
@@ -308,14 +331,14 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
                 value={content}
                 onChangeText={setContent}
                 multiline
-                maxLength={1000}
+                maxLength={2000}
               />
               <View style={styles.charCountContainer}>
                 <ThemedText style={[
                   styles.charCount,
-                  { color: content.trim().length < 10 ? theme.error : theme.textTertiary }
+                  { color: content.trim().length < 10 ? theme.error : content.trim().length > 1800 ? theme.warning : theme.textTertiary }
                 ]}>
-                  {content.trim().length}/1000 {content.trim().length < 10 ? `(${10 - content.trim().length} more needed)` : ''}
+                  {content.trim().length}/2000 {content.trim().length < 10 ? `(${10 - content.trim().length} more needed)` : ''}
                 </ThemedText>
               </View>
             </View>

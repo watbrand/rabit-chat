@@ -1,10 +1,11 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useState, useMemo, useRef } from "react";
 import {
   View,
   StyleSheet,
   FlatList,
   Pressable,
   RefreshControl,
+  TextInput,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
@@ -20,6 +21,7 @@ import { EmptyState, LoadingIndicator } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 
 const DEVICE_ID_KEY = "@gossip_device_id";
+const REFRESH_THROTTLE_MS = 2000;
 
 interface GossipDMConversation {
   id: string;
@@ -117,7 +119,10 @@ export function GossipDMList() {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const [deviceId, setDeviceId] = React.useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const lastRefreshRef = useRef<number>(0);
 
   React.useEffect(() => {
     const loadOrCreateDeviceId = async () => {
@@ -151,6 +156,30 @@ export function GossipDMList() {
 
   const conversations = data?.conversations || [];
 
+  const filteredConversations = useMemo(() => {
+    if (!searchQuery.trim()) return conversations;
+    const query = searchQuery.toLowerCase().trim();
+    return conversations.filter((conv: GossipDMConversation) =>
+      conv.theirAlias.toLowerCase().includes(query) ||
+      conv.postSnippet.toLowerCase().includes(query) ||
+      (conv.lastMessage && conv.lastMessage.toLowerCase().includes(query))
+    );
+  }, [conversations, searchQuery]);
+
+  const handleRefresh = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastRefreshRef.current < REFRESH_THROTTLE_MS) {
+      return;
+    }
+    lastRefreshRef.current = now;
+    setIsRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetch]);
+
   const handleConversationPress = useCallback((conversation: GossipDMConversation) => {
     navigation.navigate("GossipDMChat", {
       conversationId: conversation.id,
@@ -183,6 +212,15 @@ export function GossipDMList() {
     );
   }
 
+  const renderSearchEmpty = useCallback(() => (
+    <View style={styles.emptyContainer}>
+      <Feather name="search" size={48} color={theme.textTertiary} />
+      <ThemedText style={[styles.emptyHint, { color: theme.textSecondary, marginTop: Spacing.md }]}>
+        No conversations match your search
+      </ThemedText>
+    </View>
+  ), [theme]);
+
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <View style={styles.header}>
@@ -192,16 +230,39 @@ export function GossipDMList() {
         </ThemedText>
       </View>
 
+      <View style={[styles.searchContainer, { borderColor: theme.glassBorder }]}>
+        <View style={[styles.searchInputWrapper, { backgroundColor: theme.glassBackground }]}>
+          <Feather name="search" size={18} color={theme.textTertiary} />
+          <TextInput
+            style={[styles.searchInput, { color: theme.text }]}
+            placeholder="Search conversations..."
+            placeholderTextColor={theme.textTertiary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 ? (
+            <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
+              <Feather name="x" size={18} color={theme.textTertiary} />
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+
       <FlatList
-        data={conversations}
+        data={filteredConversations}
         keyExtractor={(item) => item.id}
         renderItem={renderConversation}
-        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + Spacing["3xl"] }]}
-        ListEmptyComponent={renderEmptyState}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: insets.bottom + Spacing["3xl"] },
+          filteredConversations.length === 0 && styles.listEmpty,
+        ]}
+        ListEmptyComponent={searchQuery.trim() ? renderSearchEmpty : renderEmptyState}
         refreshControl={
           <RefreshControl
-            refreshing={false}
-            onRefresh={() => refetch()}
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
             tintColor={theme.primary}
           />
         }
@@ -235,6 +296,28 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: Spacing["3xl"],
+  },
+  listEmpty: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  searchContainer: {
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+  },
+  searchInputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    minHeight: 44,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: 0,
   },
   conversationCard: {
     flexDirection: "row",
