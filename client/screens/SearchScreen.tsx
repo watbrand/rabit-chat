@@ -53,7 +53,7 @@ export default function SearchScreen() {
     debouncedSearch(text);
   };
 
-  const { data: users, isLoading } = useQuery<User[]>({
+  const { data: users, isLoading, isError, error, refetch } = useQuery<User[]>({
     queryKey: ["/api/users/search", debouncedQuery],
     queryFn: async () => {
       if (!debouncedQuery.trim()) return [];
@@ -117,6 +117,29 @@ export default function SearchScreen() {
       return (
         <View style={styles.emptyContainer}>
           <LoadingIndicator size="large" />
+        </View>
+      );
+    }
+
+    if (isError && debouncedQuery) {
+      return (
+        <View style={styles.emptyContainer}>
+          <View style={[styles.errorIconContainer, { backgroundColor: theme.errorLight }]}>
+            <Feather name="alert-circle" size={48} color={theme.error} />
+          </View>
+          <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
+            Search failed
+          </ThemedText>
+          <ThemedText style={[styles.emptyText, { color: theme.textSecondary }]}>
+            {(error as Error)?.message || "Something went wrong. Please try again."}
+          </ThemedText>
+          <Pressable 
+            style={[styles.retryButton, { backgroundColor: theme.primary }]}
+            onPress={() => refetch()}
+          >
+            <Feather name="refresh-cw" size={16} color="#FFF" />
+            <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+          </Pressable>
         </View>
       );
     }
@@ -272,5 +295,27 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     textAlign: "center",
+  },
+  errorIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.md,
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    gap: Spacing.xs,
+    marginTop: Spacing.lg,
+  },
+  retryButtonText: {
+    color: "#FFF",
+    fontWeight: "600",
+    fontSize: 14,
   },
 });

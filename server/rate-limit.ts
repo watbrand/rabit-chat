@@ -214,6 +214,105 @@ export const broadcastChannelLimiter = rateLimit({
   skip: (req) => !req.session?.userId,
 });
 
+// Stories rate limiting
+export const storiesRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 30,
+  message: { message: "Too many story operations. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Reels rate limiting
+export const reelsRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 20,
+  message: { message: "Too many reel operations. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Comments rate limiting
+export const commentsRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 30,
+  message: { message: "Too many comments. Please wait before commenting again." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Likes rate limiting
+export const likesRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 60,
+  message: { message: "Too many likes. Please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Follows rate limiting
+export const followsRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 30,
+  message: { message: "Too many follow/unfollow actions. Please wait." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Gifts rate limiting
+export const giftsRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 20,
+  message: { message: "Too many gift transactions. Please wait." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Mall rate limiting
+export const mallRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 30,
+  message: { message: "Too many mall operations. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Staking rate limiting
+export const stakingRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 10,
+  message: { message: "Too many staking operations. Please wait." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Direct Messages rate limiting
+export const dmsRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 60,
+  message: { message: "Too many messages. Please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Onboarding rate limiting
+export const onboardingRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: { message: "Too many onboarding requests. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Data export rate limiting (should be strict)
+export const dataExportRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  message: { message: "Too many data export requests. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 interface RateLimitOptions {
   windowMs: number;
   max: number;

@@ -194,6 +194,7 @@ export function AnonymousGossipTab() {
     },
     onSuccess: (data) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/dm"], exact: false });
       navigation.navigate("GossipDMChat", {
         conversationId: data.conversation.id,
         theirAlias: data.conversation.posterAlias,

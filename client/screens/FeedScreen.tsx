@@ -96,6 +96,8 @@ export default function FeedScreen() {
   const {
     data: feedData,
     isLoading,
+    isError,
+    error,
     refetch,
     isRefetching,
     fetchNextPage,
@@ -457,6 +459,32 @@ export default function FeedScreen() {
     );
   }
 
+  if (isError) {
+    return (
+      <GradientBackground variant={isDark ? "orbs" : "subtle"}>
+        {renderHeader()}
+        <View style={[styles.errorContainer, { paddingTop: insets.top + 56 + Spacing.lg }]}>
+          <View style={[styles.errorIconContainer, { backgroundColor: theme.errorLight }]}>
+            <Feather name="alert-circle" size={48} color={theme.error} />
+          </View>
+          <ThemedText type="h4" style={styles.errorTitle}>
+            Something went wrong
+          </ThemedText>
+          <ThemedText style={[styles.errorText, { color: theme.textSecondary }]}>
+            {(error as Error)?.message || "Failed to load your feed. Please try again."}
+          </ThemedText>
+          <Pressable 
+            style={[styles.retryButton, { backgroundColor: theme.primary }]}
+            onPress={() => refetch()}
+          >
+            <Feather name="refresh-cw" size={18} color="#FFF" />
+            <ThemedText style={styles.retryButtonText}>Try Again</ThemedText>
+          </Pressable>
+        </View>
+      </GradientBackground>
+    );
+  }
+
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
       <GradientBackground variant={isDark ? "orbs" : "subtle"}>
@@ -803,5 +831,40 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: Spacing.xl,
     alignItems: "center",
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.xl,
+  },
+  errorIconContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.xl,
+  },
+  errorTitle: {
+    marginBottom: Spacing.sm,
+    textAlign: "center",
+  },
+  errorText: {
+    textAlign: "center",
+    marginBottom: Spacing.xl,
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    borderRadius: BorderRadius.md,
+    gap: Spacing.sm,
+  },
+  retryButtonText: {
+    color: "#FFF",
+    fontWeight: "600",
+    fontSize: 16,
   },
 });

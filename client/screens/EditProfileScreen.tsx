@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, EventArg } from "@react-navigation/native";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { Feather } from "@expo/vector-icons";
 
@@ -40,6 +40,7 @@ export default function EditProfileScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
   const { user, refreshUser } = useAuth();
+  const queryClient = useQueryClient();
 
   const [displayName, setDisplayName] = useState(user?.displayName || "");
   const [username, setUsername] = useState(user?.username || "");
@@ -228,6 +229,11 @@ export default function EditProfileScreen() {
     onSuccess: () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       refreshUser();
+      queryClient.invalidateQueries({ queryKey: ["/api/users/me"] });
+      if (user?.id) {
+        queryClient.invalidateQueries({ queryKey: [`/api/users/${user.id}`] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/my/profile"] });
       navigation.goBack();
     },
     onError: (error: any) => {

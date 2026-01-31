@@ -223,6 +223,9 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
     onSuccess: () => {
       refetch();
     },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/gossip/v2/posts"], exact: false });
+    },
   });
 
   const handleReact = (replyId: string, type: ReactionType) => {
