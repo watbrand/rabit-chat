@@ -400,6 +400,7 @@ export default function AdminAuditScreen() {
             </ThemedText>
           </View>
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
       {renderFilterModal()}

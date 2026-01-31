@@ -450,6 +450,7 @@ export default function AdminSettingsScreen() {
             ))}
           </View>
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
       {renderEditModal()}

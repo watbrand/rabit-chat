@@ -468,6 +468,7 @@ export default function ExploreReelsScreen() {
           index,
         })}
         contentContainerStyle={{ paddingBottom: insets.bottom }}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
     </View>
   );

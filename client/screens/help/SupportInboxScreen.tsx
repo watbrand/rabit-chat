@@ -465,6 +465,7 @@ export default function SupportInboxScreen() {
             { paddingBottom: insets.bottom + Spacing.xl },
           ]}
           showsVerticalScrollIndicator={false}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}

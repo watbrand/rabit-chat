@@ -392,6 +392,7 @@ export default function ExplorePicturesScreen() {
           index,
         })}
         contentContainerStyle={{ paddingBottom: insets.bottom }}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
       {showComments ? (
@@ -417,6 +418,7 @@ export default function ExplorePicturesScreen() {
               style={styles.commentsList}
               contentContainerStyle={{ paddingBottom: 10 }}
               keyboardShouldPersistTaps="handled"
+              scrollIndicatorInsets={{ bottom: insets.bottom }}
               ListEmptyComponent={
                 <ThemedText style={styles.noComments}>No comments yet. Be the first!</ThemedText>
               }

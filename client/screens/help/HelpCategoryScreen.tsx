@@ -349,6 +349,7 @@ export default function HelpCategoryScreen() {
           },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}

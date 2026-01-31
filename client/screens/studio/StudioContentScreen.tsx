@@ -211,6 +211,7 @@ export default function StudioContentScreen() {
           paddingHorizontal: Spacing.lg,
           paddingBottom: insets.bottom + Spacing.xl,
         }}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
         refreshControl={
           <RefreshControl refreshing={isRefetching} onRefresh={refetch} />

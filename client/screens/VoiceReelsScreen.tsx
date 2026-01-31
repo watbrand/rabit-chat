@@ -564,6 +564,7 @@ export default function VoiceReelsScreen() {
         maxToRenderPerBatch={2}
         windowSize={5}
         removeClippedSubviews={true}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
     </View>
   );

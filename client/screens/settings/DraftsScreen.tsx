@@ -224,6 +224,7 @@ export default function DraftsScreen() {
             </ThemedText>
           </View>
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
     </View>
   );

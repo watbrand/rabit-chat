@@ -683,6 +683,7 @@ export default function ChatScreen() {
             paddingHorizontal: Spacing.sm,
             flexGrow: 1,
           }}
+          scrollIndicatorInsets={{ top: insets.bottom }}
           data={sortedMessages}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {

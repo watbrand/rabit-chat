@@ -646,6 +646,7 @@ export default function TicketChatScreen() {
               paddingBottom: Spacing.md,
             },
           ]}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           ListEmptyComponent={<EmptyTicketState ticketSubject={ticket?.subject} />}
           ListHeaderComponent={
             supportTyping ? (

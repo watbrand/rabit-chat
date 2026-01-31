@@ -426,6 +426,7 @@ export default function AdminVerificationScreen() {
             </ThemedText>
           </View>
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
       <Modal

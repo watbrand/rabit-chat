@@ -649,6 +649,7 @@ export default function AdminUsersScreen() {
             </View>
           ) : null
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
       <Modal

@@ -210,6 +210,7 @@ export default function LoginHistoryScreen() {
         ]}
         ListEmptyComponent={renderEmptyState}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}

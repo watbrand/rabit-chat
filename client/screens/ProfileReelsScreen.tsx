@@ -375,6 +375,7 @@ export default function ProfileReelsScreen() {
           index,
         })}
         contentContainerStyle={{ paddingBottom: insets.bottom }}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         initialNumToRender={3}
         maxToRenderPerBatch={2}
         windowSize={5}

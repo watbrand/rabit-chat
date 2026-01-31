@@ -309,6 +309,7 @@ export default function BlockedAccountsScreen() {
         ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
     </View>
   );

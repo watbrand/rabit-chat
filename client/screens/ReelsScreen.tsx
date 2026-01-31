@@ -395,6 +395,7 @@ export default function ReelsScreen() {
           offset: SCREEN_HEIGHT * index,
           index,
         })}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
     </View>
   );

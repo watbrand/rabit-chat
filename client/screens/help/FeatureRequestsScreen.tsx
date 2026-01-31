@@ -400,6 +400,7 @@ export default function FeatureRequestsScreen() {
           />
         }
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
       />
 

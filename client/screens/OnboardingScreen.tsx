@@ -182,6 +182,7 @@ export default function OnboardingScreen() {
         onScroll={(event) => {
           scrollX.value = event.nativeEvent.contentOffset.x;
         }}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 30 }]}>

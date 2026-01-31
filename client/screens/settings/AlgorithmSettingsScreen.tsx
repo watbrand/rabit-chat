@@ -467,6 +467,7 @@ export default function AlgorithmSettingsScreen() {
       ]}
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
       showsVerticalScrollIndicator={false}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     />
   );
 }

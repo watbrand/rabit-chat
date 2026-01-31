@@ -562,6 +562,7 @@ export default function AdminReportsScreen() {
           />
         }
         ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
     </View>
   );

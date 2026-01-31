@@ -423,6 +423,7 @@ export default function AdminPostsScreen() {
             </ThemedText>
           </View>
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
       <Modal

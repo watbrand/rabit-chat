@@ -293,6 +293,7 @@ export default function AdminStoriesScreen() {
         refreshControl={
           <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.primary} />
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
       <Modal

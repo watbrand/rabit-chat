@@ -549,6 +549,7 @@ export default function AdminRolesScreen() {
             <ThemedText type="h4" style={styles.emptyTitle}>No roles found</ThemedText>
           </View>
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
       {renderFormModal(false)}

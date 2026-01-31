@@ -206,6 +206,7 @@ export default function LiveStreamScreen({ route, navigation }: any) {
             style={styles.commentsList}
             inverted={false}
             showsVerticalScrollIndicator={false}
+            scrollIndicatorInsets={{ bottom: insets.bottom }}
           />
 
           <View style={styles.reactionsBar}>

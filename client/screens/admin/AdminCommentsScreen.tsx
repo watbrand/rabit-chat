@@ -306,6 +306,7 @@ export default function AdminCommentsScreen() {
             </ThemedText>
           </View>
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
       <Modal

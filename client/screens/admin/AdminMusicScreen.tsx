@@ -413,6 +413,7 @@ export default function AdminMusicScreen() {
             </Pressable>
           </View>
         }
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
       <Modal
