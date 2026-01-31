@@ -292,6 +292,7 @@ export default function WealthClubScreen() {
           />
         }
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <Animated.View entering={FadeInUp.springify()} style={styles.heroSection}>
           <LinearGradient

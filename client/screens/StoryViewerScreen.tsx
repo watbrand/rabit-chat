@@ -928,6 +928,7 @@ export default function StoryViewerScreen() {
                     <ScrollView 
                       showsVerticalScrollIndicator={false}
                       contentContainerStyle={styles.panelViewersList}
+                      scrollIndicatorInsets={{ bottom: insets.bottom }}
                     >
                       {viewers.map((item) => (
                         <Pressable

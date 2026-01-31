@@ -234,6 +234,7 @@ export default function VerifyOTPScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         bottomOffset={80}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <Animated.View
           entering={FadeInUp.delay(100).springify()}

@@ -34,6 +34,7 @@ import { Avatar } from "@/components/Avatar";
 import { VideoOverlayActions, VideoOverlayInfo } from "@/components/VideoOverlayActions";
 import { ThemedText } from "@/components/ThemedText";
 import { LoadingIndicator } from "@/components/animations";
+import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Spacing, Gradients } from "@/constants/theme";
@@ -565,6 +566,15 @@ export default function VoiceReelsScreen() {
         windowSize={5}
         removeClippedSubviews={true}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
+        ListEmptyComponent={
+          <View style={[styles.emptyContainer, { backgroundColor: "#000", justifyContent: "center" }]}>
+            <EmptyState
+              type="reels"
+              size="large"
+              showAnimation={true}
+            />
+          </View>
+        }
       />
     </View>
   );

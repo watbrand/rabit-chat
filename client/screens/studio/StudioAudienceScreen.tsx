@@ -6,7 +6,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
+import { EmptyState } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
@@ -52,7 +54,7 @@ export default function StudioAudienceScreen() {
 
   const { startDate, endDate } = getDateRange(dateRange);
 
-  const { data: audience, isLoading, refetch, isRefetching } = useQuery<StudioAudience>({
+  const { data: audience, isLoading, isError, error, refetch, isRefetching } = useQuery<StudioAudience>({
     queryKey: ["/api/studio/audience", dateRange],
     queryFn: async () => {
       const url = new URL("/api/studio/audience", getApiUrl());
@@ -115,6 +117,20 @@ export default function StudioAudienceScreen() {
     1
   );
 
+  if (isError) {
+    return (
+      <ThemedView style={styles.container}>
+        <EmptyState
+          icon="alert-circle"
+          title="Something went wrong"
+          message={(error as Error)?.message || "Failed to load audience data. Please try again."}
+          actionLabel="Try Again"
+          onAction={refetch}
+        />
+      </ThemedView>
+    );
+  }
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
@@ -124,6 +140,7 @@ export default function StudioAudienceScreen() {
         paddingHorizontal: Spacing.lg,
       }}
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <View style={styles.dateRangeContainer}>
         <DateRangeButton range="7d" label="7 Days" />
@@ -248,6 +265,12 @@ export default function StudioAudienceScreen() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+  },
   dateRangeContainer: {
     flexDirection: "row",
     marginBottom: Spacing.lg,

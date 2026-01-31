@@ -11,7 +11,8 @@ import {
   Platform,
   Alert,
 } from "react-native";
-import { LoadingIndicator } from "@/components/animations";
+import { LoadingIndicator, EmptyState } from "@/components/animations";
+import { ThemedView } from "@/components/ThemedView";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -74,7 +75,7 @@ export default function EventsScreen({ navigation }: any) {
   const [refreshing, setRefreshing] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
 
-  const { data: events = [], isLoading, refetch } = useQuery<Event[]>({
+  const { data: events = [], isLoading, isError, error, refetch } = useQuery<Event[]>({
     queryKey: ["/api/events"],
   });
 
@@ -439,6 +440,31 @@ export default function EventsScreen({ navigation }: any) {
     );
   };
 
+  if (isError) {
+    return (
+      <ThemedView style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+        <View style={[styles.header, { paddingTop: Platform.OS === "android" ? Spacing.md : headerHeight + Spacing.sm }]}>
+          <Text style={[styles.title, { color: theme.text }]}>Events</Text>
+          <Pressable
+            style={[styles.createButton, { backgroundColor: theme.primary }]}
+            onPress={() => setShowCreateModal(true)}
+          >
+            <Feather name="plus" size={20} color="#fff" />
+          </Pressable>
+        </View>
+        <View style={styles.errorContainer}>
+          <EmptyState
+            icon="alert-circle"
+            title="Something went wrong"
+            message={(error as Error)?.message || "Failed to load events. Please try again."}
+            actionLabel="Try Again"
+            onAction={refetch}
+          />
+        </View>
+      </ThemedView>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <View style={[styles.header, { paddingTop: Platform.OS === "android" ? Spacing.md : headerHeight + Spacing.sm }]}>
@@ -509,6 +535,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
   },
   list: {
     padding: 16,

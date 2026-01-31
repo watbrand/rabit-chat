@@ -427,6 +427,7 @@ export default function StakingScreen() {
           />
         }
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <Animated.View entering={FadeInUp.springify()}>
           <Card variant="glass" style={styles.balanceCard}>

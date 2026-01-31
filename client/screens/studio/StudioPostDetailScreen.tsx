@@ -8,7 +8,9 @@ import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 
 import { ThemedText } from "@/components/ThemedText";
+import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
+import { EmptyState } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
@@ -66,7 +68,7 @@ export default function StudioPostDetailScreen() {
   const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const endDate = new Date();
 
-  const { data: detail, isLoading, refetch, isRefetching } = useQuery<StudioPostDetail>({
+  const { data: detail, isLoading, isError, error, refetch, isRefetching } = useQuery<StudioPostDetail>({
     queryKey: ["/api/studio/posts", postId],
     queryFn: async () => {
       const url = new URL(`/api/studio/posts/${postId}`, getApiUrl());
@@ -111,6 +113,20 @@ export default function StudioPostDetailScreen() {
     );
   };
 
+  if (isError) {
+    return (
+      <ThemedView style={styles.container}>
+        <EmptyState
+          icon="alert-circle"
+          title="Something went wrong"
+          message={(error as Error)?.message || "Failed to load post details. Please try again."}
+          actionLabel="Try Again"
+          onAction={refetch}
+        />
+      </ThemedView>
+    );
+  }
+
   const isMediaPost = detail?.post.type === "VIDEO" || detail?.post.type === "VOICE" || detail?.post.type === "PHOTO";
 
   return (
@@ -122,6 +138,7 @@ export default function StudioPostDetailScreen() {
         paddingHorizontal: Spacing.lg,
       }}
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <Card style={styles.postPreview}>
         <View style={styles.postPreviewRow}>
@@ -216,6 +233,12 @@ export default function StudioPostDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+  },
   postPreview: {
     padding: Spacing.lg,
     marginBottom: Spacing.md,

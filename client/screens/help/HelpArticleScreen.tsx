@@ -198,6 +198,7 @@ export default function HelpArticleScreen() {
           colors={[theme.primary]}
         />
       }
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <Animated.View entering={FadeIn.duration(300)}>
         <View style={styles.metaRow}>

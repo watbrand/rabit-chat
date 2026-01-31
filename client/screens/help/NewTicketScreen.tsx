@@ -210,6 +210,7 @@ export default function NewTicketScreen() {
         paddingBottom: insets.bottom + Spacing.xl,
         paddingHorizontal: Spacing.lg,
       }}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <Animated.View entering={FadeIn.duration(300)}>
         <View style={styles.section}>

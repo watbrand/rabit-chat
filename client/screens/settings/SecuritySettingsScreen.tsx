@@ -408,6 +408,7 @@ export default function SecuritySettingsScreen() {
           <ScrollView
             style={styles.modalContent}
             contentContainerStyle={styles.modalContentContainer}
+            scrollIndicatorInsets={{ bottom: insets.bottom }}
           >
             {twoFactorStep === "setup" && (
               <View style={styles.centeredContent}>
@@ -593,6 +594,7 @@ export default function SecuritySettingsScreen() {
           <ScrollView
             style={styles.modalContent}
             contentContainerStyle={styles.modalContentContainer}
+            scrollIndicatorInsets={{ bottom: insets.bottom }}
           >
             <View
               style={[
@@ -689,6 +691,7 @@ export default function SecuritySettingsScreen() {
           paddingBottom: insets.bottom + Spacing.xl,
           paddingHorizontal: Spacing.lg,
         }}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <View style={styles.section}>
           <ThemedText style={[styles.sectionTitle, { color: theme.textSecondary }]}>

@@ -16,6 +16,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Avatar } from "@/components/Avatar";
 import { LoadingIndicator } from "@/components/animations";
+import { EmptyState } from "@/components/EmptyState";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
   useAnimatedStyle,
@@ -207,6 +208,15 @@ export default function LiveStreamScreen({ route, navigation }: any) {
             inverted={false}
             showsVerticalScrollIndicator={false}
             scrollIndicatorInsets={{ bottom: insets.bottom }}
+            ListEmptyComponent={
+              <View style={styles.emptyCommentsContainer}>
+                <EmptyState
+                  type="comments"
+                  size="small"
+                  showAnimation={false}
+                />
+              </View>
+            }
           />
 
           <View style={styles.reactionsBar}>

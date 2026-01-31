@@ -11,7 +11,8 @@ import {
   TextInput,
 } from "react-native";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import { LoadingIndicator } from "@/components/animations";
+import { LoadingIndicator, EmptyState } from "@/components/animations";
+import { ThemedView } from "@/components/ThemedView";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useTheme } from "@/hooks/useTheme";
@@ -101,7 +102,7 @@ export default function WalletScreen({ navigation }: any) {
   const [showPackages, setShowPackages] = useState(false);
   const [customCoinAmount, setCustomCoinAmount] = useState("");
 
-  const { data: wallet, isLoading, refetch } = useQuery<Wallet>({
+  const { data: wallet, isLoading, isError, error, refetch } = useQuery<Wallet>({
     queryKey: ["/api/wallet"],
   });
 
@@ -380,6 +381,25 @@ export default function WalletScreen({ navigation }: any) {
       <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
         <LoadingIndicator size="large" />
       </View>
+    );
+  }
+
+  if (isError) {
+    return (
+      <ThemedView style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <Text style={[styles.title, { color: theme.text }]}>Wallet</Text>
+        </View>
+        <View style={styles.errorContainer}>
+          <EmptyState
+            icon="alert-circle"
+            title="Something went wrong"
+            message={(error as Error)?.message || "Failed to load wallet. Please try again."}
+            actionLabel="Try Again"
+            onAction={refetch}
+          />
+        </View>
+      </ThemedView>
     );
   }
 
@@ -912,6 +932,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "bold",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
   },
   balanceCard: {
     margin: 16,

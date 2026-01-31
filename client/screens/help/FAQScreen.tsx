@@ -213,6 +213,7 @@ export default function FAQScreen() {
           colors={[theme.primary]}
         />
       }
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <Animated.View entering={FadeIn.duration(300)}>
         <View

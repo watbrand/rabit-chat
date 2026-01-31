@@ -96,6 +96,7 @@ export default function AdminHelpCenterScreen() {
         <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.primary} />
       }
       testID="help-center-admin-scroll"
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <Card elevation={2} style={styles.headerCard}>
         <View style={styles.headerContent}>

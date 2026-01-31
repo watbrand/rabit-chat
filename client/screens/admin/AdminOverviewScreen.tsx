@@ -86,6 +86,7 @@ export default function AdminOverviewScreen() {
       refreshControl={
         <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.primary} />
       }
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <Card elevation={2} style={styles.headerCard}>
         <View style={styles.headerContent}>

@@ -27,6 +27,7 @@ import * as Haptics from "expo-haptics";
 
 import { VideoOverlayActions, VideoOverlayInfo } from "@/components/VideoOverlayActions";
 import { ThemedText } from "@/components/ThemedText";
+import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { apiRequest } from "@/lib/query-client";
 import { Spacing } from "@/constants/theme";
@@ -380,6 +381,15 @@ export default function ProfileReelsScreen() {
         maxToRenderPerBatch={2}
         windowSize={5}
         removeClippedSubviews={true}
+        ListEmptyComponent={
+          <View style={[styles.emptyContainer, { backgroundColor: "#000", justifyContent: "center" }]}>
+            <EmptyState
+              type="videos"
+              size="large"
+              showAnimation={true}
+            />
+          </View>
+        }
       />
     </View>
   );

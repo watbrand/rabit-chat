@@ -411,6 +411,7 @@ export default function SuggestedUsersScreen() {
           { paddingBottom: insets.bottom + 120 },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         {users.map((user, index) => (
           <UserCard

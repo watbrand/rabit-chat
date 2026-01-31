@@ -471,6 +471,7 @@ export default function DataAccountScreen() {
         paddingBottom: insets.bottom + Spacing.xl,
         paddingHorizontal: Spacing.lg,
       }}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <View style={styles.section}>
         <ThemedText style={[styles.sectionTitle, { color: theme.textSecondary }]}>

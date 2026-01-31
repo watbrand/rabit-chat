@@ -9,6 +9,7 @@ import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
+import { EmptyState } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
@@ -84,7 +85,7 @@ export default function StudioOverviewScreen() {
   
   const { startDate, endDate } = getDateRange(dateRange);
 
-  const { data: overview, isLoading, refetch, isRefetching } = useQuery<StudioOverview>({
+  const { data: overview, isLoading, isError, error, refetch, isRefetching } = useQuery<StudioOverview>({
     queryKey: ["/api/studio/overview", dateRange],
     queryFn: async () => {
       const url = new URL("/api/studio/overview", getApiUrl());
@@ -159,6 +160,20 @@ export default function StudioOverviewScreen() {
     </Pressable>
   );
 
+  if (isError) {
+    return (
+      <ThemedView style={styles.container}>
+        <EmptyState
+          icon="alert-circle"
+          title="Something went wrong"
+          message={(error as Error)?.message || "Failed to load studio overview. Please try again."}
+          actionLabel="Try Again"
+          onAction={refetch}
+        />
+      </ThemedView>
+    );
+  }
+
   const trafficTotal =
     (overview?.trafficSources.feed || 0) +
     (overview?.trafficSources.profile || 0) +
@@ -194,6 +209,7 @@ export default function StudioOverviewScreen() {
       refreshControl={
         <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
       }
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <View style={styles.dateRangeContainer}>
         <DateRangeButton range="7d" label="7 Days" />
@@ -306,6 +322,12 @@ export default function StudioOverviewScreen() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+  },
   dateRangeContainer: {
     flexDirection: "row",
     marginBottom: Spacing.lg,

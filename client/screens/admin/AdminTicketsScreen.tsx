@@ -420,6 +420,7 @@ export default function AdminTicketsScreen() {
           <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.primary} />
         }
         stickyHeaderIndices={[2]}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <Card elevation={2} style={styles.headerCard}>
           <View style={styles.headerContent}>

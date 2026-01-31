@@ -316,6 +316,7 @@ export default function VerificationScreen() {
         paddingBottom: insets.bottom + Spacing.xl,
         paddingHorizontal: Spacing.lg,
       }}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       {data?.isVerified ? (
         <View style={styles.section}>

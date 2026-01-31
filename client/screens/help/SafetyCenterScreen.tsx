@@ -337,6 +337,7 @@ export default function SafetyCenterScreen() {
           colors={[EMERGENCY_RED]}
         />
       }
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <Animated.View entering={FadeIn.duration(300)}>
         <Animated.View entering={FadeInDown.delay(50).duration(300)} style={styles.header}>

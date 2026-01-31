@@ -8,7 +8,9 @@ import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 
 import { ThemedText } from "@/components/ThemedText";
+import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
+import { EmptyState } from "@/components/animations";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
@@ -60,7 +62,7 @@ export default function StudioContentScreen() {
   const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const endDate = new Date();
 
-  const { data: content, isLoading, refetch, isRefetching } = useQuery<StudioContentItem[]>({
+  const { data: content, isLoading, isError, error, refetch, isRefetching } = useQuery<StudioContentItem[]>({
     queryKey: ["/api/studio/content", sortBy, typeFilter],
     queryFn: async () => {
       const url = new URL("/api/studio/content", getApiUrl());
@@ -113,6 +115,20 @@ export default function StudioContentScreen() {
       </ThemedText>
     </Pressable>
   );
+
+  if (isError) {
+    return (
+      <ThemedView style={styles.container}>
+        <EmptyState
+          icon="alert-circle"
+          title="Something went wrong"
+          message={(error as Error)?.message || "Failed to load content. Please try again."}
+          actionLabel="Try Again"
+          onAction={refetch}
+        />
+      </ThemedView>
+    );
+  }
 
   const renderContentItem = ({ item }: { item: StudioContentItem }) => {
     const isMediaPost = item.post.type === "VIDEO" || item.post.type === "VOICE" || item.post.type === "PHOTO";
@@ -230,6 +246,12 @@ export default function StudioContentScreen() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+  },
   filtersContainer: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,

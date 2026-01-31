@@ -286,6 +286,7 @@ export default function PrivacySettingsScreen() {
         paddingBottom: insets.bottom + Spacing.xl,
         paddingHorizontal: Spacing.lg,
       }}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <View style={styles.section}>
         <ThemedText style={[styles.sectionTitle, { color: theme.textSecondary }]}>

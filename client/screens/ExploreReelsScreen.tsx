@@ -34,6 +34,7 @@ import * as Haptics from "expo-haptics";
 
 import { Avatar } from "@/components/Avatar";
 import { ThemedText } from "@/components/ThemedText";
+import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Spacing, Gradients } from "@/constants/theme";
@@ -469,6 +470,15 @@ export default function ExploreReelsScreen() {
         })}
         contentContainerStyle={{ paddingBottom: insets.bottom }}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
+        ListEmptyComponent={
+          <View style={[styles.emptyContainer, { backgroundColor: "#000", justifyContent: "center" }]}>
+            <EmptyState
+              type="reels"
+              size="large"
+              showAnimation={true}
+            />
+          </View>
+        }
       />
     </View>
   );
