@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   StyleSheet,
@@ -6,6 +6,7 @@ import {
   Alert,
   TextInput,
   Platform,
+  ActionSheetIOS,
 } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,15 +14,19 @@ import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
+import { Image } from "expo-image";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { uploadFileWithProgress } from "@/lib/upload";
 
 type VerificationCategory = "CELEBRITY" | "INFLUENCER" | "BUSINESS" | "ORGANIZATION" | "GOVERNMENT" | "OTHER";
 type VerificationStatus = "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "DENIED" | "MORE_INFO_NEEDED";
+type DocumentType = "id_card" | "passport" | "drivers_license";
 
 interface VerificationRequest {
   id: string;
@@ -44,6 +49,11 @@ interface VerificationResponse {
   latestRequest: VerificationRequest | null;
 }
 
+interface DocumentPreview {
+  uri: string;
+  mimeType?: string;
+}
+
 const categoryOptions: { value: VerificationCategory; label: string }[] = [
   { value: "CELEBRITY", label: "Celebrity" },
   { value: "INFLUENCER", label: "Influencer" },
@@ -51,6 +61,12 @@ const categoryOptions: { value: VerificationCategory; label: string }[] = [
   { value: "ORGANIZATION", label: "Organization" },
   { value: "GOVERNMENT", label: "Government" },
   { value: "OTHER", label: "Other" },
+];
+
+const documentTypeOptions: { value: DocumentType; label: string }[] = [
+  { value: "id_card", label: "ID Card" },
+  { value: "passport", label: "Passport" },
+  { value: "drivers_license", label: "Driver's License" },
 ];
 
 const statusLabels: Record<VerificationStatus, { label: string; color: string }> = {
@@ -69,11 +85,15 @@ export default function VerificationScreen() {
 
   const [fullName, setFullName] = useState("");
   const [category, setCategory] = useState<VerificationCategory>("INFLUENCER");
+  const [documentType, setDocumentType] = useState<DocumentType>("id_card");
   const [reason, setReason] = useState("");
   const [links, setLinks] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [documentPreview, setDocumentPreview] = useState<DocumentPreview | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
 
-  const { data, isLoading, error } = useQuery<VerificationResponse>({
+  const { data, isLoading } = useQuery<VerificationResponse>({
     queryKey: ["/api/me/verification"],
     queryFn: async () => {
       const res = await fetch(new URL("/api/me/verification", getApiUrl()), {
@@ -85,19 +105,22 @@ export default function VerificationScreen() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: async (data: {
+    mutationFn: async (submitData: {
       fullName: string;
       category: VerificationCategory;
       reason: string;
       documentUrls: string[];
       links: string[];
     }) => {
-      return apiRequest("POST", "/api/me/verification", data);
+      return apiRequest("POST", "/api/me/verification", submitData);
     },
     onSuccess: () => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/me/verification"] });
       setShowForm(false);
+      resetForm();
       Alert.alert(
         "Request Submitted",
         "Your verification request has been submitted. We'll review it and get back to you soon."
@@ -108,7 +131,112 @@ export default function VerificationScreen() {
     },
   });
 
-  const handleSubmit = () => {
+  const resetForm = () => {
+    setFullName("");
+    setCategory("INFLUENCER");
+    setDocumentType("id_card");
+    setReason("");
+    setLinks("");
+    setDocumentPreview(null);
+    setUploadProgress(0);
+  };
+
+  const showImagePickerOptions = () => {
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ["Cancel", "Take Photo", "Choose from Gallery"],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) {
+            takePhoto();
+          } else if (buttonIndex === 2) {
+            pickFromGallery();
+          }
+        }
+      );
+    } else {
+      Alert.alert(
+        "Upload Document",
+        "Choose how to add your document",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Take Photo", onPress: takePhoto },
+          { text: "Choose from Gallery", onPress: pickFromGallery },
+        ]
+      );
+    }
+  };
+
+  const takePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Please grant camera access to take photos.");
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets[0]) return;
+
+      setDocumentPreview({
+        uri: result.assets[0].uri,
+        mimeType: result.assets[0].mimeType,
+      });
+
+      if (Platform.OS !== "web") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to take photo");
+    }
+  };
+
+  const pickFromGallery = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Please grant access to your photo library.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets[0]) return;
+
+      setDocumentPreview({
+        uri: result.assets[0].uri,
+        mimeType: result.assets[0].mimeType,
+      });
+
+      if (Platform.OS !== "web") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to pick image");
+    }
+  };
+
+  const removeDocument = () => {
+    setDocumentPreview(null);
+    setUploadProgress(0);
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const handleSubmit = async () => {
     if (!fullName.trim()) {
       Alert.alert("Error", "Please enter your full name or entity name");
       return;
@@ -117,19 +245,40 @@ export default function VerificationScreen() {
       Alert.alert("Error", "Please provide a reason with at least 50 characters");
       return;
     }
+    if (!documentPreview) {
+      Alert.alert("Error", "Please upload an identity document");
+      return;
+    }
 
-    const linksArray = links
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+    try {
+      setIsUploading(true);
+      setUploadProgress(0);
 
-    submitMutation.mutate({
-      fullName: fullName.trim(),
-      category,
-      reason: reason.trim(),
-      documentUrls: [],
-      links: linksArray,
-    });
+      const uploadResult = await uploadFileWithProgress(
+        documentPreview.uri,
+        "general",
+        documentPreview.mimeType,
+        undefined,
+        (progress) => setUploadProgress(progress)
+      );
+
+      const linksArray = links
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+
+      await submitMutation.mutateAsync({
+        fullName: fullName.trim(),
+        category,
+        reason: `[Document Type: ${documentTypeOptions.find(d => d.value === documentType)?.label}]\n\n${reason.trim()}`,
+        documentUrls: [uploadResult.url],
+        links: linksArray,
+      });
+    } catch (error: any) {
+      Alert.alert("Upload Error", error.message || "Failed to upload document");
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const canSubmit = () => {
@@ -140,9 +289,7 @@ export default function VerificationScreen() {
   };
 
   if (isLoading) {
-    return (
-      <LoadingIndicator fullScreen />
-    );
+    return <LoadingIndicator fullScreen />;
   }
 
   return (
@@ -266,6 +413,7 @@ export default function VerificationScreen() {
                         onChangeText={setFullName}
                         placeholder="Enter your full name or business name"
                         placeholderTextColor={theme.textSecondary}
+                        testID="input-fullname"
                       />
                     </View>
 
@@ -284,6 +432,7 @@ export default function VerificationScreen() {
                               },
                             ]}
                             onPress={() => setCategory(option.value)}
+                            testID={`button-category-${option.value}`}
                           >
                             <ThemedText
                               style={{
@@ -296,6 +445,86 @@ export default function VerificationScreen() {
                           </Pressable>
                         ))}
                       </View>
+                    </View>
+
+                    <View style={styles.formField}>
+                      <ThemedText style={styles.formLabel}>Identity Document Type</ThemedText>
+                      <View style={styles.categoryGrid}>
+                        {documentTypeOptions.map((option) => (
+                          <Pressable
+                            key={option.value}
+                            style={[
+                              styles.documentTypeOption,
+                              {
+                                backgroundColor:
+                                  documentType === option.value ? theme.primary : theme.backgroundRoot,
+                                borderColor: theme.glassBorder,
+                              },
+                            ]}
+                            onPress={() => setDocumentType(option.value)}
+                            testID={`button-doctype-${option.value}`}
+                          >
+                            <Feather
+                              name={option.value === "passport" ? "globe" : option.value === "drivers_license" ? "truck" : "credit-card"}
+                              size={16}
+                              color={documentType === option.value ? "#FFFFFF" : theme.text}
+                              style={{ marginRight: Spacing.xs }}
+                            />
+                            <ThemedText
+                              style={{
+                                color: documentType === option.value ? "#FFFFFF" : theme.text,
+                                fontSize: 13,
+                              }}
+                            >
+                              {option.label}
+                            </ThemedText>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+
+                    <View style={styles.formField}>
+                      <ThemedText style={styles.formLabel}>Upload Document</ThemedText>
+                      {documentPreview ? (
+                        <View style={styles.documentPreviewContainer}>
+                          <Image
+                            source={{ uri: documentPreview.uri }}
+                            style={styles.documentPreviewImage}
+                            contentFit="cover"
+                          />
+                          <View style={styles.documentPreviewOverlay}>
+                            <View style={[styles.documentTypeBadge, { backgroundColor: theme.primary }]}>
+                              <ThemedText style={styles.documentTypeBadgeText}>
+                                {documentTypeOptions.find(d => d.value === documentType)?.label}
+                              </ThemedText>
+                            </View>
+                            <Pressable
+                              style={[styles.removeDocumentButton, { backgroundColor: theme.error }]}
+                              onPress={removeDocument}
+                              testID="button-remove-document"
+                            >
+                              <Feather name="x" size={18} color="#FFFFFF" />
+                            </Pressable>
+                          </View>
+                        </View>
+                      ) : (
+                        <Pressable
+                          style={[
+                            styles.uploadButton,
+                            { backgroundColor: theme.backgroundRoot, borderColor: theme.glassBorder },
+                          ]}
+                          onPress={showImagePickerOptions}
+                          testID="button-upload-document"
+                        >
+                          <Feather name="upload" size={24} color={theme.primary} />
+                          <ThemedText style={[styles.uploadButtonText, { color: theme.textSecondary }]}>
+                            Take photo or choose from gallery
+                          </ThemedText>
+                          <ThemedText style={[styles.uploadHint, { color: theme.textSecondary }]}>
+                            Accepted: ID Card, Passport, Driver's License
+                          </ThemedText>
+                        </Pressable>
+                      )}
                     </View>
 
                     <View style={styles.formField}>
@@ -314,6 +543,7 @@ export default function VerificationScreen() {
                         multiline
                         numberOfLines={4}
                         textAlignVertical="top"
+                        testID="input-reason"
                       />
                       <ThemedText style={[styles.charCount, { color: theme.textSecondary }]}>
                         {reason.length} / 2000 characters
@@ -336,22 +566,52 @@ export default function VerificationScreen() {
                         multiline
                         numberOfLines={3}
                         textAlignVertical="top"
+                        testID="input-links"
                       />
                     </View>
 
-                    <Pressable
-                      style={[styles.submitButton, { backgroundColor: theme.primary }]}
-                      onPress={handleSubmit}
-                      disabled={submitMutation.isPending}
-                    >
-                      {submitMutation.isPending ? (
+                    {isUploading ? (
+                      <View style={styles.uploadingContainer}>
                         <LoadingIndicator size="small" />
-                      ) : (
-                        <ThemedText style={styles.submitButtonText}>Submit Request</ThemedText>
-                      )}
-                    </Pressable>
+                        <ThemedText style={[styles.uploadingText, { color: theme.textSecondary }]}>
+                          Uploading document... {uploadProgress}%
+                        </ThemedText>
+                        <View style={[styles.progressBar, { backgroundColor: theme.glassBorder }]}>
+                          <View
+                            style={[
+                              styles.progressFill,
+                              { backgroundColor: theme.primary, width: `${uploadProgress}%` },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ) : (
+                      <Pressable
+                        style={[
+                          styles.submitButton,
+                          { backgroundColor: theme.primary },
+                          submitMutation.isPending && styles.submitButtonDisabled,
+                        ]}
+                        onPress={handleSubmit}
+                        disabled={submitMutation.isPending}
+                        testID="button-submit-verification"
+                      >
+                        {submitMutation.isPending ? (
+                          <LoadingIndicator size="small" />
+                        ) : (
+                          <ThemedText style={styles.submitButtonText}>Submit Request</ThemedText>
+                        )}
+                      </Pressable>
+                    )}
 
-                    <Pressable style={styles.cancelButton} onPress={() => setShowForm(false)}>
+                    <Pressable
+                      style={styles.cancelButton}
+                      onPress={() => {
+                        setShowForm(false);
+                        resetForm();
+                      }}
+                      testID="button-cancel"
+                    >
                       <ThemedText style={{ color: theme.textSecondary }}>Cancel</ThemedText>
                     </Pressable>
                   </View>
@@ -360,6 +620,7 @@ export default function VerificationScreen() {
                 <Pressable
                   style={[styles.requestButton, { backgroundColor: theme.primary }]}
                   onPress={() => setShowForm(true)}
+                  testID="button-request-verification"
                 >
                   <Feather name="award" size={20} color="#FFFFFF" />
                   <ThemedText style={styles.requestButtonText}>Request Verification</ThemedText>
@@ -393,6 +654,12 @@ export default function VerificationScreen() {
             </ThemedText>
           </View>
           <View style={styles.infoRow}>
+            <Feather name="upload-cloud" size={18} color={theme.primary} />
+            <ThemedText style={[styles.infoText, { color: theme.text }]}>
+              Upload a valid government-issued ID document
+            </ThemedText>
+          </View>
+          <View style={styles.infoRow}>
             <Feather name="clock" size={18} color={theme.primary} />
             <ThemedText style={[styles.infoText, { color: theme.text }]}>
               Review typically takes 3-7 business days
@@ -405,11 +672,6 @@ export default function VerificationScreen() {
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   section: {
     marginBottom: Spacing.xl,
   },
@@ -521,11 +783,94 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     borderWidth: 1,
   },
+  documentTypeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  uploadButton: {
+    padding: Spacing.xl,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  uploadButtonText: {
+    fontSize: 14,
+    marginTop: Spacing.sm,
+    textAlign: "center",
+  },
+  uploadHint: {
+    fontSize: 12,
+    marginTop: Spacing.xs,
+    textAlign: "center",
+  },
+  documentPreviewContainer: {
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
+    position: "relative",
+  },
+  documentPreviewImage: {
+    width: "100%",
+    height: 200,
+    borderRadius: BorderRadius.md,
+  },
+  documentPreviewOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: Spacing.sm,
+  },
+  documentTypeBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
+  },
+  documentTypeBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  removeDocumentButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  uploadingContainer: {
+    alignItems: "center",
+    padding: Spacing.lg,
+  },
+  uploadingText: {
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  progressBar: {
+    width: "100%",
+    height: 4,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 2,
+  },
   submitButton: {
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     alignItems: "center",
     marginTop: Spacing.md,
+  },
+  submitButtonDisabled: {
+    opacity: 0.7,
   },
   submitButtonText: {
     color: "#FFFFFF",
