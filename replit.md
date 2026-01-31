@@ -7,7 +7,16 @@ RabitChat is a Forbes-style mobile social network application targeting high-net
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes (January 31, 2026)
-**Major Backend API Completion - 60+ Endpoints Added:**
+**Complete Admin Control System - 399 Admin Endpoints:**
+- **Admin Social Features**: Pokes (4), BFF Status (4), Close Friends (4) - full stats, list, delete, user-specific views
+- **Admin Digital Wellness**: Focus Mode (5), Usage Stats (4) - platform-wide stats, user settings override, trends
+- **Admin Chat Folders**: 6 endpoints for stats, list, user folders, delete, update
+- **Admin User Settings**: Complete GET/PATCH for all user profile settings with RBAC permissions
+- **Admin Security**: 2FA management, session control, trusted devices
+- **Admin Content**: Groups (9), Events (6), Subscriptions (4), Broadcasts (5), Live Streams (4)
+- **Admin Moderation**: Reports, posts, comments, stories, webhooks
+
+**Major Backend API Completion - 779 Total Endpoints:**
 - **Subscriptions/Super Follows**: 9 endpoints for creator subscriptions, tiers, subscriber management
 - **Check-In System**: 7 endpoints for location updates, venue discovery, nearby users
 - **Digital Wellness**: 3 endpoints for focus mode settings, usage statistics
