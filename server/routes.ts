@@ -40,7 +40,7 @@ import {
   hasPermission,
   createPolicyError,
 } from "./policy";
-import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes, userSettings, venues, checkIns, userLocations, chatFolders, chatFolderConversations, usageStats, focusModeSettings, pokes, bffStatus, closeFriends, webhooks, webhookDeliveries, postThreads, threadPosts, duetStitchPosts, arFilters } from "@shared/schema";
+import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, liveStreamComments, liveStreamReactions, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, keywordFilters, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes, userSettings, venues, checkIns, userLocations, chatFolders, chatFolderConversations, usageStats, focusModeSettings, pokes, bffStatus, closeFriends, webhooks, webhookDeliveries, postThreads, threadPosts, duetStitchPosts, arFilters, aiAvatars, aiTranslations } from "@shared/schema";
 import cloudinary, {
   uploadToCloudinary,
   uploadToCloudinaryFromFile,
@@ -14020,6 +14020,196 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================
+  // PRIVACY CONTROLS APIs
+  // ============================================
+
+  // GET /api/keyword-filters - Get user's keyword filters
+  app.get("/api/keyword-filters", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const filters = await storage.getKeywordFilters(userId);
+      res.json(filters);
+    } catch (error) {
+      console.error("Failed to get keyword filters:", error);
+      res.status(500).json({ message: "Failed to get keyword filters" });
+    }
+  });
+
+  // POST /api/keyword-filters - Create a keyword filter
+  app.post("/api/keyword-filters", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { keyword, filterType } = req.body;
+
+      if (!keyword || typeof keyword !== "string" || keyword.trim().length === 0) {
+        return res.status(400).json({ message: "Keyword is required" });
+      }
+
+      const trimmedKeyword = keyword.trim().toLowerCase();
+      if (trimmedKeyword.length > 100) {
+        return res.status(400).json({ message: "Keyword must be 100 characters or less" });
+      }
+
+      const filter = await storage.addKeywordFilter(userId, trimmedKeyword, {
+        filterPosts: filterType === "HIDE" || filterType === "POSTS",
+        filterComments: true,
+        filterMessages: true,
+      });
+
+      res.status(201).json(filter);
+    } catch (error: any) {
+      if (error.code === "23505") {
+        return res.status(409).json({ message: "This keyword is already in your filter list" });
+      }
+      console.error("Failed to create keyword filter:", error);
+      res.status(500).json({ message: "Failed to create keyword filter" });
+    }
+  });
+
+  // DELETE /api/keyword-filters/:id - Delete a keyword filter
+  app.delete("/api/keyword-filters/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const filterId = req.params.id;
+
+      const filter = await storage.getKeywordFilter(filterId);
+      if (!filter) {
+        return res.status(404).json({ message: "Keyword filter not found" });
+      }
+
+      if (filter.userId !== userId) {
+        return res.status(403).json({ message: "You can only delete your own keyword filters" });
+      }
+
+      await storage.removeKeywordFilter(filterId);
+      res.json({ message: "Keyword filter removed" });
+    } catch (error) {
+      console.error("Failed to delete keyword filter:", error);
+      res.status(500).json({ message: "Failed to delete keyword filter" });
+    }
+  });
+
+  // GET /api/muted-accounts - Get user's muted accounts with user details
+  app.get("/api/muted-accounts", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+
+      const result = await db
+        .select({
+          id: mutedAccounts.id,
+          userId: mutedAccounts.userId,
+          mutedUserId: mutedAccounts.mutedUserId,
+          mutePosts: mutedAccounts.mutePosts,
+          muteStories: mutedAccounts.muteStories,
+          muteMessages: mutedAccounts.muteMessages,
+          createdAt: mutedAccounts.createdAt,
+          mutedUser: {
+            id: users.id,
+            displayName: users.displayName,
+            username: users.username,
+            avatarUrl: users.avatarUrl,
+          },
+        })
+        .from(mutedAccounts)
+        .innerJoin(users, eq(mutedAccounts.mutedUserId, users.id))
+        .where(eq(mutedAccounts.userId, userId))
+        .orderBy(desc(mutedAccounts.createdAt));
+
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get muted accounts:", error);
+      res.status(500).json({ message: "Failed to get muted accounts" });
+    }
+  });
+
+  // DELETE /api/muted-accounts/:id - Unmute an account
+  app.delete("/api/muted-accounts/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const muteId = req.params.id;
+
+      const [muted] = await db
+        .select()
+        .from(mutedAccounts)
+        .where(eq(mutedAccounts.id, muteId))
+        .limit(1);
+
+      if (!muted) {
+        return res.status(404).json({ message: "Muted account not found" });
+      }
+
+      if (muted.userId !== userId) {
+        return res.status(403).json({ message: "You can only unmute accounts you have muted" });
+      }
+
+      await storage.unmuteAccount(userId, muted.mutedUserId);
+      res.json({ message: "Account unmuted" });
+    } catch (error) {
+      console.error("Failed to unmute account:", error);
+      res.status(500).json({ message: "Failed to unmute account" });
+    }
+  });
+
+  // GET /api/restricted-accounts - Get user's restricted accounts with user details
+  app.get("/api/restricted-accounts", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+
+      const result = await db
+        .select({
+          id: restrictedAccounts.id,
+          userId: restrictedAccounts.userId,
+          restrictedUserId: restrictedAccounts.restrictedUserId,
+          reason: restrictedAccounts.reason,
+          createdAt: restrictedAccounts.createdAt,
+          restrictedUser: {
+            id: users.id,
+            displayName: users.displayName,
+            username: users.username,
+            avatarUrl: users.avatarUrl,
+          },
+        })
+        .from(restrictedAccounts)
+        .innerJoin(users, eq(restrictedAccounts.restrictedUserId, users.id))
+        .where(eq(restrictedAccounts.userId, userId))
+        .orderBy(desc(restrictedAccounts.createdAt));
+
+      res.json(result);
+    } catch (error) {
+      console.error("Failed to get restricted accounts:", error);
+      res.status(500).json({ message: "Failed to get restricted accounts" });
+    }
+  });
+
+  // DELETE /api/restricted-accounts/:id - Unrestrict an account
+  app.delete("/api/restricted-accounts/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const restrictId = req.params.id;
+
+      const [restricted] = await db
+        .select()
+        .from(restrictedAccounts)
+        .where(eq(restrictedAccounts.id, restrictId))
+        .limit(1);
+
+      if (!restricted) {
+        return res.status(404).json({ message: "Restricted account not found" });
+      }
+
+      if (restricted.userId !== userId) {
+        return res.status(403).json({ message: "You can only unrestrict accounts you have restricted" });
+      }
+
+      await storage.unrestrictAccount(userId, restricted.restrictedUserId);
+      res.json({ message: "Account unrestricted" });
+    } catch (error) {
+      console.error("Failed to unrestrict account:", error);
+      res.status(500).json({ message: "Failed to unrestrict account" });
+    }
+  });
+
   // ===== NEW ADMIN SECTION ENDPOINTS =====
 
   // Admin Messages Stats
@@ -22240,6 +22430,543 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Failed to delete AR filter:", error);
       res.status(500).json({ message: error.message || "Failed to delete AR filter" });
+    }
+  });
+
+  // ===== AI FEATURES ENDPOINTS =====
+
+  // GET /api/ai/avatars - Get user's AI-generated avatars
+  app.get("/api/ai/avatars", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+
+      const avatarsList = await db.select()
+        .from(aiAvatars)
+        .where(eq(aiAvatars.userId, userId))
+        .orderBy(desc(aiAvatars.createdAt));
+
+      res.json(avatarsList.map(avatar => ({
+        id: avatar.id,
+        userId: avatar.userId,
+        name: avatar.name || "My Avatar",
+        style: avatar.style || "realistic",
+        imageUrl: avatar.avatarUrl,
+        isActive: avatar.isActive,
+        createdAt: avatar.createdAt,
+      })));
+    } catch (error: any) {
+      console.error("Failed to get AI avatars:", error);
+      res.status(500).json({ message: error.message || "Failed to get AI avatars" });
+    }
+  });
+
+  // POST /api/ai/avatars - Create/generate an AI avatar
+  app.post("/api/ai/avatars", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { name, style, prompt } = req.body;
+
+      const avatarStyle = style || "realistic";
+      const avatarName = name || "My Avatar";
+
+      const placeholderUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}-${Date.now()}&style=${avatarStyle}`;
+
+      const [newAvatar] = await db.insert(aiAvatars)
+        .values({
+          userId,
+          name: avatarName,
+          style: avatarStyle,
+          avatarUrl: placeholderUrl,
+          isActive: true,
+        })
+        .returning();
+
+      res.status(201).json({
+        id: newAvatar.id,
+        userId: newAvatar.userId,
+        name: newAvatar.name || avatarName,
+        style: newAvatar.style || avatarStyle,
+        imageUrl: newAvatar.avatarUrl,
+        isActive: newAvatar.isActive,
+        createdAt: newAvatar.createdAt,
+      });
+    } catch (error: any) {
+      console.error("Failed to create AI avatar:", error);
+      res.status(500).json({ message: error.message || "Failed to create AI avatar" });
+    }
+  });
+
+  // DELETE /api/ai/avatars/:id - Delete an AI avatar
+  app.delete("/api/ai/avatars/:id", requireAuth, async (req, res) => {
+    try {
+      const avatarId = req.params.id;
+      const userId = req.session.userId!;
+
+      const [avatar] = await db.select()
+        .from(aiAvatars)
+        .where(eq(aiAvatars.id, avatarId))
+        .limit(1);
+
+      if (!avatar) {
+        return res.status(404).json({ message: "AI avatar not found" });
+      }
+
+      if (avatar.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to delete this avatar" });
+      }
+
+      await db.delete(aiAvatars)
+        .where(eq(aiAvatars.id, avatarId));
+
+      res.json({ message: "AI avatar deleted" });
+    } catch (error: any) {
+      console.error("Failed to delete AI avatar:", error);
+      res.status(500).json({ message: error.message || "Failed to delete AI avatar" });
+    }
+  });
+
+  // GET /api/ai/translations - Get recent translations by user
+  app.get("/api/ai/translations", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+
+      const translationsList = await db.select()
+        .from(aiTranslations)
+        .where(and(
+          eq(aiTranslations.contentType, "user"),
+          eq(aiTranslations.contentId, userId)
+        ))
+        .orderBy(desc(aiTranslations.createdAt))
+        .limit(50);
+
+      res.json(translationsList.map(t => ({
+        id: t.id,
+        originalText: t.sourceText,
+        translatedText: t.translatedText,
+        sourceLanguage: t.sourceLanguage || "auto",
+        targetLanguage: t.targetLanguage,
+        createdAt: t.createdAt,
+      })));
+    } catch (error: any) {
+      console.error("Failed to get translations:", error);
+      res.status(500).json({ message: error.message || "Failed to get translations" });
+    }
+  });
+
+  // POST /api/ai/translate - Translate text
+  app.post("/api/ai/translate", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { text, targetLanguage } = req.body;
+
+      if (!text || typeof text !== "string" || text.trim().length === 0) {
+        return res.status(400).json({ message: "text is required" });
+      }
+      if (!targetLanguage || typeof targetLanguage !== "string") {
+        return res.status(400).json({ message: "targetLanguage is required" });
+      }
+
+      const sourceText = text.trim();
+      let translatedText = sourceText;
+      let sourceLanguage = "auto";
+
+      try {
+        const detectedLang = await detectLanguage(sourceText);
+        sourceLanguage = detectedLang || "auto";
+      } catch {
+        sourceLanguage = "auto";
+      }
+
+      const mockTranslations: Record<string, Record<string, string>> = {
+        "es": { "Hello": "Hola", "Goodbye": "Adiós", "Thank you": "Gracias" },
+        "fr": { "Hello": "Bonjour", "Goodbye": "Au revoir", "Thank you": "Merci" },
+        "de": { "Hello": "Hallo", "Goodbye": "Auf Wiedersehen", "Thank you": "Danke" },
+        "zh": { "Hello": "你好", "Goodbye": "再见", "Thank you": "谢谢" },
+        "ja": { "Hello": "こんにちは", "Goodbye": "さようなら", "Thank you": "ありがとう" },
+        "ko": { "Hello": "안녕하세요", "Goodbye": "안녕히 가세요", "Thank you": "감사합니다" },
+        "ar": { "Hello": "مرحبا", "Goodbye": "مع السلامة", "Thank you": "شكرا" },
+        "pt": { "Hello": "Olá", "Goodbye": "Adeus", "Thank you": "Obrigado" },
+        "zu": { "Hello": "Sawubona", "Goodbye": "Sala kahle", "Thank you": "Ngiyabonga" },
+        "af": { "Hello": "Hallo", "Goodbye": "Totsiens", "Thank you": "Dankie" },
+      };
+
+      if (mockTranslations[targetLanguage] && mockTranslations[targetLanguage][sourceText]) {
+        translatedText = mockTranslations[targetLanguage][sourceText];
+      } else {
+        translatedText = `[${targetLanguage.toUpperCase()}] ${sourceText}`;
+      }
+
+      const [saved] = await db.insert(aiTranslations)
+        .values({
+          sourceText,
+          sourceLanguage,
+          targetLanguage,
+          translatedText,
+          contentType: "user",
+          contentId: userId,
+        })
+        .returning();
+
+      res.json({
+        id: saved.id,
+        originalText: saved.sourceText,
+        translatedText: saved.translatedText,
+        sourceLanguage: saved.sourceLanguage || "auto",
+        targetLanguage: saved.targetLanguage,
+        createdAt: saved.createdAt,
+      });
+    } catch (error: any) {
+      console.error("Failed to translate text:", error);
+      res.status(500).json({ message: error.message || "Failed to translate text" });
+    }
+  });
+
+  // ===== LIVE STREAMS API =====
+
+  // GET /api/live-streams - List active live streams
+  app.get("/api/live-streams", requireAuth, async (req, res) => {
+    try {
+      const streams = await db.select({
+        id: liveStreams.id,
+        hostId: liveStreams.hostId,
+        title: liveStreams.title,
+        description: liveStreams.description,
+        thumbnailUrl: liveStreams.thumbnailUrl,
+        status: liveStreams.status,
+        viewerCount: liveStreams.viewerCount,
+        peakViewerCount: liveStreams.peakViewerCount,
+        startedAt: liveStreams.startedAt,
+        createdAt: liveStreams.createdAt,
+      })
+        .from(liveStreams)
+        .where(eq(liveStreams.status, "LIVE"))
+        .orderBy(desc(liveStreams.viewerCount));
+
+      const streamIds = streams.map(s => s.hostId);
+      const hosts = streamIds.length > 0
+        ? await db.select({
+            id: users.id,
+            username: users.username,
+            displayName: users.displayName,
+            avatarUrl: users.avatarUrl,
+            isVerified: users.isVerified,
+          })
+            .from(users)
+            .where(inArray(users.id, streamIds))
+        : [];
+
+      const hostMap = new Map(hosts.map(h => [h.id, h]));
+
+      const result = streams.map(stream => ({
+        ...stream,
+        host: hostMap.get(stream.hostId) || null,
+      }));
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Failed to get live streams:", error);
+      res.status(500).json({ message: error.message || "Failed to get live streams" });
+    }
+  });
+
+  // GET /api/live-streams/:id - Get stream details with viewer count
+  app.get("/api/live-streams/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const [stream] = await db.select()
+        .from(liveStreams)
+        .where(eq(liveStreams.id, id))
+        .limit(1);
+
+      if (!stream) {
+        return res.status(404).json({ message: "Stream not found" });
+      }
+
+      const [host] = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+      })
+        .from(users)
+        .where(eq(users.id, stream.hostId))
+        .limit(1);
+
+      res.json({
+        ...stream,
+        host: host || null,
+      });
+    } catch (error: any) {
+      console.error("Failed to get stream:", error);
+      res.status(500).json({ message: error.message || "Failed to get stream" });
+    }
+  });
+
+  // POST /api/live-streams/:id/join - Join as a viewer
+  app.post("/api/live-streams/:id/join", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+
+      const [stream] = await db.select()
+        .from(liveStreams)
+        .where(eq(liveStreams.id, id))
+        .limit(1);
+
+      if (!stream) {
+        return res.status(404).json({ message: "Stream not found" });
+      }
+
+      if (stream.status !== "LIVE") {
+        return res.status(400).json({ message: "Stream is not live" });
+      }
+
+      const [existingViewer] = await db.select()
+        .from(liveStreamViewers)
+        .where(and(
+          eq(liveStreamViewers.streamId, id),
+          eq(liveStreamViewers.userId, userId)
+        ))
+        .limit(1);
+
+      if (existingViewer && !existingViewer.leftAt) {
+        return res.json({ message: "Already joined", viewerId: existingViewer.id });
+      }
+
+      if (existingViewer) {
+        await db.update(liveStreamViewers)
+          .set({ leftAt: null, joinedAt: new Date() })
+          .where(eq(liveStreamViewers.id, existingViewer.id));
+      } else {
+        await db.insert(liveStreamViewers).values({
+          streamId: id,
+          userId,
+        });
+      }
+
+      const newViewerCount = stream.viewerCount + 1;
+      const newPeakCount = Math.max(stream.peakViewerCount, newViewerCount);
+
+      await db.update(liveStreams)
+        .set({
+          viewerCount: newViewerCount,
+          peakViewerCount: newPeakCount,
+        })
+        .where(eq(liveStreams.id, id));
+
+      res.json({ message: "Joined stream", viewerCount: newViewerCount });
+    } catch (error: any) {
+      console.error("Failed to join stream:", error);
+      res.status(500).json({ message: error.message || "Failed to join stream" });
+    }
+  });
+
+  // POST /api/live-streams/:id/leave - Leave as a viewer
+  app.post("/api/live-streams/:id/leave", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+
+      const [stream] = await db.select()
+        .from(liveStreams)
+        .where(eq(liveStreams.id, id))
+        .limit(1);
+
+      if (!stream) {
+        return res.status(404).json({ message: "Stream not found" });
+      }
+
+      const [viewer] = await db.select()
+        .from(liveStreamViewers)
+        .where(and(
+          eq(liveStreamViewers.streamId, id),
+          eq(liveStreamViewers.userId, userId),
+          isNull(liveStreamViewers.leftAt)
+        ))
+        .limit(1);
+
+      if (!viewer) {
+        return res.json({ message: "Not currently viewing" });
+      }
+
+      const watchTime = Math.floor((Date.now() - new Date(viewer.joinedAt).getTime()) / 1000);
+
+      await db.update(liveStreamViewers)
+        .set({
+          leftAt: new Date(),
+          watchTimeSeconds: (viewer.watchTimeSeconds || 0) + watchTime,
+        })
+        .where(eq(liveStreamViewers.id, viewer.id));
+
+      const newViewerCount = Math.max(0, stream.viewerCount - 1);
+
+      await db.update(liveStreams)
+        .set({ viewerCount: newViewerCount })
+        .where(eq(liveStreams.id, id));
+
+      res.json({ message: "Left stream", viewerCount: newViewerCount });
+    } catch (error: any) {
+      console.error("Failed to leave stream:", error);
+      res.status(500).json({ message: error.message || "Failed to leave stream" });
+    }
+  });
+
+  // GET /api/live-streams/:id/comments - Get stream comments (with pagination)
+  app.get("/api/live-streams/:id/comments", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const [stream] = await db.select({ id: liveStreams.id })
+        .from(liveStreams)
+        .where(eq(liveStreams.id, id))
+        .limit(1);
+
+      if (!stream) {
+        return res.status(404).json({ message: "Stream not found" });
+      }
+
+      const commentsList = await db.select({
+        id: liveStreamComments.id,
+        userId: liveStreamComments.userId,
+        content: liveStreamComments.content,
+        isPinned: liveStreamComments.isPinned,
+        createdAt: liveStreamComments.createdAt,
+      })
+        .from(liveStreamComments)
+        .where(and(
+          eq(liveStreamComments.streamId, id),
+          eq(liveStreamComments.isHidden, false)
+        ))
+        .orderBy(desc(liveStreamComments.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const userIds = [...new Set(commentsList.map(c => c.userId))];
+      const commentUsers = userIds.length > 0
+        ? await db.select({
+            id: users.id,
+            username: users.username,
+            displayName: users.displayName,
+            avatarUrl: users.avatarUrl,
+          })
+            .from(users)
+            .where(inArray(users.id, userIds))
+        : [];
+
+      const userMap = new Map(commentUsers.map(u => [u.id, u]));
+
+      const result = commentsList.map(comment => ({
+        ...comment,
+        user: userMap.get(comment.userId) || null,
+      }));
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Failed to get stream comments:", error);
+      res.status(500).json({ message: error.message || "Failed to get stream comments" });
+    }
+  });
+
+  // POST /api/live-streams/:id/comments - Post a comment
+  app.post("/api/live-streams/:id/comments", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+      const { content } = req.body;
+
+      if (!content || typeof content !== "string" || content.trim().length === 0) {
+        return res.status(400).json({ message: "content is required" });
+      }
+
+      const [stream] = await db.select()
+        .from(liveStreams)
+        .where(eq(liveStreams.id, id))
+        .limit(1);
+
+      if (!stream) {
+        return res.status(404).json({ message: "Stream not found" });
+      }
+
+      if (stream.status !== "LIVE") {
+        return res.status(400).json({ message: "Stream is not live" });
+      }
+
+      const [newComment] = await db.insert(liveStreamComments)
+        .values({
+          streamId: id,
+          userId,
+          content: content.trim(),
+        })
+        .returning();
+
+      await db.update(liveStreams)
+        .set({ commentsCount: stream.commentsCount + 1 })
+        .where(eq(liveStreams.id, id));
+
+      const [user] = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      res.json({
+        ...newComment,
+        user: user || null,
+      });
+    } catch (error: any) {
+      console.error("Failed to post comment:", error);
+      res.status(500).json({ message: error.message || "Failed to post comment" });
+    }
+  });
+
+  // POST /api/live-streams/:id/reactions - Add a reaction
+  app.post("/api/live-streams/:id/reactions", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+      const { reactionType } = req.body;
+
+      if (!reactionType || typeof reactionType !== "string") {
+        return res.status(400).json({ message: "reactionType is required" });
+      }
+
+      const [stream] = await db.select()
+        .from(liveStreams)
+        .where(eq(liveStreams.id, id))
+        .limit(1);
+
+      if (!stream) {
+        return res.status(404).json({ message: "Stream not found" });
+      }
+
+      if (stream.status !== "LIVE") {
+        return res.status(400).json({ message: "Stream is not live" });
+      }
+
+      const [newReaction] = await db.insert(liveStreamReactions)
+        .values({
+          streamId: id,
+          userId,
+          reactionType: reactionType.substring(0, 20),
+        })
+        .returning();
+
+      await db.update(liveStreams)
+        .set({ likesCount: stream.likesCount + 1 })
+        .where(eq(liveStreams.id, id));
+
+      res.json(newReaction);
+    } catch (error: any) {
+      console.error("Failed to add reaction:", error);
+      res.status(500).json({ message: error.message || "Failed to add reaction" });
     }
   });
 
