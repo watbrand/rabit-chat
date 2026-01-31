@@ -122,3 +122,82 @@ export const PASSWORD_STRENGTH_COLORS = {
   medium: '#F59E0B',
   strong: '#10B981',
 } as const;
+
+export interface ValidationResult {
+  isValid: boolean;
+  error: string | null;
+}
+
+export function validateDisplayName(displayName: string): ValidationResult {
+  const trimmed = displayName.trim();
+  
+  if (trimmed.length === 0) {
+    return { isValid: false, error: 'Display name is required' };
+  }
+  
+  if (trimmed.length < 2) {
+    return { isValid: false, error: 'Display name must be at least 2 characters' };
+  }
+  
+  if (trimmed.length > 50) {
+    return { isValid: false, error: 'Display name must be 50 characters or less' };
+  }
+  
+  if (/^\s|\s$/.test(displayName)) {
+    return { isValid: false, error: 'Display name cannot start or end with spaces' };
+  }
+  
+  return { isValid: true, error: null };
+}
+
+export function validateBio(bio: string): ValidationResult {
+  if (bio.length > 160) {
+    return { isValid: false, error: 'Bio must be 160 characters or less' };
+  }
+  
+  return { isValid: true, error: null };
+}
+
+export function validateLocation(location: string): ValidationResult {
+  if (location.length > 100) {
+    return { isValid: false, error: 'Location must be 100 characters or less' };
+  }
+  
+  return { isValid: true, error: null };
+}
+
+export function validatePronouns(pronouns: string): ValidationResult {
+  if (pronouns.length > 30) {
+    return { isValid: false, error: 'Pronouns must be 30 characters or less' };
+  }
+  
+  return { isValid: true, error: null };
+}
+
+export function validateUsername(username: string): ValidationResult {
+  if (username.length < 3) {
+    return { isValid: false, error: 'Username must be at least 3 characters' };
+  }
+  
+  if (username.length > 30) {
+    return { isValid: false, error: 'Username must be 30 characters or less' };
+  }
+  
+  if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+    return { isValid: false, error: 'Only letters, numbers, and underscores allowed' };
+  }
+  
+  return { isValid: true, error: null };
+}
+
+export function validateAvatarUrl(url: string): ValidationResult {
+  if (!url || url.trim() === '') {
+    return { isValid: true, error: null };
+  }
+  
+  if (!validateUrl(url)) {
+    return { isValid: false, error: 'Please enter a valid URL starting with http:// or https://' };
+  }
+  
+  return { isValid: true, error: null };
+}

@@ -11,6 +11,8 @@ import MediaSettingsScreen from "@/screens/settings/MediaSettingsScreen";
 import BlockedAccountsScreen from "@/screens/settings/BlockedAccountsScreen";
 import SecuritySettingsScreen from "@/screens/settings/SecuritySettingsScreen";
 import LoginHistoryScreen from "@/screens/settings/LoginHistoryScreen";
+import TrustedDevicesScreen from "@/screens/settings/TrustedDevicesScreen";
+import LoginActivityScreen from "@/screens/settings/LoginActivityScreen";
 import DataAccountScreen from "@/screens/settings/DataAccountScreen";
 import VerificationScreen from "@/screens/settings/VerificationScreen";
 import ContactInfoSettingsScreen from "@/screens/settings/ContactInfoSettingsScreen";
@@ -45,6 +47,8 @@ export type ProfileStackParamList = {
   BlockedAccounts: undefined;
   SecuritySettings: undefined;
   LoginHistory: undefined;
+  TrustedDevices: undefined;
+  LoginActivity: undefined;
   ContactInfoSettings: undefined;
   DataAccount: undefined;
   Verification: undefined;
@@ -182,6 +186,20 @@ export default function ProfileStackNavigator() {
         component={LoginHistoryScreen}
         options={{
           title: "Login History",
+        }}
+      />
+      <Stack.Screen
+        name="TrustedDevices"
+        component={TrustedDevicesScreen}
+        options={{
+          title: "Trusted Devices",
+        }}
+      />
+      <Stack.Screen
+        name="LoginActivity"
+        component={LoginActivityScreen}
+        options={{
+          title: "Login Activity",
         }}
       />
       <Stack.Screen

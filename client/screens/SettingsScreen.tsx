@@ -1,5 +1,5 @@
-import React from "react";
-import { View, StyleSheet, Pressable, Alert, Platform, Switch } from "react-native";
+import React, { useState, useCallback } from "react";
+import { View, StyleSheet, Pressable, Alert, Platform, Switch, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation } from "@react-navigation/native";
@@ -23,6 +23,33 @@ export default function SettingsScreen() {
   const { logout, user } = useAuth();
   const navigation = useNavigation<any>();
   const { themeMode, setThemeMode } = useThemeContext();
+  
+  const [isSyncingTheme, setIsSyncingTheme] = useState(false);
+  const [themeSyncError, setThemeSyncError] = useState<string | null>(null);
+
+  const handleThemeChange = useCallback(async (value: boolean) => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    
+    setIsSyncingTheme(true);
+    setThemeSyncError(null);
+    
+    try {
+      await setThemeMode(value ? "dark" : "light");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error: any) {
+      setThemeSyncError("Failed to save theme preference");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        "Error",
+        "Failed to save theme preference. Please try again.",
+        [{ text: "OK" }]
+      );
+    } finally {
+      setIsSyncingTheme(false);
+    }
+  }, [setThemeMode]);
   
   const { data: adminStatus } = useQuery<{ isAdmin: boolean }>({
     queryKey: ["/api/users/me/admin"],
@@ -216,21 +243,27 @@ export default function SettingsScreen() {
               <ThemedText style={styles.settingsLabel}>
                 Dark Mode
               </ThemedText>
-              <ThemedText style={[styles.settingsDescription, { color: theme.textSecondary }]}>
-                {isDark ? "Dark theme enabled" : "Light theme enabled"}
+              <ThemedText style={[styles.settingsDescription, { color: themeSyncError ? theme.error : theme.textSecondary }]}>
+                {isSyncingTheme 
+                  ? "Saving..." 
+                  : themeSyncError 
+                    ? themeSyncError 
+                    : isDark 
+                      ? "Dark theme enabled" 
+                      : "Light theme enabled"}
               </ThemedText>
             </View>
-            <Switch
-              value={themeMode === "dark"}
-              onValueChange={(value) => {
-                if (Platform.OS !== "web") {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }
-                setThemeMode(value ? "dark" : "light");
-              }}
-              trackColor={{ false: theme.border, true: theme.primary }}
-              thumbColor={isDark ? theme.primaryLight : "#FFFFFF"}
-            />
+            {isSyncingTheme ? (
+              <ActivityIndicator size="small" color={theme.primary} />
+            ) : (
+              <Switch
+                value={themeMode === "dark"}
+                onValueChange={handleThemeChange}
+                trackColor={{ false: theme.border, true: theme.primary }}
+                thumbColor={isDark ? theme.primaryLight : "#FFFFFF"}
+                disabled={isSyncingTheme}
+              />
+            )}
           </View>
           <View style={{ height: Spacing.sm }} />
           <SettingsRow

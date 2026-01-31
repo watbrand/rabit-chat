@@ -24,7 +24,15 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Spacing, BorderRadius, Typography } from "@/constants/theme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
-import { validateUrl } from "@/lib/validation";
+import { 
+  validateUrl, 
+  validateDisplayName, 
+  validateBio, 
+  validateLocation, 
+  validatePronouns,
+  validateAvatarUrl,
+  validateUsername as validateUsernameLib
+} from "@/lib/validation";
 import { pickImage, uploadFile } from "@/lib/upload";
 
 export default function EditProfileScreen() {
@@ -45,7 +53,12 @@ export default function EditProfileScreen() {
   const [linkUrl, setLinkUrl] = useState(user?.linkUrl || "");
   const [linkUrlError, setLinkUrlError] = useState<string | null>(null);
   const [location, setLocation] = useState(user?.location || "");
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [pronouns, setPronouns] = useState(user?.pronouns || "");
+  const [pronounsError, setPronounsError] = useState<string | null>(null);
+  const [displayNameError, setDisplayNameError] = useState<string | null>(null);
+  const [bioError, setBioError] = useState<string | null>(null);
+  const [avatarUrlError, setAvatarUrlError] = useState<string | null>(null);
   const [category, setCategory] = useState<"PERSONAL" | "CREATOR" | "BUSINESS">(user?.category || "PERSONAL");
   const [isUploading, setIsUploading] = useState(false);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
@@ -224,9 +237,53 @@ export default function EditProfileScreen() {
   });
 
   const usernameValid = username === user?.username || (usernameAvailable === true && !usernameError);
+  const displayNameValid = !displayNameError && displayName.trim().length > 0;
+  const bioValid = !bioError;
   const urlValid = !linkUrlError;
-  const canSave = displayName.trim().length > 0 && username.length >= 3 && usernameValid && !usernameChecking && urlValid;
+  const locationValid = !locationError;
+  const pronounsValid = !pronounsError;
+  const avatarUrlValid = !avatarUrlError;
+  const canSave = displayNameValid && username.length >= 3 && usernameValid && !usernameChecking && urlValid && bioValid && locationValid && pronounsValid && avatarUrlValid;
   const isSaving = updateMutation.isPending;
+
+  const handleDisplayNameChange = useCallback((text: string) => {
+    setDisplayName(text);
+    const validation = validateDisplayName(text);
+    setDisplayNameError(validation.error);
+  }, []);
+
+  const handleBioChange = useCallback((text: string) => {
+    setBio(text);
+    const validation = validateBio(text);
+    setBioError(validation.error);
+  }, []);
+
+  const handleLocationChange = useCallback((text: string) => {
+    setLocation(text);
+    const validation = validateLocation(text);
+    setLocationError(validation.error);
+  }, []);
+
+  const handlePronounsChange = useCallback((text: string) => {
+    setPronouns(text);
+    const validation = validatePronouns(text);
+    setPronounsError(validation.error);
+  }, []);
+
+  const handleAvatarUrlChange = useCallback((text: string) => {
+    setAvatarUrl(text);
+    const validation = validateAvatarUrl(text);
+    setAvatarUrlError(validation.error);
+  }, []);
+
+  const handleLinkUrlChange = useCallback((text: string) => {
+    setLinkUrl(text);
+    if (text && !validateUrl(text)) {
+      setLinkUrlError("URL must start with http:// or https://");
+    } else {
+      setLinkUrlError(null);
+    }
+  }, []);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -304,11 +361,14 @@ export default function EditProfileScreen() {
             placeholder="https://example.com/avatar.jpg"
             placeholderTextColor={theme.textSecondary}
             value={avatarUrl}
-            onChangeText={setAvatarUrl}
+            onChangeText={handleAvatarUrlChange}
             autoCapitalize="none"
             keyboardType="url"
             testID="input-avatar-url"
           />
+          {avatarUrlError ? (
+            <ThemedText style={styles.errorText}>{avatarUrlError}</ThemedText>
+          ) : null}
         </View>
       </View>
 
@@ -355,16 +415,24 @@ export default function EditProfileScreen() {
             styles.input,
             {
               backgroundColor: theme.glassBackground,
-              borderColor: theme.glassBorder,
+              borderColor: displayNameError ? "#EF4444" : theme.glassBorder,
               color: theme.text,
             },
           ]}
           placeholder="Your display name"
           placeholderTextColor={theme.textSecondary}
           value={displayName}
-          onChangeText={setDisplayName}
+          onChangeText={handleDisplayNameChange}
+          maxLength={50}
           testID="input-display-name"
         />
+        {displayNameError ? (
+          <ThemedText style={styles.errorText}>{displayNameError}</ThemedText>
+        ) : (
+          <ThemedText style={[styles.hint, { color: theme.textSecondary }]}>
+            2-50 characters
+          </ThemedText>
+        )}
       </View>
 
       <View style={styles.field}>
@@ -425,21 +493,24 @@ export default function EditProfileScreen() {
             styles.bioInput,
             {
               backgroundColor: theme.glassBackground,
-              borderColor: theme.glassBorder,
+              borderColor: bioError ? "#EF4444" : theme.glassBorder,
               color: theme.text,
             },
           ]}
           placeholder="Tell us about yourself..."
           placeholderTextColor={theme.textSecondary}
           value={bio}
-          onChangeText={setBio}
+          onChangeText={handleBioChange}
           multiline
           maxLength={160}
           testID="input-bio"
         />
-        <ThemedText style={[styles.charCount, { color: theme.textSecondary }]}>
+        <ThemedText style={[styles.charCount, { color: bioError ? "#EF4444" : theme.textSecondary }]}>
           {bio.length}/160
         </ThemedText>
+        {bioError ? (
+          <ThemedText style={styles.errorText}>{bioError}</ThemedText>
+        ) : null}
       </View>
 
       <View style={styles.field}>
@@ -458,14 +529,7 @@ export default function EditProfileScreen() {
           placeholder="https://your-website.com"
           placeholderTextColor={theme.textSecondary}
           value={linkUrl}
-          onChangeText={(text) => {
-            setLinkUrl(text);
-            if (text && !validateUrl(text)) {
-              setLinkUrlError("URL must start with http:// or https://");
-            } else {
-              setLinkUrlError(null);
-            }
-          }}
+          onChangeText={handleLinkUrlChange}
           autoCapitalize="none"
           keyboardType="url"
           testID="input-link-url"
@@ -484,16 +548,20 @@ export default function EditProfileScreen() {
             styles.input,
             {
               backgroundColor: theme.glassBackground,
-              borderColor: theme.glassBorder,
+              borderColor: locationError ? "#EF4444" : theme.glassBorder,
               color: theme.text,
             },
           ]}
           placeholder="City, Country"
           placeholderTextColor={theme.textSecondary}
           value={location}
-          onChangeText={setLocation}
+          onChangeText={handleLocationChange}
+          maxLength={100}
           testID="input-location"
         />
+        {locationError ? (
+          <ThemedText style={styles.errorText}>{locationError}</ThemedText>
+        ) : null}
       </View>
 
       <View style={styles.field}>
@@ -505,16 +573,20 @@ export default function EditProfileScreen() {
             styles.input,
             {
               backgroundColor: theme.glassBackground,
-              borderColor: theme.glassBorder,
+              borderColor: pronounsError ? "#EF4444" : theme.glassBorder,
               color: theme.text,
             },
           ]}
           placeholder="e.g., she/her, he/him, they/them"
           placeholderTextColor={theme.textSecondary}
           value={pronouns}
-          onChangeText={setPronouns}
+          onChangeText={handlePronounsChange}
+          maxLength={30}
           testID="input-pronouns"
         />
+        {pronounsError ? (
+          <ThemedText style={styles.errorText}>{pronounsError}</ThemedText>
+        ) : null}
       </View>
 
       <View style={styles.field}>
@@ -722,6 +794,11 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   urlErrorText: {
+    color: "#EF4444",
+    fontSize: 12,
+    marginTop: Spacing.xs,
+  },
+  errorText: {
     color: "#EF4444",
     fontSize: 12,
     marginTop: Spacing.xs,
