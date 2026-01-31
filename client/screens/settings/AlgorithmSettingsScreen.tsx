@@ -51,7 +51,7 @@ export default function AlgorithmSettingsScreen() {
   const queryClient = useQueryClient();
 
   const { data: interests, isLoading: isLoadingInterests } = useQuery<UserInterest[]>({
-    queryKey: ["/api/onboarding/interests"],
+    queryKey: ["/api/me/interests"],
   });
 
   const { data: categories } = useQuery<InterestCategory[]>({
@@ -87,10 +87,10 @@ export default function AlgorithmSettingsScreen() {
 
   const removeInterestMutation = useMutation({
     mutationFn: async (interest: string) => {
-      return apiRequest("DELETE", `/api/interests/${interest}`);
+      return apiRequest("DELETE", `/api/me/interests/${interest}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/onboarding/interests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/me/interests"] });
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
