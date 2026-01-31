@@ -1,5 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "node:http";
+import crypto from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import session from "express-session";
@@ -39,7 +40,7 @@ import {
   hasPermission,
   createPolicyError,
 } from "./policy";
-import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements } from "@shared/schema";
+import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes } from "@shared/schema";
 import cloudinary, {
   uploadToCloudinary,
   uploadToCloudinaryFromFile,
@@ -8477,6 +8478,452 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===== TWO-FACTOR AUTHENTICATION (2FA) ENDPOINTS =====
+
+  // TOTP helper functions
+  function generateTotpSecret(): string {
+    const buffer = crypto.randomBytes(20);
+    return base32Encode(buffer);
+  }
+
+  function base32Encode(buffer: Buffer): string {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let result = "";
+    let bits = 0;
+    let value = 0;
+
+    for (let i = 0; i < buffer.length; i++) {
+      value = (value << 8) | buffer[i];
+      bits += 8;
+
+      while (bits >= 5) {
+        result += alphabet[(value >>> (bits - 5)) & 31];
+        bits -= 5;
+      }
+    }
+
+    if (bits > 0) {
+      result += alphabet[(value << (5 - bits)) & 31];
+    }
+
+    return result;
+  }
+
+  function base32Decode(str: string): Buffer {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let bits = 0;
+    let value = 0;
+    const output: number[] = [];
+
+    const cleanStr = str.toUpperCase().replace(/=+$/, "");
+
+    for (let i = 0; i < cleanStr.length; i++) {
+      const idx = alphabet.indexOf(cleanStr[i]);
+      if (idx === -1) continue;
+      
+      value = (value << 5) | idx;
+      bits += 5;
+
+      if (bits >= 8) {
+        output.push((value >>> (bits - 8)) & 255);
+        bits -= 8;
+      }
+    }
+
+    return Buffer.from(output);
+  }
+
+  function generateTotp(secret: string, timeStep: number = 30, digits: number = 6): string {
+    const time = Math.floor(Date.now() / 1000 / timeStep);
+    const timeBuffer = Buffer.alloc(8);
+    timeBuffer.writeBigInt64BE(BigInt(time));
+
+    const key = base32Decode(secret);
+    const hmac = crypto.createHmac("sha1", key);
+    hmac.update(timeBuffer);
+    const hash = hmac.digest();
+
+    const offset = hash[hash.length - 1] & 0x0f;
+    const code =
+      ((hash[offset] & 0x7f) << 24) |
+      ((hash[offset + 1] & 0xff) << 16) |
+      ((hash[offset + 2] & 0xff) << 8) |
+      (hash[offset + 3] & 0xff);
+
+    const otp = code % Math.pow(10, digits);
+    return otp.toString().padStart(digits, "0");
+  }
+
+  function verifyTotp(secret: string, code: string, window: number = 1): boolean {
+    const normalizedCode = code.replace(/\s/g, "");
+    if (!/^\d{6}$/.test(normalizedCode)) return false;
+
+    for (let i = -window; i <= window; i++) {
+      const time = Math.floor(Date.now() / 1000 / 30) + i;
+      const timeBuffer = Buffer.alloc(8);
+      timeBuffer.writeBigInt64BE(BigInt(time));
+
+      const key = base32Decode(secret);
+      const hmac = crypto.createHmac("sha1", key);
+      hmac.update(timeBuffer);
+      const hash = hmac.digest();
+
+      const offset = hash[hash.length - 1] & 0x0f;
+      const codeInt =
+        ((hash[offset] & 0x7f) << 24) |
+        ((hash[offset + 1] & 0xff) << 16) |
+        ((hash[offset + 2] & 0xff) << 8) |
+        (hash[offset + 3] & 0xff);
+
+      const otp = (codeInt % 1000000).toString().padStart(6, "0");
+      if (otp === normalizedCode) return true;
+    }
+    return false;
+  }
+
+  function generateBackupCode(): string {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let code = "";
+    const randomBytes = crypto.randomBytes(8);
+    for (let i = 0; i < 8; i++) {
+      code += chars[randomBytes[i] % chars.length];
+    }
+    return code;
+  }
+
+  // GET /api/me/2fa/status - Get 2FA status for current user
+  app.get("/api/me/2fa/status", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const backupCodesResult = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(backupCodes)
+        .where(and(eq(backupCodes.userId, userId), isNull(backupCodes.usedAt)));
+      const backupCodesCount = Number(backupCodesResult[0]?.count || 0);
+
+      res.json({
+        enabled: user.twoFactorEnabled,
+        hasBackupCodes: backupCodesCount > 0,
+      });
+    } catch (error) {
+      console.error("Failed to get 2FA status:", error);
+      res.status(500).json({ message: "Failed to get 2FA status" });
+    }
+  });
+
+  // POST /api/me/2fa/setup - Initialize 2FA setup
+  app.post("/api/me/2fa/setup", requireAuth, authLimiter, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (user.twoFactorEnabled) {
+        return res.status(400).json({ message: "2FA is already enabled. Disable it first to set up again." });
+      }
+
+      const existingSecret = await db
+        .select()
+        .from(totpSecrets)
+        .where(eq(totpSecrets.userId, userId))
+        .limit(1);
+
+      let secret: string;
+      if (existingSecret.length > 0 && !existingSecret[0].isEnabled) {
+        secret = existingSecret[0].secret;
+      } else {
+        secret = generateTotpSecret();
+        await db.delete(totpSecrets).where(eq(totpSecrets.userId, userId));
+        await db.insert(totpSecrets).values({
+          userId,
+          secret,
+          isEnabled: false,
+        });
+      }
+
+      const otpauthUrl = `otpauth://totp/RabitChat:${encodeURIComponent(user.username)}?secret=${secret}&issuer=RabitChat`;
+
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "security.2fa_setup_started",
+        targetType: "user",
+        targetId: userId,
+        details: {},
+      });
+
+      res.json({
+        secret,
+        qrCodeUrl: otpauthUrl,
+      });
+    } catch (error) {
+      console.error("Failed to setup 2FA:", error);
+      res.status(500).json({ message: "Failed to setup 2FA" });
+    }
+  });
+
+  // POST /api/me/2fa/verify - Verify TOTP code and enable 2FA
+  app.post("/api/me/2fa/verify", requireAuth, authLimiter, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { code } = req.body;
+
+      if (!code || typeof code !== "string") {
+        return res.status(400).json({ message: "Verification code is required" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (user.twoFactorEnabled) {
+        return res.status(400).json({ message: "2FA is already enabled" });
+      }
+
+      const secretRecord = await db
+        .select()
+        .from(totpSecrets)
+        .where(eq(totpSecrets.userId, userId))
+        .limit(1);
+
+      if (secretRecord.length === 0) {
+        return res.status(400).json({ message: "Please set up 2FA first using /api/me/2fa/setup" });
+      }
+
+      const secret = secretRecord[0].secret;
+      const isValid = verifyTotp(secret, code);
+
+      if (!isValid) {
+        return res.status(400).json({ message: "Invalid verification code" });
+      }
+
+      await db
+        .update(totpSecrets)
+        .set({ isEnabled: true, verifiedAt: new Date() })
+        .where(eq(totpSecrets.userId, userId));
+
+      await storage.updateUser(userId, { twoFactorEnabled: true });
+
+      await db.delete(backupCodes).where(eq(backupCodes.userId, userId));
+
+      const newBackupCodes: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        const plainCode = generateBackupCode();
+        newBackupCodes.push(plainCode);
+        const hashedCode = await bcrypt.hash(plainCode, 10);
+        await db.insert(backupCodes).values({
+          userId,
+          code: hashedCode,
+        });
+      }
+
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "security.2fa_enabled",
+        targetType: "user",
+        targetId: userId,
+        details: {},
+      });
+
+      res.json({
+        success: true,
+        backupCodes: newBackupCodes,
+      });
+    } catch (error) {
+      console.error("Failed to verify 2FA:", error);
+      res.status(500).json({ message: "Failed to verify 2FA" });
+    }
+  });
+
+  // POST /api/me/2fa/disable - Disable 2FA
+  app.post("/api/me/2fa/disable", requireAuth, authLimiter, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { password, code } = req.body;
+
+      if (!password || typeof password !== "string") {
+        return res.status(400).json({ message: "Password is required" });
+      }
+      if (!code || typeof code !== "string") {
+        return res.status(400).json({ message: "TOTP code is required" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (!user.twoFactorEnabled) {
+        return res.status(400).json({ message: "2FA is not enabled" });
+      }
+
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        return res.status(400).json({ message: "Invalid password" });
+      }
+
+      const secretRecord = await db
+        .select()
+        .from(totpSecrets)
+        .where(eq(totpSecrets.userId, userId))
+        .limit(1);
+
+      if (secretRecord.length === 0) {
+        return res.status(400).json({ message: "2FA secret not found" });
+      }
+
+      const isValid = verifyTotp(secretRecord[0].secret, code);
+      if (!isValid) {
+        return res.status(400).json({ message: "Invalid TOTP code" });
+      }
+
+      await storage.updateUser(userId, { twoFactorEnabled: false });
+      await db.delete(totpSecrets).where(eq(totpSecrets.userId, userId));
+      await db.delete(backupCodes).where(eq(backupCodes.userId, userId));
+
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "security.2fa_disabled",
+        targetType: "user",
+        targetId: userId,
+        details: {},
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to disable 2FA:", error);
+      res.status(500).json({ message: "Failed to disable 2FA" });
+    }
+  });
+
+  // POST /api/me/2fa/backup-codes/regenerate - Regenerate backup codes
+  app.post("/api/me/2fa/backup-codes/regenerate", requireAuth, authLimiter, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { password } = req.body;
+
+      if (!password || typeof password !== "string") {
+        return res.status(400).json({ message: "Password is required" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (!user.twoFactorEnabled) {
+        return res.status(400).json({ message: "2FA is not enabled" });
+      }
+
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        return res.status(400).json({ message: "Invalid password" });
+      }
+
+      await db.delete(backupCodes).where(eq(backupCodes.userId, userId));
+
+      const newBackupCodes: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        const plainCode = generateBackupCode();
+        newBackupCodes.push(plainCode);
+        const hashedCode = await bcrypt.hash(plainCode, 10);
+        await db.insert(backupCodes).values({
+          userId,
+          code: hashedCode,
+        });
+      }
+
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "security.backup_codes_regenerated",
+        targetType: "user",
+        targetId: userId,
+        details: {},
+      });
+
+      res.json({
+        success: true,
+        backupCodes: newBackupCodes,
+      });
+    } catch (error) {
+      console.error("Failed to regenerate backup codes:", error);
+      res.status(500).json({ message: "Failed to regenerate backup codes" });
+    }
+  });
+
+  // POST /api/me/2fa/verify-backup-code - Verify using a backup code
+  app.post("/api/me/2fa/verify-backup-code", requireAuth, authLimiter, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { code } = req.body;
+
+      if (!code || typeof code !== "string") {
+        return res.status(400).json({ message: "Backup code is required" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (!user.twoFactorEnabled) {
+        return res.status(400).json({ message: "2FA is not enabled" });
+      }
+
+      const storedCodes = await db
+        .select()
+        .from(backupCodes)
+        .where(and(eq(backupCodes.userId, userId), isNull(backupCodes.usedAt)));
+
+      let matchedCodeId: string | null = null;
+      for (const storedCode of storedCodes) {
+        const isMatch = await bcrypt.compare(code.toUpperCase(), storedCode.code);
+        if (isMatch) {
+          matchedCodeId = storedCode.id;
+          break;
+        }
+      }
+
+      if (!matchedCodeId) {
+        return res.status(400).json({ message: "Invalid backup code" });
+      }
+
+      await db
+        .update(backupCodes)
+        .set({ usedAt: new Date() })
+        .where(eq(backupCodes.id, matchedCodeId));
+
+      const remainingResult = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(backupCodes)
+        .where(and(eq(backupCodes.userId, userId), isNull(backupCodes.usedAt)));
+      const remainingCodes = Number(remainingResult[0]?.count || 0);
+
+      await storage.createAuditLog({
+        actorId: userId,
+        action: "security.backup_code_used",
+        targetType: "user",
+        targetId: userId,
+        details: { remainingCodes },
+      });
+
+      res.json({
+        success: true,
+        remainingCodes,
+      });
+    } catch (error) {
+      console.error("Failed to verify backup code:", error);
+      res.status(500).json({ message: "Failed to verify backup code" });
+    }
+  });
+
   // Get user sessions (basic list)
   app.get("/api/me/sessions", requireAuth, async (req, res) => {
     try {
@@ -9916,6 +10363,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/drafts/:draftId/publish", requireAuth, postLimiter, async (req, res) => {
+    try {
+      const draft = await storage.getDraft(req.params.draftId);
+      if (!draft || draft.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+      
+      const post = await storage.createPost({
+        authorId: req.session.userId!,
+        type: draft.type,
+        content: draft.content,
+        caption: draft.caption,
+        mediaUrl: draft.mediaUrl,
+        thumbnailUrl: draft.thumbnailUrl,
+        durationMs: draft.durationMs,
+        aspectRatio: draft.aspectRatio,
+        visibility: draft.visibility,
+        commentsEnabled: draft.commentsEnabled,
+      });
+      
+      await storage.deleteDraft(req.params.draftId);
+      
+      res.status(201).json(post);
+    } catch (error) {
+      console.error("Failed to publish draft:", error);
+      res.status(500).json({ message: "Failed to publish draft" });
+    }
+  });
+
+  app.post("/api/drafts/:draftId/duplicate", requireAuth, async (req, res) => {
+    try {
+      const draft = await storage.getDraft(req.params.draftId);
+      if (!draft || draft.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Draft not found" });
+      }
+      
+      const newDraft = await storage.createDraft(req.session.userId!, {
+        type: draft.type,
+        content: draft.content,
+        caption: draft.caption,
+        mediaUrl: draft.mediaUrl,
+        thumbnailUrl: draft.thumbnailUrl,
+        durationMs: draft.durationMs,
+        aspectRatio: draft.aspectRatio,
+        visibility: draft.visibility,
+        commentsEnabled: draft.commentsEnabled,
+      });
+      
+      res.status(201).json(newDraft);
+    } catch (error) {
+      console.error("Failed to duplicate draft:", error);
+      res.status(500).json({ message: "Failed to duplicate draft" });
+    }
+  });
+
   // ===== SCHEDULED POSTS =====
 
   app.get("/api/scheduled-posts", requireAuth, async (req, res) => {
@@ -9984,6 +10486,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Failed to delete scheduled post:", error);
       res.status(500).json({ message: "Failed to delete scheduled post" });
+    }
+  });
+
+  app.patch("/api/scheduled-posts/:postId/reschedule", requireAuth, async (req, res) => {
+    try {
+      const scheduled = await storage.getScheduledPost(req.params.postId);
+      if (!scheduled || scheduled.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Scheduled post not found" });
+      }
+      if (scheduled.status !== "PENDING") {
+        return res.status(400).json({ message: "Can only reschedule pending posts" });
+      }
+      
+      const { scheduledFor } = req.body;
+      if (!scheduledFor) {
+        return res.status(400).json({ message: "scheduledFor is required" });
+      }
+      
+      const newDate = new Date(scheduledFor);
+      if (isNaN(newDate.getTime())) {
+        return res.status(400).json({ message: "Invalid date format" });
+      }
+      if (newDate <= new Date()) {
+        return res.status(400).json({ message: "Scheduled time must be in the future" });
+      }
+      
+      await storage.updateScheduledPost(req.params.postId, { scheduledFor: newDate });
+      
+      res.json({ success: true, scheduledFor: newDate.toISOString() });
+    } catch (error) {
+      console.error("Failed to reschedule post:", error);
+      res.status(500).json({ message: "Failed to reschedule post" });
+    }
+  });
+
+  app.post("/api/scheduled-posts/:postId/publish-now", requireAuth, postLimiter, async (req, res) => {
+    try {
+      const scheduled = await storage.getScheduledPost(req.params.postId);
+      if (!scheduled || scheduled.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Scheduled post not found" });
+      }
+      if (scheduled.status !== "PENDING") {
+        return res.status(400).json({ message: "Can only publish pending posts" });
+      }
+      
+      const post = await storage.createPost({
+        authorId: req.session.userId!,
+        type: scheduled.type,
+        content: scheduled.content,
+        caption: scheduled.caption,
+        mediaUrl: scheduled.mediaUrl,
+        thumbnailUrl: scheduled.thumbnailUrl,
+        durationMs: scheduled.durationMs,
+        aspectRatio: scheduled.aspectRatio,
+        visibility: scheduled.visibility,
+        commentsEnabled: scheduled.commentsEnabled,
+      });
+      
+      await storage.updateScheduledPost(req.params.postId, { 
+        status: "PUBLISHED",
+        publishedPostId: post.id 
+      });
+      
+      res.status(201).json(post);
+    } catch (error) {
+      console.error("Failed to publish scheduled post:", error);
+      res.status(500).json({ message: "Failed to publish scheduled post" });
     }
   });
 
@@ -17360,6 +17929,183 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Failed to get economy stats:", error);
       res.status(500).json({ message: "Failed to get economy stats" });
+    }
+  });
+
+  // POST /api/admin/economy/freeze-all-wallets - Freeze all wallets (emergency control)
+  app.post("/api/admin/economy/freeze-all-wallets", requireAdmin, async (req, res) => {
+    try {
+      const result = await db.update(wallets)
+        .set({ isFrozen: true, updatedAt: new Date() })
+        .where(eq(wallets.isFrozen, false));
+
+      const affectedCount = result.rowCount || 0;
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "FREEZE_ALL_WALLETS",
+        "wallet",
+        undefined
+      );
+
+      res.json({ success: true, affected: affectedCount });
+    } catch (error: any) {
+      console.error("Failed to freeze all wallets:", error);
+      res.status(500).json({ message: error.message || "Failed to freeze all wallets" });
+    }
+  });
+
+  // POST /api/admin/economy/unfreeze-all-wallets - Unfreeze all wallets
+  app.post("/api/admin/economy/unfreeze-all-wallets", requireAdmin, async (req, res) => {
+    try {
+      const result = await db.update(wallets)
+        .set({ isFrozen: false, updatedAt: new Date() })
+        .where(eq(wallets.isFrozen, true));
+
+      const affectedCount = result.rowCount || 0;
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UNFREEZE_ALL_WALLETS",
+        "wallet",
+        undefined
+      );
+
+      res.json({ success: true, affected: affectedCount });
+    } catch (error: any) {
+      console.error("Failed to unfreeze all wallets:", error);
+      res.status(500).json({ message: error.message || "Failed to unfreeze all wallets" });
+    }
+  });
+
+  // POST /api/admin/economy/pause-withdrawals - Pause all withdrawal processing
+  app.post("/api/admin/economy/pause-withdrawals", requireAdmin, async (req, res) => {
+    try {
+      await storage.setEconomyConfig("withdrawals_enabled", "false", req.session.userId!);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "PAUSE_WITHDRAWALS",
+        "economy_config",
+        "withdrawals_enabled"
+      );
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Failed to pause withdrawals:", error);
+      res.status(500).json({ message: error.message || "Failed to pause withdrawals" });
+    }
+  });
+
+  // POST /api/admin/economy/resume-withdrawals - Resume withdrawal processing
+  app.post("/api/admin/economy/resume-withdrawals", requireAdmin, async (req, res) => {
+    try {
+      await storage.setEconomyConfig("withdrawals_enabled", "true", req.session.userId!);
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "RESUME_WITHDRAWALS",
+        "economy_config",
+        "withdrawals_enabled"
+      );
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Failed to resume withdrawals:", error);
+      res.status(500).json({ message: error.message || "Failed to resume withdrawals" });
+    }
+  });
+
+  // POST /api/admin/economy/recalculate-balances - Recalculate all wallet balances from transaction history
+  app.post("/api/admin/economy/recalculate-balances", requireAdmin, async (req, res) => {
+    try {
+      const allWallets = await db.select().from(wallets);
+      let processed = 0;
+      let discrepancies = 0;
+
+      for (const wallet of allWallets) {
+        const [txSum] = await db.select({
+          total: sql<number>`COALESCE(SUM(amount), 0)`
+        }).from(coinTransactions).where(eq(coinTransactions.userId, wallet.userId));
+
+        const calculatedBalance = Number(txSum?.total || 0);
+        const currentBalance = Number(wallet.coinBalance);
+
+        if (calculatedBalance !== currentBalance) {
+          discrepancies++;
+          await db.update(wallets)
+            .set({ coinBalance: calculatedBalance, updatedAt: new Date() })
+            .where(eq(wallets.id, wallet.id));
+        }
+
+        processed++;
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "RECALCULATE_BALANCES",
+        "wallet",
+        undefined
+      );
+
+      res.json({ success: true, processed, discrepancies });
+    } catch (error: any) {
+      console.error("Failed to recalculate balances:", error);
+      res.status(500).json({ message: error.message || "Failed to recalculate balances" });
+    }
+  });
+
+  // POST /api/admin/economy/freeze-wallet/:userId - Freeze a specific user's wallet
+  app.post("/api/admin/economy/freeze-wallet/:userId", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      const result = await db.update(wallets)
+        .set({ isFrozen: true, updatedAt: new Date() })
+        .where(eq(wallets.userId, userId));
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({ message: "Wallet not found for user" });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "FREEZE_WALLET",
+        "wallet",
+        userId
+      );
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Failed to freeze wallet:", error);
+      res.status(500).json({ message: error.message || "Failed to freeze wallet" });
+    }
+  });
+
+  // POST /api/admin/economy/unfreeze-wallet/:userId - Unfreeze a specific user's wallet
+  app.post("/api/admin/economy/unfreeze-wallet/:userId", requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      const result = await db.update(wallets)
+        .set({ isFrozen: false, updatedAt: new Date() })
+        .where(eq(wallets.userId, userId));
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({ message: "Wallet not found for user" });
+      }
+
+      await storage.createAuditLog(
+        req.session.userId!,
+        "UNFREEZE_WALLET",
+        "wallet",
+        userId
+      );
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Failed to unfreeze wallet:", error);
+      res.status(500).json({ message: error.message || "Failed to unfreeze wallet" });
     }
   });
 
