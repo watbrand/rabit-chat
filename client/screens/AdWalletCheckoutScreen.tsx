@@ -325,14 +325,14 @@ export default function AdWalletCheckoutScreen() {
         </Card>
       </View>
 
-      {loading && (
+      {loading ? (
         <View style={styles.loadingOverlay}>
           <LoadingIndicator size="large" />
           <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
             Preparing secure checkout...
           </ThemedText>
         </View>
-      )}
+      ) : null}
 
       <WebView
         ref={webViewRef}
@@ -351,14 +351,14 @@ export default function AdWalletCheckoutScreen() {
         }}
       />
 
-      {checkingStatus && (
+      {checkingStatus ? (
         <View style={styles.statusOverlay}>
           <LoadingIndicator size="small" />
           <ThemedText style={[styles.statusText, { color: theme.textSecondary }]}>
             Verifying payment...
           </ThemedText>
         </View>
-      )}
+      ) : null}
     </View>
   );
 }

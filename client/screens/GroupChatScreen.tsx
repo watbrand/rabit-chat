@@ -119,11 +119,11 @@ export default function GroupChatScreen({ route, navigation }: any) {
               : { backgroundColor: theme.backgroundSecondary },
           ]}
         >
-          {showAvatar && !isOwn && (
+          {showAvatar && !isOwn ? (
             <Text style={[styles.senderName, { color: theme.primary }]}>
               {item.sender?.displayName || item.sender?.username}
             </Text>
-          )}
+          ) : null}
           <Text style={[styles.messageText, { color: isOwn ? "#fff" : theme.text }]}>
             {item.content}
           </Text>

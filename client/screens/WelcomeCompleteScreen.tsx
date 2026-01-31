@@ -254,7 +254,7 @@ export default function WelcomeCompleteScreen() {
             </ThemedText>
           </Animated.View>
 
-          {(interestsCount > 0 || industry) && (
+          {(interestsCount > 0 || industry) ? (
             <Animated.View
               entering={FadeInUp.delay(800).springify()}
               style={[
@@ -269,7 +269,7 @@ export default function WelcomeCompleteScreen() {
                 },
               ]}
             >
-              {interestsCount > 0 && (
+              {interestsCount > 0 ? (
                 <View style={styles.statRow}>
                   <View style={[styles.statIcon, { backgroundColor: "rgba(139, 92, 246, 0.2)" }]}>
                     <Feather name="heart" size={16} color={theme.primary} />
@@ -283,9 +283,9 @@ export default function WelcomeCompleteScreen() {
                     </ThemedText>
                   </View>
                 </View>
-              )}
-              {industry && (
-                <View style={[styles.statRow, interestsCount > 0 && styles.statRowBorder]}>
+              ) : null}
+              {industry ? (
+                <View style={[styles.statRow, interestsCount > 0 ? styles.statRowBorder : undefined]}>
                   <View style={[styles.statIcon, { backgroundColor: "rgba(236, 72, 153, 0.2)" }]}>
                     <Feather name="briefcase" size={16} color="#EC4899" />
                   </View>
@@ -298,9 +298,9 @@ export default function WelcomeCompleteScreen() {
                     </ThemedText>
                   </View>
                 </View>
-              )}
+              ) : null}
             </Animated.View>
-          )}
+          ) : null}
 
           <Animated.View entering={FadeInUp.delay(1000).springify()} style={styles.messageCard}>
             <LinearGradient

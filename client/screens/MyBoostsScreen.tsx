@@ -209,9 +209,9 @@ function CampaignCard({
       <View style={styles.campaignHeader}>
         <View style={styles.campaignTitleRow}>
           <View style={styles.titleContainer}>
-            {isLive && (
+            {isLive ? (
               <View style={styles.liveDot} />
-            )}
+            ) : null}
             <ThemedText style={styles.campaignName} numberOfLines={isExpanded ? undefined : 1}>
               {campaign.name.replace("Boost: ", "")}
             </ThemedText>
@@ -233,12 +233,12 @@ function CampaignCard({
           <ThemedText style={styles.dateRange}>
             {formatDate(campaign.startDate)} - {formatDate(campaign.endDate)}
           </ThemedText>
-          {campaign.adNumber && (
+          {campaign.adNumber ? (
             <View style={styles.adNumberBadge}>
               <Feather name="hash" size={10} color="#8B5CF6" />
               <ThemedText style={styles.adNumberText}>{campaign.adNumber}</ThemedText>
             </View>
-          )}
+          ) : null}
         </View>
       </View>
 
@@ -281,7 +281,7 @@ function CampaignCard({
       </View>
 
       {/* Expanded Content */}
-      {isExpanded && (
+      {isExpanded ? (
         <Animated.View 
           entering={FadeIn.duration(200)} 
           exiting={FadeOut.duration(150)}
@@ -369,7 +369,7 @@ function CampaignCard({
                   </View>
                   {details?.postPreview ? (
                     <>
-                      {details.postPreview.user && (
+                      {details.postPreview.user ? (
                         <View style={styles.previewUser}>
                           <View style={styles.previewAvatar}>
                             {details.postPreview.user.profilePicUrl ? (
@@ -390,17 +390,17 @@ function CampaignCard({
                             </ThemedText>
                           </View>
                         </View>
-                      )}
+                      ) : null}
                       <ThemedText style={styles.previewContent} numberOfLines={3}>
                         {details.postPreview.content}
                       </ThemedText>
-                      {details.postPreview.mediaUrl && (
+                      {details.postPreview.mediaUrl ? (
                         <Image 
                           source={{ uri: details.postPreview.mediaUrl }}
                           style={styles.previewMedia}
                           resizeMode="cover"
                         />
-                      )}
+                      ) : null}
                     </>
                   ) : (
                     <ThemedText style={styles.previewContent} numberOfLines={3}>
@@ -422,7 +422,7 @@ function CampaignCard({
 
           {/* Action Buttons */}
           <View style={styles.actionRow}>
-            {canPause && (
+            {canPause ? (
               <Pressable 
                 style={[styles.actionButton, { backgroundColor: "#F59E0B20" }]}
                 onPress={(e) => {
@@ -436,8 +436,8 @@ function CampaignCard({
                   {pauseMutation.isPending ? "Pausing..." : "Pause Campaign"}
                 </ThemedText>
               </Pressable>
-            )}
-            {canResume && (
+            ) : null}
+            {canResume ? (
               <Pressable 
                 style={[styles.actionButton, { backgroundColor: "#22C55E20" }]}
                 onPress={(e) => {
@@ -451,10 +451,10 @@ function CampaignCard({
                   {resumeMutation.isPending ? "Resuming..." : "Resume Campaign"}
                 </ThemedText>
               </Pressable>
-            )}
+            ) : null}
           </View>
         </Animated.View>
-      )}
+      ) : null}
     </Pressable>
   );
 }
@@ -537,7 +537,7 @@ export default function MyBoostsScreen() {
           />
         }
       >
-        {wallet && (
+        {wallet ? (
           <Pressable 
             style={[
               styles.walletCard,
@@ -559,7 +559,7 @@ export default function MyBoostsScreen() {
               <ThemedText style={styles.topUpText}>Top Up</ThemedText>
             </LinearGradient>
           </Pressable>
-        )}
+        ) : null}
 
         <View style={styles.summaryRow}>
           <View style={[styles.summaryCard, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" }]}>

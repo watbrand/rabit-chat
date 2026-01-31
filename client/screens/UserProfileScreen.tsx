@@ -822,7 +822,7 @@ export default function UserProfileScreen() {
           </View>
         </View>
 
-        {!isOwnProfile && (
+        {!isOwnProfile ? (
           <View style={styles.actionButtons}>
             {user?.isBlocked || user?.isBlockedBy ? (
               <View style={[styles.blockedMessage, { backgroundColor: theme.error + '20' }]}>
@@ -882,7 +882,7 @@ export default function UserProfileScreen() {
               </>
             )}
           </View>
-        )}
+        ) : null}
 
         {!isOwnProfile && mutuals && mutuals.count > 0 ? (
           <View style={styles.mutualRow}>

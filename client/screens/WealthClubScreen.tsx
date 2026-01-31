@@ -146,7 +146,7 @@ function TierCard({ tier, isCurrentTier, isUnlocked, index }: TierCardProps) {
           },
         ]}
       >
-        {isCurrentTier && (
+        {isCurrentTier ? (
           <View style={styles.currentBadge}>
             <LinearGradient
               colors={Gradients.gold}
@@ -157,7 +157,7 @@ function TierCard({ tier, isCurrentTier, isUnlocked, index }: TierCardProps) {
               <ThemedText style={styles.currentBadgeText}>Current</ThemedText>
             </LinearGradient>
           </View>
-        )}
+        ) : null}
 
         <View style={styles.tierHeader}>
           <LinearGradient

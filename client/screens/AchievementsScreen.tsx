@@ -126,11 +126,11 @@ function AchievementCard({
           },
         ]}
       >
-        {achievement.isCompleted && achievement.isClaimed && (
+        {achievement.isCompleted && achievement.isClaimed ? (
           <View style={[styles.claimedBadge, { backgroundColor: theme.success }]}>
             <Feather name="check" size={12} color="#FFFFFF" />
           </View>
-        )}
+        ) : null}
 
         <LinearGradient
           colors={categoryColors}

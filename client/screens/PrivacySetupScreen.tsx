@@ -167,11 +167,11 @@ function PrivacyOptionCard({
         >
           {option.label}
         </ThemedText>
-        {isSelected && (
+        {isSelected ? (
           <View style={[styles.selectedIndicator, { backgroundColor: theme.primary }]}>
             <Feather name="check" size={10} color="#FFFFFF" />
           </View>
-        )}
+        ) : null}
       </AnimatedPressable>
     </Animated.View>
   );

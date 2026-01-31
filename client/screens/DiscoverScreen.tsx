@@ -2865,9 +2865,6 @@ export default function DiscoverScreen() {
             }
           },
         }}
-        sceneContainerStyle={{
-          paddingTop: Spacing.sm,
-        }}
         screenOptions={{
           tabBarStyle: isReelsActive ? { display: 'none' } : {
             backgroundColor: theme.glassBackground,

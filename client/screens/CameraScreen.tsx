@@ -464,14 +464,14 @@ export default function CameraScreen() {
         </View>
       </View>
 
-      {isRecording && (
+      {isRecording ? (
         <View style={styles.recordingIndicator}>
           <View style={styles.recordingDot} />
           <ThemedText style={styles.recordingText}>
             {formatDuration(recordingDuration)}
           </ThemedText>
         </View>
-      )}
+      ) : null}
 
       {zoom > 0 && (
         <View style={styles.zoomIndicator}>

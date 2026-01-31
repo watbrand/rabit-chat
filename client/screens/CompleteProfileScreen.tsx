@@ -181,9 +181,9 @@ function SelectionCard({
             {option.subtitle}
           </ThemedText>
         </View>
-        {isSelected && (
+        {isSelected ? (
           <Feather name="check-circle" size={20} color={option.gradientColors[0]} />
-        )}
+        ) : null}
       </View>
     </AnimatedPressable>
   );
