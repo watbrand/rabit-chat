@@ -26,7 +26,7 @@ import { registerApiUsageRoutes } from "./routes-api-usage";
 import { registerHelpCenterRoutes } from "./routes-help-center";
 import { adsEngine, type AuctionResult } from "./ads-engine";
 import { pool, db } from "./db";
-import { sql, and, eq, gt, gte, isNull, inArray, desc, or, like, asc, ilike } from "drizzle-orm";
+import { sql, and, eq, gt, gte, lt, lte, isNull, inArray, desc, or, like, asc, ilike } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
   getViewerContext,
@@ -40,7 +40,7 @@ import {
   hasPermission,
   createPolicyError,
 } from "./policy";
-import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes, userSettings } from "@shared/schema";
+import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes, userSettings, venues, checkIns, userLocations } from "@shared/schema";
 import cloudinary, {
   uploadToCloudinary,
   uploadToCloudinaryFromFile,
@@ -19352,6 +19352,1206 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Failed to get battle details:", error);
       res.status(500).json({ message: error.message || "Failed to get battle details" });
+    }
+  });
+
+  // ===== SUBSCRIPTIONS / SUPER FOLLOWS API =====
+
+  // GET /api/subscriptions/my - Get user's active subscriptions (as subscriber)
+  app.get("/api/subscriptions/my", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      const mySubscriptions = await db.select({
+        id: subscriptions.id,
+        subscriberId: subscriptions.subscriberId,
+        creatorId: subscriptions.creatorId,
+        tierId: subscriptions.tierId,
+        status: subscriptions.status,
+        isYearly: subscriptions.isYearly,
+        currentPeriodStart: subscriptions.currentPeriodStart,
+        currentPeriodEnd: subscriptions.currentPeriodEnd,
+        cancelledAt: subscriptions.cancelledAt,
+        createdAt: subscriptions.createdAt,
+        tier: {
+          id: subscriptionTiers.id,
+          name: subscriptionTiers.name,
+          description: subscriptionTiers.description,
+          monthlyPriceCoins: subscriptionTiers.monthlyPriceCoins,
+          yearlyPriceCoins: subscriptionTiers.yearlyPriceCoins,
+          benefits: subscriptionTiers.benefits,
+        },
+        creator: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+      .from(subscriptions)
+      .innerJoin(subscriptionTiers, eq(subscriptions.tierId, subscriptionTiers.id))
+      .innerJoin(users, eq(subscriptions.creatorId, users.id))
+      .where(and(
+        eq(subscriptions.subscriberId, userId),
+        eq(subscriptions.status, "ACTIVE")
+      ))
+      .orderBy(desc(subscriptions.createdAt));
+
+      res.json(mySubscriptions);
+    } catch (error: any) {
+      console.error("Failed to get user subscriptions:", error);
+      res.status(500).json({ message: error.message || "Failed to get subscriptions" });
+    }
+  });
+
+  // GET /api/subscriptions/subscribers - Get users who are subscribed to the current user
+  app.get("/api/subscriptions/subscribers", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      const mySubscribers = await db.select({
+        id: subscriptions.id,
+        subscriberId: subscriptions.subscriberId,
+        creatorId: subscriptions.creatorId,
+        tierId: subscriptions.tierId,
+        status: subscriptions.status,
+        isYearly: subscriptions.isYearly,
+        currentPeriodStart: subscriptions.currentPeriodStart,
+        currentPeriodEnd: subscriptions.currentPeriodEnd,
+        createdAt: subscriptions.createdAt,
+        tier: {
+          id: subscriptionTiers.id,
+          name: subscriptionTiers.name,
+          monthlyPriceCoins: subscriptionTiers.monthlyPriceCoins,
+        },
+        subscriber: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+      .from(subscriptions)
+      .innerJoin(subscriptionTiers, eq(subscriptions.tierId, subscriptionTiers.id))
+      .innerJoin(users, eq(subscriptions.subscriberId, users.id))
+      .where(and(
+        eq(subscriptions.creatorId, userId),
+        eq(subscriptions.status, "ACTIVE")
+      ))
+      .orderBy(desc(subscriptions.createdAt));
+
+      res.json(mySubscribers);
+    } catch (error: any) {
+      console.error("Failed to get subscribers:", error);
+      res.status(500).json({ message: error.message || "Failed to get subscribers" });
+    }
+  });
+
+  // GET /api/subscriptions/my-tiers - Get subscription tiers created by current user
+  app.get("/api/subscriptions/my-tiers", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      
+      const tiers = await db.select()
+        .from(subscriptionTiers)
+        .where(eq(subscriptionTiers.creatorId, userId))
+        .orderBy(subscriptionTiers.sortOrder);
+
+      res.json(tiers);
+    } catch (error: any) {
+      console.error("Failed to get my tiers:", error);
+      res.status(500).json({ message: error.message || "Failed to get tiers" });
+    }
+  });
+
+  // GET /api/subscriptions/tiers/:creatorId - Get subscription tiers for a specific creator
+  app.get("/api/subscriptions/tiers/:creatorId", requireAuth, async (req, res) => {
+    try {
+      const { creatorId } = req.params;
+      
+      const tiers = await db.select()
+        .from(subscriptionTiers)
+        .where(and(
+          eq(subscriptionTiers.creatorId, creatorId),
+          eq(subscriptionTiers.isActive, true)
+        ))
+        .orderBy(subscriptionTiers.sortOrder);
+
+      res.json(tiers);
+    } catch (error: any) {
+      console.error("Failed to get creator tiers:", error);
+      res.status(500).json({ message: error.message || "Failed to get tiers" });
+    }
+  });
+
+  // POST /api/subscriptions/subscribe - Subscribe to a creator's tier
+  app.post("/api/subscriptions/subscribe", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { creatorId, tierId, isYearly } = req.body;
+
+      if (!creatorId || !tierId) {
+        return res.status(400).json({ message: "creatorId and tierId are required" });
+      }
+
+      if (creatorId === userId) {
+        return res.status(400).json({ message: "You cannot subscribe to yourself" });
+      }
+
+      const [tier] = await db.select()
+        .from(subscriptionTiers)
+        .where(and(
+          eq(subscriptionTiers.id, tierId),
+          eq(subscriptionTiers.creatorId, creatorId),
+          eq(subscriptionTiers.isActive, true)
+        ));
+
+      if (!tier) {
+        return res.status(404).json({ message: "Tier not found or inactive" });
+      }
+
+      const [existingSubscription] = await db.select()
+        .from(subscriptions)
+        .where(and(
+          eq(subscriptions.subscriberId, userId),
+          eq(subscriptions.creatorId, creatorId),
+          eq(subscriptions.status, "ACTIVE")
+        ));
+
+      if (existingSubscription) {
+        return res.status(400).json({ message: "You are already subscribed to this creator" });
+      }
+
+      const now = new Date();
+      const periodEnd = new Date(now);
+      if (isYearly) {
+        periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+      } else {
+        periodEnd.setMonth(periodEnd.getMonth() + 1);
+      }
+
+      const [newSubscription] = await db.insert(subscriptions)
+        .values({
+          subscriberId: userId,
+          creatorId,
+          tierId,
+          status: "ACTIVE",
+          isYearly: isYearly || false,
+          currentPeriodStart: now,
+          currentPeriodEnd: periodEnd,
+        })
+        .returning();
+
+      await db.update(subscriptionTiers)
+        .set({ subscriberCount: sql`${subscriptionTiers.subscriberCount} + 1` })
+        .where(eq(subscriptionTiers.id, tierId));
+
+      res.status(201).json(newSubscription);
+    } catch (error: any) {
+      console.error("Failed to subscribe:", error);
+      res.status(500).json({ message: error.message || "Failed to subscribe" });
+    }
+  });
+
+  // POST /api/subscriptions/unsubscribe/:subscriptionId - Cancel a subscription
+  app.post("/api/subscriptions/unsubscribe/:subscriptionId", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { subscriptionId } = req.params;
+
+      const [subscription] = await db.select()
+        .from(subscriptions)
+        .where(and(
+          eq(subscriptions.id, subscriptionId),
+          eq(subscriptions.subscriberId, userId)
+        ));
+
+      if (!subscription) {
+        return res.status(404).json({ message: "Subscription not found" });
+      }
+
+      if (subscription.status === "CANCELLED") {
+        return res.status(400).json({ message: "Subscription is already cancelled" });
+      }
+
+      const [updatedSubscription] = await db.update(subscriptions)
+        .set({
+          status: "CANCELLED",
+          cancelledAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(subscriptions.id, subscriptionId))
+        .returning();
+
+      await db.update(subscriptionTiers)
+        .set({ subscriberCount: sql`GREATEST(${subscriptionTiers.subscriberCount} - 1, 0)` })
+        .where(eq(subscriptionTiers.id, subscription.tierId));
+
+      res.json(updatedSubscription);
+    } catch (error: any) {
+      console.error("Failed to unsubscribe:", error);
+      res.status(500).json({ message: error.message || "Failed to unsubscribe" });
+    }
+  });
+
+  // POST /api/subscriptions/tiers - Create a new subscription tier
+  app.post("/api/subscriptions/tiers", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { name, description, monthlyPriceCoins, yearlyPriceCoins, benefits, sortOrder } = req.body;
+
+      if (!name || monthlyPriceCoins === undefined) {
+        return res.status(400).json({ message: "name and monthlyPriceCoins are required" });
+      }
+
+      if (monthlyPriceCoins < 0) {
+        return res.status(400).json({ message: "Price cannot be negative" });
+      }
+
+      const [newTier] = await db.insert(subscriptionTiers)
+        .values({
+          creatorId: userId,
+          name,
+          description: description || null,
+          monthlyPriceCoins,
+          yearlyPriceCoins: yearlyPriceCoins || null,
+          benefits: benefits || [],
+          isActive: true,
+          subscriberCount: 0,
+          sortOrder: sortOrder || 0,
+        })
+        .returning();
+
+      res.status(201).json(newTier);
+    } catch (error: any) {
+      console.error("Failed to create tier:", error);
+      res.status(500).json({ message: error.message || "Failed to create tier" });
+    }
+  });
+
+  // PATCH /api/subscriptions/tiers/:tierId - Update a tier
+  app.patch("/api/subscriptions/tiers/:tierId", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { tierId } = req.params;
+      const { name, description, monthlyPriceCoins, yearlyPriceCoins, benefits, isActive, sortOrder } = req.body;
+
+      const [existingTier] = await db.select()
+        .from(subscriptionTiers)
+        .where(and(
+          eq(subscriptionTiers.id, tierId),
+          eq(subscriptionTiers.creatorId, userId)
+        ));
+
+      if (!existingTier) {
+        return res.status(404).json({ message: "Tier not found or you don't own it" });
+      }
+
+      const updateData: Partial<typeof subscriptionTiers.$inferInsert> = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (monthlyPriceCoins !== undefined) updateData.monthlyPriceCoins = monthlyPriceCoins;
+      if (yearlyPriceCoins !== undefined) updateData.yearlyPriceCoins = yearlyPriceCoins;
+      if (benefits !== undefined) updateData.benefits = benefits;
+      if (isActive !== undefined) updateData.isActive = isActive;
+      if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
+
+      const [updatedTier] = await db.update(subscriptionTiers)
+        .set(updateData)
+        .where(eq(subscriptionTiers.id, tierId))
+        .returning();
+
+      res.json(updatedTier);
+    } catch (error: any) {
+      console.error("Failed to update tier:", error);
+      res.status(500).json({ message: error.message || "Failed to update tier" });
+    }
+  });
+
+  // DELETE /api/subscriptions/tiers/:tierId - Delete a tier
+  app.delete("/api/subscriptions/tiers/:tierId", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { tierId } = req.params;
+
+      const [existingTier] = await db.select()
+        .from(subscriptionTiers)
+        .where(and(
+          eq(subscriptionTiers.id, tierId),
+          eq(subscriptionTiers.creatorId, userId)
+        ));
+
+      if (!existingTier) {
+        return res.status(404).json({ message: "Tier not found or you don't own it" });
+      }
+
+      if (existingTier.subscriberCount > 0) {
+        return res.status(400).json({ 
+          message: "Cannot delete tier with active subscribers. Deactivate it instead." 
+        });
+      }
+
+      await db.delete(subscriptionTiers)
+        .where(eq(subscriptionTiers.id, tierId));
+
+      res.json({ message: "Tier deleted successfully" });
+    } catch (error: any) {
+      console.error("Failed to delete tier:", error);
+      res.status(500).json({ message: error.message || "Failed to delete tier" });
+    }
+  });
+
+  // ===== GROUPS API =====
+
+  // GET /api/groups - List groups (with search query param)
+  app.get("/api/groups", requireAuth, async (req, res) => {
+    try {
+      const { search, limit = "20", offset = "0" } = req.query;
+      const limitNum = Math.min(parseInt(limit as string) || 20, 50);
+      const offsetNum = parseInt(offset as string) || 0;
+
+      let conditions: SQL[] = [eq(groups.isArchived, false)];
+      
+      if (search && typeof search === "string" && search.trim()) {
+        conditions.push(
+          or(
+            ilike(groups.name, `%${search.trim()}%`),
+            ilike(groups.description, `%${search.trim()}%`)
+          )!
+        );
+      }
+
+      const groupsList = await db.select({
+        id: groups.id,
+        name: groups.name,
+        description: groups.description,
+        coverUrl: groups.coverUrl,
+        iconUrl: groups.iconUrl,
+        privacy: groups.privacy,
+        memberCount: groups.memberCount,
+        postCount: groups.postCount,
+        tags: groups.tags,
+        isVerified: groups.isVerified,
+        createdAt: groups.createdAt,
+        ownerId: groups.ownerId,
+      })
+        .from(groups)
+        .where(and(...conditions))
+        .orderBy(desc(groups.memberCount), desc(groups.createdAt))
+        .limit(limitNum)
+        .offset(offsetNum);
+
+      res.json(groupsList);
+    } catch (error: any) {
+      console.error("Failed to list groups:", error);
+      res.status(500).json({ message: error.message || "Failed to list groups" });
+    }
+  });
+
+  // POST /api/groups - Create a group
+  app.post("/api/groups", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { name, description, isPrivate, category } = req.body;
+
+      if (!name || typeof name !== "string" || name.trim().length < 2) {
+        return res.status(400).json({ message: "Group name is required and must be at least 2 characters" });
+      }
+
+      if (name.trim().length > 100) {
+        return res.status(400).json({ message: "Group name cannot exceed 100 characters" });
+      }
+
+      const privacy = isPrivate ? "PRIVATE" : "PUBLIC";
+      const tags = category ? [category] : [];
+
+      const [newGroup] = await db.insert(groups)
+        .values({
+          name: name.trim(),
+          description: description?.trim() || null,
+          privacy,
+          ownerId: userId,
+          memberCount: 1,
+          postCount: 0,
+          tags,
+          rules: [],
+          requireApproval: isPrivate || false,
+          isVerified: false,
+          isArchived: false,
+        })
+        .returning();
+
+      // Add owner as first member with OWNER role
+      await db.insert(groupMembers)
+        .values({
+          groupId: newGroup.id,
+          userId,
+          role: "OWNER",
+        });
+
+      res.status(201).json(newGroup);
+    } catch (error: any) {
+      console.error("Failed to create group:", error);
+      res.status(500).json({ message: error.message || "Failed to create group" });
+    }
+  });
+
+  // GET /api/groups/:id - Get group details with member count
+  app.get("/api/groups/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+
+      const [group] = await db.select()
+        .from(groups)
+        .where(eq(groups.id, id));
+
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+
+      // Check if user is a member
+      const [membership] = await db.select()
+        .from(groupMembers)
+        .where(and(
+          eq(groupMembers.groupId, id),
+          eq(groupMembers.userId, userId)
+        ));
+
+      // Get owner info
+      const [owner] = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      })
+        .from(users)
+        .where(eq(users.id, group.ownerId));
+
+      res.json({
+        ...group,
+        isMember: !!membership,
+        memberRole: membership?.role || null,
+        owner,
+      });
+    } catch (error: any) {
+      console.error("Failed to get group:", error);
+      res.status(500).json({ message: error.message || "Failed to get group" });
+    }
+  });
+
+  // POST /api/groups/:id/join - Join a group (or request to join if private)
+  app.post("/api/groups/:id/join", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+
+      const [group] = await db.select()
+        .from(groups)
+        .where(eq(groups.id, id));
+
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+
+      if (group.isArchived) {
+        return res.status(400).json({ message: "This group is archived" });
+      }
+
+      // Check if already a member
+      const [existingMember] = await db.select()
+        .from(groupMembers)
+        .where(and(
+          eq(groupMembers.groupId, id),
+          eq(groupMembers.userId, userId)
+        ));
+
+      if (existingMember) {
+        return res.status(400).json({ message: "You are already a member of this group" });
+      }
+
+      // If private or requires approval, create a join request
+      if (group.privacy === "PRIVATE" || group.requireApproval) {
+        // Check for existing pending request
+        const [existingRequest] = await db.select()
+          .from(groupJoinRequests)
+          .where(and(
+            eq(groupJoinRequests.groupId, id),
+            eq(groupJoinRequests.userId, userId),
+            eq(groupJoinRequests.status, "PENDING")
+          ));
+
+        if (existingRequest) {
+          return res.status(400).json({ message: "You already have a pending join request" });
+        }
+
+        const [joinRequest] = await db.insert(groupJoinRequests)
+          .values({
+            groupId: id,
+            userId,
+            status: "PENDING",
+          })
+          .returning();
+
+        return res.status(201).json({ 
+          message: "Join request submitted",
+          requestId: joinRequest.id,
+          status: "PENDING"
+        });
+      }
+
+      // Public group - join directly
+      await db.insert(groupMembers)
+        .values({
+          groupId: id,
+          userId,
+          role: "MEMBER",
+        });
+
+      // Update member count
+      await db.update(groups)
+        .set({ memberCount: sql`${groups.memberCount} + 1` })
+        .where(eq(groups.id, id));
+
+      res.status(201).json({ message: "Successfully joined the group" });
+    } catch (error: any) {
+      console.error("Failed to join group:", error);
+      res.status(500).json({ message: error.message || "Failed to join group" });
+    }
+  });
+
+  // POST /api/groups/:id/leave - Leave a group
+  app.post("/api/groups/:id/leave", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+
+      const [group] = await db.select()
+        .from(groups)
+        .where(eq(groups.id, id));
+
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+
+      const [membership] = await db.select()
+        .from(groupMembers)
+        .where(and(
+          eq(groupMembers.groupId, id),
+          eq(groupMembers.userId, userId)
+        ));
+
+      if (!membership) {
+        return res.status(400).json({ message: "You are not a member of this group" });
+      }
+
+      // Owner cannot leave - they must transfer ownership first
+      if (membership.role === "OWNER") {
+        return res.status(400).json({ 
+          message: "As the owner, you cannot leave the group. Please transfer ownership first or delete the group." 
+        });
+      }
+
+      await db.delete(groupMembers)
+        .where(and(
+          eq(groupMembers.groupId, id),
+          eq(groupMembers.userId, userId)
+        ));
+
+      // Update member count
+      await db.update(groups)
+        .set({ memberCount: sql`GREATEST(${groups.memberCount} - 1, 0)` })
+        .where(eq(groups.id, id));
+
+      res.json({ message: "Successfully left the group" });
+    } catch (error: any) {
+      console.error("Failed to leave group:", error);
+      res.status(500).json({ message: error.message || "Failed to leave group" });
+    }
+  });
+
+  // GET /api/groups/:id/members - Get group members
+  app.get("/api/groups/:id/members", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { limit = "20", offset = "0" } = req.query;
+      const limitNum = Math.min(parseInt(limit as string) || 20, 50);
+      const offsetNum = parseInt(offset as string) || 0;
+
+      const [group] = await db.select()
+        .from(groups)
+        .where(eq(groups.id, id));
+
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+
+      const members = await db.select({
+        id: groupMembers.id,
+        userId: groupMembers.userId,
+        role: groupMembers.role,
+        joinedAt: groupMembers.joinedAt,
+        user: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(groupMembers)
+        .innerJoin(users, eq(groupMembers.userId, users.id))
+        .where(eq(groupMembers.groupId, id))
+        .orderBy(
+          asc(sql`CASE WHEN ${groupMembers.role} = 'OWNER' THEN 0 WHEN ${groupMembers.role} = 'ADMIN' THEN 1 WHEN ${groupMembers.role} = 'MODERATOR' THEN 2 ELSE 3 END`),
+          desc(groupMembers.joinedAt)
+        )
+        .limit(limitNum)
+        .offset(offsetNum);
+
+      res.json(members);
+    } catch (error: any) {
+      console.error("Failed to get group members:", error);
+      res.status(500).json({ message: error.message || "Failed to get group members" });
+    }
+  });
+
+  // ===== EVENTS API =====
+
+  // GET /api/events - List events (with optional filters for upcoming, past)
+  app.get("/api/events", requireAuth, async (req, res) => {
+    try {
+      const { filter, limit = "20", offset = "0" } = req.query;
+      const limitNum = Math.min(parseInt(limit as string) || 20, 50);
+      const offsetNum = parseInt(offset as string) || 0;
+      const now = new Date();
+
+      let conditions: SQL[] = [eq(events.status, "PUBLISHED")];
+
+      if (filter === "upcoming") {
+        conditions.push(gte(events.startsAt, now));
+      } else if (filter === "past") {
+        conditions.push(lt(events.startsAt, now));
+      }
+
+      const eventsList = await db.select({
+        id: events.id,
+        title: events.title,
+        description: events.description,
+        coverUrl: events.coverUrl,
+        eventType: events.eventType,
+        status: events.status,
+        locationName: events.locationName,
+        locationAddress: events.locationAddress,
+        virtualLink: events.virtualLink,
+        startsAt: events.startsAt,
+        endsAt: events.endsAt,
+        timezone: events.timezone,
+        maxAttendees: events.maxAttendees,
+        goingCount: events.goingCount,
+        interestedCount: events.interestedCount,
+        isPrivate: events.isPrivate,
+        hostId: events.hostId,
+        groupId: events.groupId,
+        createdAt: events.createdAt,
+      })
+        .from(events)
+        .where(and(...conditions))
+        .orderBy(filter === "past" ? desc(events.startsAt) : asc(events.startsAt))
+        .limit(limitNum)
+        .offset(offsetNum);
+
+      res.json(eventsList);
+    } catch (error: any) {
+      console.error("Failed to list events:", error);
+      res.status(500).json({ message: error.message || "Failed to list events" });
+    }
+  });
+
+  // POST /api/events - Create an event
+  app.post("/api/events", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { title, description, startDate, endDate, location, isVirtual, maxAttendees } = req.body;
+
+      if (!title || typeof title !== "string" || title.trim().length < 2) {
+        return res.status(400).json({ message: "Event title is required and must be at least 2 characters" });
+      }
+
+      if (!startDate) {
+        return res.status(400).json({ message: "Start date is required" });
+      }
+
+      const startsAt = new Date(startDate);
+      if (isNaN(startsAt.getTime())) {
+        return res.status(400).json({ message: "Invalid start date" });
+      }
+
+      let endsAt: Date | null = null;
+      if (endDate) {
+        endsAt = new Date(endDate);
+        if (isNaN(endsAt.getTime())) {
+          return res.status(400).json({ message: "Invalid end date" });
+        }
+        if (endsAt <= startsAt) {
+          return res.status(400).json({ message: "End date must be after start date" });
+        }
+      }
+
+      const eventType = isVirtual ? "VIRTUAL" : "IN_PERSON";
+
+      const [newEvent] = await db.insert(events)
+        .values({
+          hostId: userId,
+          title: title.trim(),
+          description: description?.trim() || null,
+          eventType,
+          status: "PUBLISHED",
+          locationName: location || null,
+          startsAt,
+          endsAt,
+          maxAttendees: maxAttendees ? parseInt(maxAttendees) : null,
+          goingCount: 0,
+          interestedCount: 0,
+          isPrivate: false,
+        })
+        .returning();
+
+      res.status(201).json(newEvent);
+    } catch (error: any) {
+      console.error("Failed to create event:", error);
+      res.status(500).json({ message: error.message || "Failed to create event" });
+    }
+  });
+
+  // GET /api/events/:id - Get event details with RSVP count
+  app.get("/api/events/:id", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+
+      const [event] = await db.select()
+        .from(events)
+        .where(eq(events.id, id));
+
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+
+      // Get host info
+      const [host] = await db.select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isVerified: users.isVerified,
+      })
+        .from(users)
+        .where(eq(users.id, event.hostId));
+
+      // Get user's RSVP status
+      const [userRsvp] = await db.select()
+        .from(eventRsvps)
+        .where(and(
+          eq(eventRsvps.eventId, id),
+          eq(eventRsvps.userId, userId)
+        ));
+
+      res.json({
+        ...event,
+        host,
+        userRsvpStatus: userRsvp?.status || null,
+      });
+    } catch (error: any) {
+      console.error("Failed to get event:", error);
+      res.status(500).json({ message: error.message || "Failed to get event" });
+    }
+  });
+
+  // POST /api/events/:id/rsvp - RSVP to event
+  app.post("/api/events/:id/rsvp", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.session.userId!;
+      const { status } = req.body;
+
+      if (!status || !["GOING", "INTERESTED", "NOT_GOING"].includes(status)) {
+        return res.status(400).json({ message: "Invalid RSVP status. Must be GOING, INTERESTED, or NOT_GOING" });
+      }
+
+      const [event] = await db.select()
+        .from(events)
+        .where(eq(events.id, id));
+
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+
+      // Check capacity if GOING
+      if (status === "GOING" && event.maxAttendees) {
+        if (event.goingCount >= event.maxAttendees) {
+          return res.status(400).json({ message: "This event has reached maximum capacity" });
+        }
+      }
+
+      // Check for existing RSVP
+      const [existingRsvp] = await db.select()
+        .from(eventRsvps)
+        .where(and(
+          eq(eventRsvps.eventId, id),
+          eq(eventRsvps.userId, userId)
+        ));
+
+      if (existingRsvp) {
+        const oldStatus = existingRsvp.status;
+
+        // Update existing RSVP
+        await db.update(eventRsvps)
+          .set({ status, updatedAt: new Date() })
+          .where(eq(eventRsvps.id, existingRsvp.id));
+
+        // Update counts based on status change
+        if (oldStatus !== status) {
+          let goingDelta = 0;
+          let interestedDelta = 0;
+
+          if (oldStatus === "GOING") goingDelta--;
+          if (oldStatus === "INTERESTED") interestedDelta--;
+          if (status === "GOING") goingDelta++;
+          if (status === "INTERESTED") interestedDelta++;
+
+          if (goingDelta !== 0 || interestedDelta !== 0) {
+            await db.update(events)
+              .set({
+                goingCount: sql`GREATEST(${events.goingCount} + ${goingDelta}, 0)`,
+                interestedCount: sql`GREATEST(${events.interestedCount} + ${interestedDelta}, 0)`,
+              })
+              .where(eq(events.id, id));
+          }
+        }
+
+        return res.json({ message: "RSVP updated", status });
+      }
+
+      // Create new RSVP
+      await db.insert(eventRsvps)
+        .values({
+          eventId: id,
+          userId,
+          status,
+        });
+
+      // Update counts
+      if (status === "GOING") {
+        await db.update(events)
+          .set({ goingCount: sql`${events.goingCount} + 1` })
+          .where(eq(events.id, id));
+      } else if (status === "INTERESTED") {
+        await db.update(events)
+          .set({ interestedCount: sql`${events.interestedCount} + 1` })
+          .where(eq(events.id, id));
+      }
+
+      res.status(201).json({ message: "RSVP created", status });
+    } catch (error: any) {
+      console.error("Failed to RSVP:", error);
+      res.status(500).json({ message: error.message || "Failed to RSVP" });
+    }
+  });
+
+  // ===== CHECK-IN AND VENUE ENDPOINTS =====
+
+  // PUT /api/location - Update user's current location
+  app.put("/api/location", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { latitude, longitude } = req.body;
+
+      if (typeof latitude !== "number" || typeof longitude !== "number") {
+        return res.status(400).json({ message: "latitude and longitude are required and must be numbers" });
+      }
+
+      if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+        return res.status(400).json({ message: "Invalid latitude or longitude values" });
+      }
+
+      const [existing] = await db.select()
+        .from(userLocations)
+        .where(eq(userLocations.userId, userId));
+
+      if (existing) {
+        await db.update(userLocations)
+          .set({ latitude, longitude, updatedAt: new Date() })
+          .where(eq(userLocations.userId, userId));
+      } else {
+        await db.insert(userLocations)
+          .values({ userId, latitude, longitude });
+      }
+
+      res.json({ message: "Location updated", latitude, longitude });
+    } catch (error: any) {
+      console.error("Failed to update location:", error);
+      res.status(500).json({ message: error.message || "Failed to update location" });
+    }
+  });
+
+  // POST /api/check-ins - Create a check-in
+  app.post("/api/check-ins", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const { venueId, customLocationName, latitude, longitude, caption } = req.body;
+
+      if (!venueId && !customLocationName && (latitude == null || longitude == null)) {
+        return res.status(400).json({ message: "Either venueId, customLocationName, or coordinates are required" });
+      }
+
+      if (venueId) {
+        const [venue] = await db.select()
+          .from(venues)
+          .where(eq(venues.id, venueId));
+        if (!venue) {
+          return res.status(404).json({ message: "Venue not found" });
+        }
+        await db.update(venues)
+          .set({ checkInCount: sql`${venues.checkInCount} + 1` })
+          .where(eq(venues.id, venueId));
+      }
+
+      const [checkIn] = await db.insert(checkIns)
+        .values({
+          userId,
+          venueId: venueId || null,
+          customLocationName: customLocationName || null,
+          latitude: latitude ?? null,
+          longitude: longitude ?? null,
+          caption: caption || null,
+        })
+        .returning();
+
+      res.status(201).json(checkIn);
+    } catch (error: any) {
+      console.error("Failed to create check-in:", error);
+      res.status(500).json({ message: error.message || "Failed to create check-in" });
+    }
+  });
+
+  // GET /api/check-ins/my - Get user's check-in history
+  app.get("/api/check-ins/my", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const userCheckIns = await db.select({
+        checkIn: checkIns,
+        venue: venues,
+      })
+        .from(checkIns)
+        .leftJoin(venues, eq(checkIns.venueId, venues.id))
+        .where(eq(checkIns.userId, userId))
+        .orderBy(desc(checkIns.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const result = userCheckIns.map(row => ({
+        ...row.checkIn,
+        venue: row.venue,
+      }));
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Failed to get check-ins:", error);
+      res.status(500).json({ message: error.message || "Failed to get check-ins" });
+    }
+  });
+
+  // GET /api/check-ins/feed - Get check-ins from followed users
+  app.get("/api/check-ins/feed", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const followingIds = await db.select({ followingId: follows.followingId })
+        .from(follows)
+        .where(eq(follows.followerId, userId));
+
+      if (followingIds.length === 0) {
+        return res.json([]);
+      }
+
+      const ids = followingIds.map(f => f.followingId);
+
+      const feedCheckIns = await db.select({
+        checkIn: checkIns,
+        venue: venues,
+        user: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(checkIns)
+        .leftJoin(venues, eq(checkIns.venueId, venues.id))
+        .innerJoin(users, eq(checkIns.userId, users.id))
+        .where(inArray(checkIns.userId, ids))
+        .orderBy(desc(checkIns.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const result = feedCheckIns.map(row => ({
+        ...row.checkIn,
+        venue: row.venue,
+        user: row.user,
+      }));
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Failed to get check-in feed:", error);
+      res.status(500).json({ message: error.message || "Failed to get check-in feed" });
+    }
+  });
+
+  // GET /api/venues/nearby - Get nearby venues
+  app.get("/api/venues/nearby", requireAuth, async (req, res) => {
+    try {
+      const lat = parseFloat(req.query.lat as string);
+      const lng = parseFloat(req.query.lng as string);
+      const radius = parseFloat(req.query.radius as string) || 5;
+
+      if (isNaN(lat) || isNaN(lng)) {
+        return res.status(400).json({ message: "lat and lng query parameters are required" });
+      }
+
+      const latDiff = radius / 111;
+      const lngDiff = radius / (111 * Math.cos(lat * Math.PI / 180));
+
+      const nearbyVenues = await db.select()
+        .from(venues)
+        .where(and(
+          gte(venues.latitude, lat - latDiff),
+          lte(venues.latitude, lat + latDiff),
+          gte(venues.longitude, lng - lngDiff),
+          lte(venues.longitude, lng + lngDiff)
+        ))
+        .orderBy(desc(venues.checkInCount))
+        .limit(50);
+
+      res.json(nearbyVenues);
+    } catch (error: any) {
+      console.error("Failed to get nearby venues:", error);
+      res.status(500).json({ message: error.message || "Failed to get nearby venues" });
+    }
+  });
+
+  // GET /api/nearby-users - Get users who checked in nearby
+  app.get("/api/nearby-users", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const lat = parseFloat(req.query.lat as string);
+      const lng = parseFloat(req.query.lng as string);
+      const radius = parseFloat(req.query.radius as string) || 5;
+
+      if (isNaN(lat) || isNaN(lng)) {
+        return res.status(400).json({ message: "lat and lng query parameters are required" });
+      }
+
+      const latDiff = radius / 111;
+      const lngDiff = radius / (111 * Math.cos(lat * Math.PI / 180));
+
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      const nearbyCheckIns = await db.select({
+        checkIn: checkIns,
+        venue: venues,
+        user: {
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          isVerified: users.isVerified,
+        },
+      })
+        .from(checkIns)
+        .leftJoin(venues, eq(checkIns.venueId, venues.id))
+        .innerJoin(users, eq(checkIns.userId, users.id))
+        .where(and(
+          gte(checkIns.createdAt, oneDayAgo),
+          or(
+            and(
+              gte(checkIns.latitude, lat - latDiff),
+              lte(checkIns.latitude, lat + latDiff),
+              gte(checkIns.longitude, lng - lngDiff),
+              lte(checkIns.longitude, lng + lngDiff)
+            ),
+            and(
+              gte(venues.latitude, lat - latDiff),
+              lte(venues.latitude, lat + latDiff),
+              gte(venues.longitude, lng - lngDiff),
+              lte(venues.longitude, lng + lngDiff)
+            )
+          )
+        ))
+        .orderBy(desc(checkIns.createdAt))
+        .limit(50);
+
+      const uniqueUsers = new Map();
+      for (const row of nearbyCheckIns) {
+        if (row.user.id !== userId && !uniqueUsers.has(row.user.id)) {
+          uniqueUsers.set(row.user.id, {
+            user: row.user,
+            lastCheckIn: {
+              ...row.checkIn,
+              venue: row.venue,
+            },
+          });
+        }
+      }
+
+      res.json(Array.from(uniqueUsers.values()));
+    } catch (error: any) {
+      console.error("Failed to get nearby users:", error);
+      res.status(500).json({ message: error.message || "Failed to get nearby users" });
+    }
+  });
+
+  // POST /api/venues - Create a custom venue
+  app.post("/api/venues", requireAuth, async (req, res) => {
+    try {
+      const { name, category, address, city, country, latitude, longitude } = req.body;
+
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ message: "name is required" });
+      }
+
+      if (latitude != null && (typeof latitude !== "number" || latitude < -90 || latitude > 90)) {
+        return res.status(400).json({ message: "Invalid latitude value" });
+      }
+
+      if (longitude != null && (typeof longitude !== "number" || longitude < -180 || longitude > 180)) {
+        return res.status(400).json({ message: "Invalid longitude value" });
+      }
+
+      const [venue] = await db.insert(venues)
+        .values({
+          name: name.trim(),
+          category: category || null,
+          address: address || null,
+          city: city || null,
+          country: country || null,
+          latitude: latitude ?? null,
+          longitude: longitude ?? null,
+        })
+        .returning();
+
+      res.status(201).json(venue);
+    } catch (error: any) {
+      console.error("Failed to create venue:", error);
+      res.status(500).json({ message: error.message || "Failed to create venue" });
     }
   });
 
