@@ -126,7 +126,7 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
     loadOrCreateDeviceId();
   }, []);
 
-  const { data: messagesData, isLoading } = useQuery({
+  const { data: messagesData, isLoading, error, refetch } = useQuery({
     queryKey: ["/api/gossip/v2/dm/conversations", conversationId, "messages", deviceId],
     queryFn: async () => {
       if (!deviceId) return { messages: [] };
@@ -412,6 +412,23 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
     );
   }
 
+  if (error && !messagesData) {
+    return (
+      <View style={styles.errorContainer}>
+        <Feather name="alert-circle" size={48} color={Colors.light.error} />
+        <ThemedText style={[styles.errorText, { color: theme.textSecondary }]}>
+          Failed to load messages
+        </ThemedText>
+        <Pressable
+          style={[styles.retryButton, { backgroundColor: theme.primary }]}
+          onPress={() => refetch()}
+        >
+          <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
@@ -512,6 +529,28 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.lg,
+  },
+  errorText: {
+    marginTop: Spacing.md,
+    fontSize: 16,
+    textAlign: "center",
+  },
+  retryButton: {
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  retryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
   },
   anonymousHeader: {
     flexDirection: "row",

@@ -682,7 +682,7 @@ export default function AdminUsersScreen() {
             </View>
 
             {selectedUser ? (
-              <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: 40 }}>
+              <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.lg }}>
                 <View style={styles.userHeader}>
                   <Avatar uri={selectedUser.avatarUrl} size={80} />
                   <View style={styles.userHeaderInfo}>
@@ -1109,7 +1109,7 @@ export default function AdminUsersScreen() {
             </View>
 
             {selectedUser ? (
-              <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: 40 }}>
+              <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.lg }}>
                 <View style={styles.userHeader}>
                   <Avatar uri={selectedUser.avatarUrl} size={60} />
                   <View style={styles.userHeaderInfo}>

@@ -54,15 +54,15 @@ export default function MessagesScreen() {
   const lastRefreshTimeRef = useRef<number>(0);
   const REFRESH_THROTTLE_MS = 2000;
 
-  const { data: primaryConversations, isLoading: primaryLoading, refetch: refetchPrimary, isRefetching: primaryRefetching } = useQuery<any[]>({
+  const { data: primaryConversations, isLoading: primaryLoading, refetch: refetchPrimary, isRefetching: primaryRefetching, error: primaryError } = useQuery<any[]>({
     queryKey: ["/api/messages/inbox/primary"],
   });
 
-  const { data: generalConversations, isLoading: generalLoading, refetch: refetchGeneral, isRefetching: generalRefetching } = useQuery<any[]>({
+  const { data: generalConversations, isLoading: generalLoading, refetch: refetchGeneral, isRefetching: generalRefetching, error: generalError } = useQuery<any[]>({
     queryKey: ["/api/messages/inbox/general"],
   });
 
-  const { data: requests, isLoading: requestsLoading, refetch: refetchRequests, isRefetching: requestsRefetching } = useQuery<any[]>({
+  const { data: requests, isLoading: requestsLoading, refetch: refetchRequests, isRefetching: requestsRefetching, error: requestsError } = useQuery<any[]>({
     queryKey: ["/api/messages/requests"],
   });
 
@@ -182,6 +182,7 @@ export default function MessagesScreen() {
   const isLoading = activeTab === "PRIMARY" ? primaryLoading : activeTab === "GENERAL" ? generalLoading : requestsLoading;
   const isRefetching = activeTab === "PRIMARY" ? primaryRefetching : activeTab === "GENERAL" ? generalRefetching : requestsRefetching;
   const refetch = activeTab === "PRIMARY" ? refetchPrimary : activeTab === "GENERAL" ? refetchGeneral : refetchRequests;
+  const error = activeTab === "PRIMARY" ? primaryError : activeTab === "GENERAL" ? generalError : requestsError;
 
   const handleRefresh = () => {
     const now = Date.now();
@@ -277,6 +278,18 @@ export default function MessagesScreen() {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot, paddingTop: headerHeight }]}>
         <MessageListSkeleton />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.errorContainer, { backgroundColor: theme.backgroundRoot }]}>
+        <Feather name="alert-circle" size={48} color={theme.error} />
+        <ThemedText style={styles.errorText}>Failed to load messages</ThemedText>
+        <Pressable style={[styles.retryButton, { backgroundColor: theme.primary }]} onPress={() => refetch()}>
+          <ThemedText style={styles.retryText}>Retry</ThemedText>
+        </Pressable>
       </View>
     );
   }
@@ -434,6 +447,26 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  errorText: {
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
+    textAlign: "center",
+  },
+  retryButton: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  retryText: {
+    color: "#fff",
+    fontWeight: "600",
   },
   tabBar: {
     flexDirection: "row",

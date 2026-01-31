@@ -65,6 +65,7 @@ function InterestCard({
   onSelect: () => void;
   index: number;
 }) {
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const scale = useSharedValue(1);
   const selected = useSharedValue(isSelected ? 1 : 0);
@@ -142,7 +143,7 @@ function InterestCard({
               {category.name}
             </ThemedText>
           </View>
-          <Animated.View style={[styles.checkmark, checkmarkStyle]}>
+          <Animated.View style={[styles.checkmark, { top: insets.top + Spacing.sm }, checkmarkStyle]}>
             <View style={styles.checkmarkCircle}>
               <Feather name="check" size={14} color="#FFFFFF" />
             </View>
@@ -418,7 +419,6 @@ const styles = StyleSheet.create({
   },
   checkmark: {
     position: "absolute",
-    top: 10,
     right: 10,
   },
   checkmarkCircle: {

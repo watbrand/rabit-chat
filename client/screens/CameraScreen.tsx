@@ -460,7 +460,7 @@ export default function CameraScreen() {
       </View>
 
       {isRecording ? (
-        <View style={styles.recordingIndicator}>
+        <View style={[styles.recordingIndicator, { top: insets.top + Spacing.xl }]}>
           <View style={styles.recordingDot} />
           <ThemedText style={styles.recordingText}>
             {formatDuration(recordingDuration)}
@@ -644,7 +644,6 @@ const styles = StyleSheet.create({
   },
   recordingIndicator: {
     position: "absolute",
-    top: 100,
     alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",

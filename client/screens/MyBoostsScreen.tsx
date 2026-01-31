@@ -469,7 +469,7 @@ export default function MyBoostsScreen() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   
 
-  const { data: campaigns, isLoading, refetch, isRefetching } = useQuery<Campaign[]>({
+  const { data: campaigns, isLoading, refetch, isRefetching, error } = useQuery<Campaign[]>({
     queryKey: ["/api/ads/campaigns"],
     staleTime: 0, // FIX 4: Always fetch fresh data
     refetchOnMount: 'always',
@@ -581,6 +581,14 @@ export default function MyBoostsScreen() {
           <View style={styles.loadingContainer}>
             <LoadingIndicator size="large" />
           </View>
+        ) : error ? (
+          <View style={styles.errorContainer}>
+            <Feather name="alert-circle" size={48} color={theme.error} />
+            <ThemedText style={styles.errorText}>Failed to load campaigns</ThemedText>
+            <Pressable style={[styles.retryButton, { backgroundColor: theme.primary }]} onPress={() => refetch()}>
+              <ThemedText style={styles.retryText}>Retry</ThemedText>
+            </Pressable>
+          </View>
         ) : campaigns && campaigns.length > 0 ? (
           campaigns.map(campaign => (
             <CampaignCard 
@@ -601,6 +609,26 @@ export default function MyBoostsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  errorText: {
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
+    textAlign: "center",
+  },
+  retryButton: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  retryText: {
+    color: "#fff",
+    fontWeight: "600",
   },
   scrollContent: {
     paddingHorizontal: Spacing.lg,

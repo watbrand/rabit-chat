@@ -75,7 +75,7 @@ export default function VideoCallScreen({ route, navigation }: CallScreenProps) 
     transform: [{ scale: pulseScale.value }],
   }));
 
-  const { data: call, isLoading } = useQuery<VideoCall>({
+  const { data: call, isLoading, error, refetch } = useQuery<VideoCall>({
     queryKey: ["/api/calls", callId],
     enabled: !!callId,
     refetchInterval: 3000,
@@ -123,6 +123,18 @@ export default function VideoCallScreen({ route, navigation }: CallScreenProps) 
   const displayUser = otherUser || (isIncoming ? call?.caller : call?.callee);
   const isOngoing = call?.status === "ONGOING";
   const isRinging = call?.status === "RINGING" || !call;
+
+  if (error && callId) {
+    return (
+      <View style={[styles.container, styles.errorContainer]}>
+        <Feather name="alert-circle" size={48} color="#f44336" />
+        <Text style={styles.errorText}>Failed to load call</Text>
+        <Pressable style={styles.retryButton} onPress={() => refetch()}>
+          <Text style={styles.retryText}>Retry</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: "#1a1a2e" }]}>
@@ -244,6 +256,29 @@ export default function VideoCallScreen({ route, navigation }: CallScreenProps) 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  errorContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    backgroundColor: "#1a1a2e",
+  },
+  errorText: {
+    color: "#fff",
+    marginTop: 16,
+    marginBottom: 24,
+    textAlign: "center",
+    fontSize: 16,
+  },
+  retryButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: "#8B5CF6",
+  },
+  retryText: {
+    color: "#fff",
+    fontWeight: "600",
   },
   videoBackground: {
     ...StyleSheet.absoluteFillObject,

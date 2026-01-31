@@ -6,12 +6,13 @@ import {
   ScrollView,
   RefreshControl,
   Platform,
+  Pressable,
 } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, RouteProp } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { useTheme } from "@/hooks/useTheme";
@@ -80,7 +81,7 @@ export default function NetWorthPortfolioScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
 
-  const { data: portfolio, isLoading, refetch, isRefetching } = useQuery<PortfolioData>({
+  const { data: portfolio, isLoading, refetch, isRefetching, error } = useQuery<PortfolioData>({
     queryKey: [`/api/users/${userId}/portfolio`],
   });
 
@@ -88,6 +89,20 @@ export default function NetWorthPortfolioScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
         <LoadingIndicator size="large" style={{ marginTop: headerHeight + 100 }} />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+        <View style={styles.errorContainer}>
+          <Feather name="alert-circle" size={48} color={theme.error} />
+          <Text style={[styles.errorText, { color: theme.text }]}>Failed to load portfolio</Text>
+          <Pressable style={[styles.retryButton, { backgroundColor: theme.primary }]} onPress={() => refetch()}>
+            <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -351,6 +366,26 @@ const styles = StyleSheet.create({
   emptyText: {
     ...Typography.body,
     marginTop: Spacing.md,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  errorText: {
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
+    textAlign: "center",
+  },
+  retryButton: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  retryText: {
+    color: "#fff",
+    fontWeight: "600",
   },
   emptyPurchases: {
     alignItems: "center",

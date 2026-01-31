@@ -409,7 +409,7 @@ export default function FeatureRequestsScreen() {
 
       <Pressable
         testID="button-new-request"
-        style={[styles.fab, { backgroundColor: theme.primary }]}
+        style={[styles.fab, { backgroundColor: theme.primary, bottom: insets.bottom + Spacing.xl }]}
         onPress={handleOpenNewModal}
       >
         <Feather name="plus" size={24} color="#FFFFFF" />
@@ -611,7 +611,6 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: Spacing.lg,
-    bottom: 100,
     width: 56,
     height: 56,
     borderRadius: 28,

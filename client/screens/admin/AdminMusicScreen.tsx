@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -74,6 +75,7 @@ const parseDuration = (str: string): number => {
 
 export default function AdminMusicScreen() {
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
@@ -398,7 +400,7 @@ export default function AdminMusicScreen() {
         }
         ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
+          <View style={[styles.emptyContainer, { paddingTop: headerHeight + Spacing.md }]}>
             <Feather name="music" size={64} color={theme.textSecondary} style={{ opacity: 0.5 }} />
             <ThemedText type="h4" style={styles.emptyTitle}>No music tracks</ThemedText>
             <ThemedText style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
@@ -442,7 +444,7 @@ export default function AdminMusicScreen() {
               </Pressable>
             </View>
 
-            <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: 40 }}>
+            <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.lg }}>
               <ThemedText style={styles.fieldLabel}>Title *</ThemedText>
               <TextInput
                 style={[styles.input, { backgroundColor: theme.glassBackground, color: theme.text, borderColor: theme.glassBorder }]}
@@ -713,7 +715,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 80,
   },
   emptyTitle: {
     marginTop: Spacing.lg,

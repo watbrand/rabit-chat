@@ -233,7 +233,7 @@ export default function WealthClubScreen() {
   const headerHeight = useHeaderHeight();
   const { user } = useAuth();
 
-  const { data: wallet, isLoading, refetch, isRefetching } = useQuery<{ coinBalance: number }>({
+  const { data: wallet, isLoading, refetch, isRefetching, error } = useQuery<{ coinBalance: number }>({
     queryKey: ["/api/wallet"],
   });
 
@@ -264,6 +264,18 @@ export default function WealthClubScreen() {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: theme.backgroundRoot }]}>
         <LoadingIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: theme.backgroundRoot }]}>
+        <Feather name="alert-circle" size={48} color={theme.error} />
+        <ThemedText style={styles.errorText}>Failed to load wallet</ThemedText>
+        <Pressable style={[styles.retryButton, { backgroundColor: theme.primary }]} onPress={() => refetch()}>
+          <ThemedText style={styles.retryText}>Retry</ThemedText>
+        </Pressable>
       </View>
     );
   }
@@ -355,6 +367,20 @@ const styles = StyleSheet.create({
   centered: {
     justifyContent: "center",
     alignItems: "center",
+  },
+  errorText: {
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
+    textAlign: "center",
+  },
+  retryButton: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  retryText: {
+    color: "#fff",
+    fontWeight: "600",
   },
   scrollView: {
     flex: 1,

@@ -171,7 +171,7 @@ export default function WelcomeCompleteScreen() {
   const [showConfetti, setShowConfetti] = useState(true);
   const [isEntering, setIsEntering] = useState(false);
 
-  const { data: onboardingStatus } = useQuery<OnboardingStatus>({
+  const { data: onboardingStatus, error: onboardingError, refetch: refetchOnboarding } = useQuery<OnboardingStatus>({
     queryKey: ["/api/onboarding/status"],
   });
 
@@ -215,6 +215,18 @@ export default function WelcomeCompleteScreen() {
     { delay: 600, startX: width * 0.8, startY: height * 0.65 },
     { delay: 300, startX: width * 0.5, startY: height * 0.1 },
   ];
+
+  if (onboardingError) {
+    return (
+      <View style={[styles.container, styles.errorContainer]}>
+        <Feather name="alert-circle" size={48} color={theme.error} />
+        <ThemedText style={styles.errorText}>Failed to load profile</ThemedText>
+        <Pressable style={[styles.retryButton, { backgroundColor: theme.primary }]} onPress={() => refetchOnboarding()}>
+          <ThemedText style={styles.retryText}>Retry</ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -353,6 +365,25 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0f0f1a",
+  },
+  errorContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  errorText: {
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
+    textAlign: "center",
+  },
+  retryButton: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  retryText: {
+    color: "#fff",
+    fontWeight: "600",
   },
   content: {
     flex: 1,

@@ -73,6 +73,7 @@ function PrivacyOptionCard({
   onSelect: () => void;
   index: number;
 }) {
+  const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
   const scale = useSharedValue(1);
 
@@ -168,7 +169,7 @@ function PrivacyOptionCard({
           {option.label}
         </ThemedText>
         {isSelected ? (
-          <View style={[styles.selectedIndicator, { backgroundColor: theme.primary }]}>
+          <View style={[styles.selectedIndicator, { backgroundColor: theme.primary, top: insets.top + Spacing.xs }]}>
             <Feather name="check" size={10} color="#FFFFFF" />
           </View>
         ) : null}
@@ -489,7 +490,6 @@ const styles = StyleSheet.create({
   },
   selectedIndicator: {
     position: "absolute",
-    top: 8,
     right: 8,
     width: 18,
     height: 18,

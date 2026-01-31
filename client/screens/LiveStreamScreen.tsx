@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/hooks/useTheme";
+import { Spacing } from "@/constants/theme";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Avatar } from "@/components/Avatar";
@@ -76,7 +77,7 @@ export default function LiveStreamScreen({ route, navigation }: any) {
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
   const commentInputRef = useRef<TextInput>(null);
 
-  const { data: stream, isLoading } = useQuery<LiveStream>({
+  const { data: stream, isLoading, error, refetch } = useQuery<LiveStream>({
     queryKey: ["/api/live-streams", streamId],
     enabled: !!streamId,
     refetchInterval: 5000,
@@ -148,8 +149,20 @@ export default function LiveStreamScreen({ route, navigation }: any) {
 
   if (isLoading) {
     return (
-      <View style={[styles.container, { backgroundColor: "#000" }]}>
+      <View style={[styles.container, styles.centered, { backgroundColor: "#000" }]}>
         <LoadingIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: "#000" }]}>
+        <Feather name="alert-circle" size={48} color="#EF4444" />
+        <Text style={styles.errorText}>Failed to load stream</Text>
+        <Pressable style={styles.retryButton} onPress={() => refetch()}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </Pressable>
       </View>
     );
   }
@@ -157,7 +170,7 @@ export default function LiveStreamScreen({ route, navigation }: any) {
   return (
     <View style={[styles.container, { backgroundColor: "#000" }]}>
       <View style={styles.videoPlaceholder}>
-        <View style={styles.liveIndicator}>
+        <View style={[styles.liveIndicator, { top: insets.top + Spacing.xl }]}>
           <View style={styles.liveDot} />
           <Text style={styles.liveText}>LIVE</Text>
         </View>
@@ -193,7 +206,7 @@ export default function LiveStreamScreen({ route, navigation }: any) {
           </View>
         </View>
 
-        <View style={styles.floatingReactionsContainer}>
+        <View style={[styles.floatingReactionsContainer, { bottom: insets.bottom + Spacing.xl * 4 }]}>
           {floatingReactions.map((reaction) => (
             <FloatingReactionBubble key={reaction.id} emoji={reaction.type} startX={reaction.x} />
           ))}
@@ -294,6 +307,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  centered: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  errorText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "rgba(255,255,255,0.7)",
+    textAlign: "center",
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: "#8B5CF6",
+  },
+  retryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
   videoPlaceholder: {
     flex: 1,
     alignItems: "center",
@@ -306,7 +341,6 @@ const styles = StyleSheet.create({
   },
   liveIndicator: {
     position: "absolute",
-    top: 60,
     left: 16,
     flexDirection: "row",
     alignItems: "center",
@@ -380,7 +414,6 @@ const styles = StyleSheet.create({
   floatingReactionsContainer: {
     position: "absolute",
     right: 16,
-    bottom: 200,
     width: 100,
     height: 300,
   },
@@ -452,5 +485,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+  },
+  emptyCommentsContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 32,
   },
 });

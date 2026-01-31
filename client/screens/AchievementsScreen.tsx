@@ -198,7 +198,7 @@ export default function AchievementsScreen() {
   const queryClient = useQueryClient();
   const [selectedCategory, setSelectedCategory] = useState<Category>("all");
 
-  const { data: achievements = [], isLoading, refetch, isRefetching } = useQuery<Achievement[]>({
+  const { data: achievements = [], isLoading, error, refetch, isRefetching } = useQuery<Achievement[]>({
     queryKey: ["/api/achievements"],
   });
 
@@ -233,6 +233,23 @@ export default function AchievementsScreen() {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: theme.backgroundRoot }]}>
         <LoadingIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: theme.backgroundRoot }]}>
+        <Feather name="alert-circle" size={48} color={theme.error} />
+        <ThemedText style={[styles.errorText, { color: theme.textSecondary }]}>
+          Failed to load achievements
+        </ThemedText>
+        <Pressable
+          style={[styles.retryButton, { backgroundColor: theme.primary }]}
+          onPress={() => refetch()}
+        >
+          <ThemedText style={styles.retryText}>Retry</ThemedText>
+        </Pressable>
       </View>
     );
   }
@@ -503,5 +520,21 @@ const styles = StyleSheet.create({
   emptyText: {
     marginTop: Spacing.md,
     fontSize: 16,
+  },
+  errorText: {
+    marginTop: Spacing.md,
+    fontSize: 16,
+    textAlign: "center",
+  },
+  retryButton: {
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  retryText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

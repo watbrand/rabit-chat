@@ -178,7 +178,7 @@ export default function LoginHistoryScreen() {
   );
 
   const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
+    <View style={[styles.emptyContainer, { paddingTop: headerHeight + Spacing.md }]}>
       <EmptyState
         title="No Login History"
         message="Your recent login activity will appear here"
@@ -326,7 +326,6 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-    paddingTop: 80,
     alignItems: "center",
   },
 });

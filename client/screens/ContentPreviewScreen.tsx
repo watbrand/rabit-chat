@@ -47,19 +47,15 @@ export default function ContentPreviewScreen() {
   const navigation = useNavigation<any>();
 
   // Fetch from same endpoint as Mall leaderboard - TOP 5 WEALTHY USERS
-  const { data: eliteUsers, isLoading } = useQuery<EliteUser[]>({
+  const { data: eliteUsers, isLoading, error, refetch } = useQuery<EliteUser[]>({
     queryKey: ["/api/leaderboard/elite"],
     queryFn: async () => {
-      try {
-        const res = await fetch(new URL("/api/leaderboard/elite", getApiUrl()));
-        if (!res.ok) return [];
-        return res.json();
-      } catch {
-        return [];
-      }
+      const res = await fetch(new URL("/api/leaderboard/elite", getApiUrl()));
+      if (!res.ok) throw new Error("Failed to fetch elite users");
+      return res.json();
     },
-    staleTime: 1000 * 30, // Refresh every 30 seconds for real-time updates
-    refetchInterval: 1000 * 30, // Auto-refetch every 30 seconds
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 30,
   });
 
   const handleJoinPress = () => {
@@ -117,7 +113,7 @@ export default function ContentPreviewScreen() {
         ]}
       >
         {/* Rank Badge */}
-        <View style={[styles.rankBadge, { backgroundColor: rankColor }]}>
+        <View style={[styles.rankBadge, { backgroundColor: rankColor, top: insets.top + Spacing.sm }]}>
           <ThemedText style={styles.rankText}>
             {item.rank <= 3 ? getRankEmoji(item.rank) : `#${item.rank}`}
           </ThemedText>
@@ -252,6 +248,19 @@ export default function ContentPreviewScreen() {
           <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
             Loading elite members...
           </ThemedText>
+        </View>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Feather name="alert-circle" size={48} color={theme.error} />
+          <ThemedText style={[styles.errorText, { color: theme.textSecondary }]}>
+            Failed to load elite members
+          </ThemedText>
+          <Pressable
+            style={[styles.retryButton, { backgroundColor: theme.primary }]}
+            onPress={() => refetch()}
+          >
+            <ThemedText style={styles.retryText}>Retry</ThemedText>
+          </Pressable>
         </View>
       ) : (
         <FlatList
@@ -396,6 +405,28 @@ const styles = StyleSheet.create({
     marginTop: Spacing.md,
     fontSize: 14,
   },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+  },
+  errorText: {
+    marginTop: Spacing.md,
+    fontSize: 16,
+    textAlign: "center",
+  },
+  retryButton: {
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
+  },
+  retryText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
   listContent: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing["6xl"] + Spacing["6xl"] + Spacing["3xl"],
@@ -407,7 +438,6 @@ const styles = StyleSheet.create({
   },
   rankBadge: {
     position: "absolute",
-    top: 12,
     right: 12,
     width: 36,
     height: 36,

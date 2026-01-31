@@ -50,7 +50,7 @@ export default function BroadcastChannelsScreen({ navigation }: any) {
   const [newChannelDescription, setNewChannelDescription] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
-  const { data: channels = [], isLoading, refetch } = useQuery<BroadcastChannel[]>({
+  const { data: channels = [], isLoading, error, refetch } = useQuery<BroadcastChannel[]>({
     queryKey: ["/api/broadcast-channels"],
   });
 
@@ -162,6 +162,23 @@ export default function BroadcastChannelsScreen({ navigation }: any) {
       </View>
     </Pressable>
   );
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.errorContainer, { backgroundColor: theme.backgroundRoot }]}>
+        <Feather name="alert-circle" size={48} color={theme.error} />
+        <Text style={[styles.errorText, { color: theme.textSecondary }]}>
+          Failed to load channels
+        </Text>
+        <Pressable
+          style={[styles.retryButton, { backgroundColor: theme.primary }]}
+          onPress={() => refetch()}
+        >
+          <Text style={styles.retryText}>Retry</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
@@ -387,5 +404,27 @@ const styles = StyleSheet.create({
   },
   createModalButton: {
     marginTop: 8,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  errorText: {
+    marginTop: 12,
+    fontSize: 16,
+    textAlign: "center",
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

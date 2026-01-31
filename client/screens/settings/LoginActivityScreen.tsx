@@ -346,7 +346,7 @@ export default function LoginActivityScreen() {
   );
 
   const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
+    <View style={[styles.emptyContainer, { paddingTop: headerHeight + Spacing.md }]}>
       <EmptyState
         title="No Login Activity"
         message="Your login activity will appear here when you sign in from different devices."
@@ -356,7 +356,7 @@ export default function LoginActivityScreen() {
   );
 
   const renderErrorState = () => (
-    <View style={styles.emptyContainer}>
+    <View style={[styles.emptyContainer, { paddingTop: headerHeight + Spacing.md }]}>
       <EmptyState
         title="Unable to Load Activity"
         message="We couldn't load your login activity. Please check your connection and try again."
@@ -619,7 +619,6 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-    paddingTop: 80,
     alignItems: "center",
   },
 });

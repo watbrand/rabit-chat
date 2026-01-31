@@ -313,7 +313,7 @@ export default function TrustedDevicesScreen() {
   );
 
   const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
+    <View style={[styles.emptyContainer, { paddingTop: headerHeight + Spacing.md }]}>
       <EmptyState
         title="No Trusted Devices"
         message="When you mark a device as trusted, it will appear here. Trusted devices can skip some security checks."
@@ -323,7 +323,7 @@ export default function TrustedDevicesScreen() {
   );
 
   const renderErrorState = () => (
-    <View style={styles.emptyContainer}>
+    <View style={[styles.emptyContainer, { paddingTop: headerHeight + Spacing.md }]}>
       <EmptyState
         title="Unable to Load Devices"
         message="We couldn't load your trusted devices. Please check your connection and try again."
@@ -583,7 +583,6 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-    paddingTop: 80,
     alignItems: "center",
   },
   modalOverlay: {

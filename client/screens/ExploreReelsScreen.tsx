@@ -75,6 +75,7 @@ interface ReelItemProps {
 
 function ReelItem({ post, isActive, onLike, onUserPress, onComment, onShare }: ReelItemProps) {
   const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const [isPaused, setIsPaused] = useState(false);
   const [localLiked, setLocalLiked] = useState(post.hasLiked || false);
   const [localLikesCount, setLocalLikesCount] = useState(post.likesCount);
@@ -296,7 +297,7 @@ function ReelItem({ post, isActive, onLike, onUserPress, onComment, onShare }: R
         </View>
       </GestureDetector>
 
-      <View style={styles.reelInfo}>
+      <View style={[styles.reelInfo, { bottom: insets.bottom + Spacing.xl }]}>
         <Pressable onPress={onUserPress} style={styles.reelUserRow}>
           <Avatar uri={post.user?.avatarUrl} size={40} />
           <View style={styles.userInfo}>
@@ -318,7 +319,7 @@ function ReelItem({ post, isActive, onLike, onUserPress, onComment, onShare }: R
         ) : null}
       </View>
 
-      <View style={styles.reelActions}>
+      <View style={[styles.reelActions, { bottom: insets.bottom + Spacing.xl + Spacing.lg }]}>
         <Pressable style={styles.reelActionButton} onPress={handleLikePress} testID={`like-btn-${post.id}`}>
           <Feather name="heart" size={28} color={localLiked ? "#EF4444" : "#FFFFFF"} />
           <ThemedText style={styles.reelActionCount}>
@@ -552,7 +553,6 @@ const styles = StyleSheet.create({
   },
   reelInfo: {
     position: "absolute",
-    bottom: 100,
     left: Spacing.md,
     right: 80,
   },
@@ -596,7 +596,6 @@ const styles = StyleSheet.create({
   reelActions: {
     position: "absolute",
     right: Spacing.md,
-    bottom: 120,
     alignItems: "center",
     gap: Spacing.xl,
   },
