@@ -100,11 +100,18 @@ export default function ProfileScreen() {
   const [viewerImageUrl, setViewerImageUrl] = useState("");
   const [viewerImageTitle, setViewerImageTitle] = useState("");
   const [createMenuVisible, setCreateMenuVisible] = useState(false);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [coverImageError, setCoverImageError] = useState(false);
 
   const handleViewImage = (url: string, title: string) => {
     setViewerImageUrl(url);
     setViewerImageTitle(title);
     setImageViewerVisible(true);
+  };
+
+  const handleImageError = (imageId: string) => {
+    console.warn(`Image failed to load: ${imageId}`);
+    setFailedImages(prev => new Set([...prev, imageId]));
   };
 
   const handleCreatePost = () => {
@@ -404,6 +411,8 @@ export default function ProfileScreen() {
   const renderGridItem = ({ item, index }: { item: any; index: number }) => {
     const isVideo = item.type === "VIDEO";
     const thumbnailUri = item.thumbnailUrl || item.mediaUrl;
+    const imageId = `grid-${item.id}`;
+    const hasError = failedImages.has(imageId);
 
     return (
       <Pressable
@@ -414,11 +423,18 @@ export default function ProfileScreen() {
         onPress={() => handleGridItemPress(item)}
         testID={`grid-item-${item.id}`}
       >
-        <Image
-          source={{ uri: thumbnailUri }}
-          style={styles.gridImage}
-          contentFit="cover"
-        />
+        {!hasError ? (
+          <Image
+            source={{ uri: thumbnailUri }}
+            style={styles.gridImage}
+            contentFit="cover"
+            onError={() => handleImageError(imageId)}
+          />
+        ) : (
+          <View style={[styles.gridImage, { backgroundColor: theme.glassBackground, justifyContent: "center", alignItems: "center" }]}>
+            <Feather name="image-off" size={24} color={theme.textSecondary} />
+          </View>
+        )}
         {isVideo && item.durationMs ? (
           <View style={styles.durationBadge}>
             <Feather name="play" size={10} color="#FFF" />
@@ -443,6 +459,8 @@ export default function ProfileScreen() {
   const renderPinnedItem = ({ item, index }: { item: PinnedPost; index: number }) => {
     const isVideo = item.type === "VIDEO";
     const thumbnailUri = item.thumbnailUrl || item.mediaUrl;
+    const imageId = `pinned-${item.id}`;
+    const hasError = failedImages.has(imageId);
 
     return (
       <Pressable
@@ -453,11 +471,18 @@ export default function ProfileScreen() {
         onPress={() => navigation.navigate("PostDetail", { postId: item.id })}
         testID={`pinned-item-${item.id}`}
       >
-        <Image
-          source={{ uri: thumbnailUri }}
-          style={styles.gridImage}
-          contentFit="cover"
-        />
+        {!hasError ? (
+          <Image
+            source={{ uri: thumbnailUri }}
+            style={styles.gridImage}
+            contentFit="cover"
+            onError={() => handleImageError(imageId)}
+          />
+        ) : (
+          <View style={[styles.gridImage, { backgroundColor: theme.glassBackground, justifyContent: "center", alignItems: "center" }]}>
+            <Feather name="image-off" size={24} color={theme.textSecondary} />
+          </View>
+        )}
         <View style={[styles.pinnedBadge, { backgroundColor: theme.primary }]}>
           <Feather name="bookmark" size={10} color="#FFF" />
         </View>
@@ -596,11 +621,18 @@ export default function ProfileScreen() {
                 testID={`story-${story.id}`}
               >
                 <View style={[styles.storyCircle, { borderColor: theme.primary }]}>
-                  <Image
-                    source={{ uri: story.thumbnailUrl || story.mediaUrl }}
-                    style={styles.storyImage}
-                    contentFit="cover"
-                  />
+                  {!failedImages.has(`story-${story.id}`) ? (
+                    <Image
+                      source={{ uri: story.thumbnailUrl || story.mediaUrl }}
+                      style={styles.storyImage}
+                      contentFit="cover"
+                      onError={() => handleImageError(`story-${story.id}`)}
+                    />
+                  ) : (
+                    <View style={[styles.storyImage, { backgroundColor: theme.glassBackground, justifyContent: "center", alignItems: "center" }]}>
+                      <Feather name="image-off" size={16} color={theme.textSecondary} />
+                    </View>
+                  )}
                 </View>
                 <ThemedText style={[styles.storyLabel, { color: theme.textSecondary }]} numberOfLines={1}>
                   Story
@@ -674,11 +706,15 @@ export default function ProfileScreen() {
             onPress={() => user?.coverUrl ? handleViewImage(user.coverUrl, "Cover Photo") : null}
             disabled={!user?.coverUrl}
           >
-            {user?.coverUrl ? (
+            {user?.coverUrl && !coverImageError ? (
               <Image
                 source={{ uri: user.coverUrl }}
                 style={styles.coverPhoto}
                 contentFit="cover"
+                onError={() => {
+                  console.warn("Cover image failed to load");
+                  setCoverImageError(true);
+                }}
               />
             ) : (
               <LinearGradient

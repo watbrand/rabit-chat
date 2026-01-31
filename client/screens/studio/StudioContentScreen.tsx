@@ -59,6 +59,7 @@ export default function StudioContentScreen() {
   const [sortBy, setSortBy] = useState<SortOption>("views");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
+  const [failedThumbnails, setFailedThumbnails] = useState<Set<string>>(new Set());
 
   const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const endDate = new Date();
@@ -133,6 +134,8 @@ export default function StudioContentScreen() {
 
   const renderContentItem = ({ item }: { item: StudioContentItem }) => {
     const isMediaPost = item.post.type === "VIDEO" || item.post.type === "VOICE" || item.post.type === "PHOTO";
+    const thumbnailId = `thumb-${item.post.id}`;
+    const hasError = failedThumbnails.has(thumbnailId);
 
     return (
       <Pressable
@@ -140,11 +143,15 @@ export default function StudioContentScreen() {
       >
         <Card style={styles.contentCard}>
           <View style={styles.contentRow}>
-            {isMediaPost && item.post.thumbnailUrl ? (
+            {isMediaPost && item.post.thumbnailUrl && !hasError ? (
               <Image
                 source={{ uri: item.post.thumbnailUrl }}
                 style={styles.thumbnail}
                 contentFit="cover"
+                onError={() => {
+                  console.warn(`Thumbnail failed to load: ${thumbnailId}`);
+                  setFailedThumbnails(prev => new Set([...prev, thumbnailId]));
+                }}
               />
             ) : (
               <View style={[styles.thumbnailPlaceholder, { backgroundColor: theme.glassBackground }]}>

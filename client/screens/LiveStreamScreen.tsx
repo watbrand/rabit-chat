@@ -77,6 +77,7 @@ export default function LiveStreamScreen({ route, navigation }: any) {
   const [comment, setComment] = useState("");
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
   const commentInputRef = useRef<TextInput>(null);
+  const reactionTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   const { data: stream, isLoading, error, refetch } = useQuery<LiveStream>({
     queryKey: ["/api/live-streams", streamId],
@@ -124,6 +125,15 @@ export default function LiveStreamScreen({ route, navigation }: any) {
     }
   };
 
+  useEffect(() => {
+    return () => {
+      reactionTimeoutsRef.current.forEach((timeoutId) => {
+        clearTimeout(timeoutId);
+      });
+      reactionTimeoutsRef.current.clear();
+    };
+  }, []);
+
   const handleReaction = (emoji: string) => {
     const newReaction: FloatingReaction = {
       id: `${Date.now()}-${Math.random()}`,
@@ -132,9 +142,11 @@ export default function LiveStreamScreen({ route, navigation }: any) {
     };
     setFloatingReactions((prev) => [...prev, newReaction]);
     sendReactionMutation.mutate(emoji);
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       setFloatingReactions((prev) => prev.filter((r) => r.id !== newReaction.id));
+      reactionTimeoutsRef.current.delete(newReaction.id);
     }, 3000);
+    reactionTimeoutsRef.current.set(newReaction.id, timeoutId);
   };
 
   const renderComment = ({ item }: { item: StreamComment }) => (

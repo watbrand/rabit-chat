@@ -183,13 +183,17 @@ export default function ProfilePageScreen() {
 
   const handleLoadMore = async () => {
     if (!nextCursor) return;
-    const res = await fetch(
-      new URL(`/api/users/${username}/posts?tab=${activeTab}&limit=24&cursor=${nextCursor}`, getApiUrl()),
-      { credentials: "include" }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      setNextCursor(data.nextCursor);
+    try {
+      const res = await fetch(
+        new URL(`/api/users/${username}/posts?tab=${activeTab}&limit=24&cursor=${nextCursor}`, getApiUrl()),
+        { credentials: "include" }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setNextCursor(data.nextCursor);
+      }
+    } catch (error: any) {
+      Alert.alert("Error", error?.message || "Failed to load more posts");
     }
   };
 

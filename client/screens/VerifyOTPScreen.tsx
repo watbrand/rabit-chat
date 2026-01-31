@@ -67,7 +67,8 @@ export default function VerifyOTPScreen() {
   }, [resendCooldown]);
 
   useEffect(() => {
-    setTimeout(() => inputRefs.current[0]?.focus(), 500);
+    const timer = setTimeout(() => inputRefs.current[0]?.focus(), 500);
+    return () => clearTimeout(timer);
   }, []);
 
   function maskContact(contact: string, type: "email" | "phone"): string {

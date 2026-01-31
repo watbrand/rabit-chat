@@ -52,6 +52,7 @@ export default function MessagesScreen() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabType>("PRIMARY");
   const [searchQuery, setSearchQuery] = useState("");
+  const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
   const lastRefreshTimeRef = useRef<number>(0);
   const REFRESH_THROTTLE_MS = 2000;
 
@@ -239,17 +240,24 @@ export default function MessagesScreen() {
         ? item.participant2
         : item.participant1;
 
+    const avatarId = `avatar-${item.id}`;
+    const hasAvatarError = failedAvatars.has(avatarId);
+
     return (
       <View style={[styles.requestCard, { backgroundColor: theme.backgroundSecondary }]}>
         <View style={styles.requestInfo}>
           <Pressable onPress={() => handleUserProfilePress(otherUser.id)}>
             <Image
               source={
-                otherUser.avatarUrl
+                otherUser.avatarUrl && !hasAvatarError
                   ? { uri: otherUser.avatarUrl }
                   : require("../../assets/images/default-avatar.png")
               }
               style={styles.requestAvatar}
+              onError={() => {
+                console.warn(`Avatar failed to load: ${avatarId}`);
+                setFailedAvatars(prev => new Set([...prev, avatarId]));
+              }}
             />
           </Pressable>
           <Pressable onPress={() => handleConversationPress(item)} style={styles.requestTextPress}>

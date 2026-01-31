@@ -58,6 +58,7 @@ export default function KYCScreen({ navigation }: any) {
   const [showTypePicker, setShowTypePicker] = useState(false);
   const [popiaConsent, setPopiaConsent] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   const [formData, setFormData] = useState({
     idType: "",
@@ -362,6 +363,9 @@ export default function KYCScreen({ navigation }: any) {
                 isUploading={uploading === "idDocument"}
                 onUpload={() => pickAndUploadImage("idDocument")}
                 theme={theme}
+                failedImages={failedImages}
+                setFailedImages={setFailedImages}
+                imageKey="idDocument"
               />
 
               <DocumentUpload
@@ -371,6 +375,9 @@ export default function KYCScreen({ navigation }: any) {
                 isUploading={uploading === "proofOfAddress"}
                 onUpload={() => pickAndUploadImage("proofOfAddress")}
                 theme={theme}
+                failedImages={failedImages}
+                setFailedImages={setFailedImages}
+                imageKey="proofOfAddress"
               />
 
               <View style={styles.selfieSection}>
@@ -383,7 +390,16 @@ export default function KYCScreen({ navigation }: any) {
 
                 {formData.selfieUrl ? (
                   <View style={styles.uploadedContainer}>
-                    <Image source={{ uri: formData.selfieUrl }} style={styles.selfiePreview} contentFit="cover" />
+                    {!failedImages.has('selfie') ? (
+                      <Image source={{ uri: formData.selfieUrl }} style={styles.selfiePreview} contentFit="cover" onError={() => {
+                        console.warn("Selfie preview failed to load");
+                        setFailedImages(prev => new Set([...prev, 'selfie']));
+                      }} />
+                    ) : (
+                      <View style={[styles.selfiePreview, { backgroundColor: theme.glassBackground, justifyContent: "center", alignItems: "center" }]}>
+                        <Feather name="image-off" size={32} color={theme.textSecondary} />
+                      </View>
+                    )}
                     <Pressable style={[styles.changeButton, { backgroundColor: theme.primary + "20" }]} onPress={takeSelfie}>
                       <Feather name="refresh-cw" size={16} color={theme.primary} />
                       <Text style={[styles.changeButtonText, { color: theme.primary }]}>Retake</Text>
@@ -505,6 +521,9 @@ function DocumentUpload({
   isUploading,
   onUpload,
   theme,
+  failedImages,
+  setFailedImages,
+  imageKey,
 }: {
   label: string;
   description: string;
@@ -512,7 +531,12 @@ function DocumentUpload({
   isUploading: boolean;
   onUpload: () => void;
   theme: any;
+  failedImages: Set<string>;
+  setFailedImages: (images: Set<string>) => void;
+  imageKey: string;
 }) {
+  const hasError = failedImages.has(imageKey);
+
   return (
     <View style={styles.documentSection}>
       <ThemedText type="subhead" weight="semiBold" style={styles.documentLabel}>
@@ -522,9 +546,12 @@ function DocumentUpload({
         {description}
       </ThemedText>
 
-      {imageUrl ? (
+      {imageUrl && !hasError ? (
         <View style={styles.uploadedContainer}>
-          <Image source={{ uri: imageUrl }} style={styles.documentPreview} contentFit="cover" />
+          <Image source={{ uri: imageUrl }} style={styles.documentPreview} contentFit="cover" onError={() => {
+            console.warn(`Document preview failed to load: ${imageKey}`);
+            setFailedImages(new Set([...failedImages, imageKey]));
+          }} />
           <Pressable style={[styles.changeButton, { backgroundColor: theme.primary + "20" }]} onPress={onUpload}>
             <Feather name="refresh-cw" size={16} color={theme.primary} />
             <Text style={[styles.changeButtonText, { color: theme.primary }]}>Change</Text>

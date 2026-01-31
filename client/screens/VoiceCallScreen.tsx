@@ -64,6 +64,7 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
   const isPlayingRef = useRef(false);
   const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tempFileCounterRef = useRef(0);
+  const timeoutsRef = useRef<Set<NodeJS.Timeout>>(new Set());
   
   // CRITICAL: Refs to avoid stale closure issues in intervals/callbacks
   const callStatusRef = useRef<CallStatus>(isIncoming ? "ongoing" : "connecting");
@@ -177,9 +178,10 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
             callStartTimeRef.current = Date.now();
             callStatusRef.current = "ongoing"; // Ensure ref is correct
             // Delay slightly to ensure audio is configured
-            setTimeout(() => {
+            const timeoutId = setTimeout(() => {
               startRecording();
             }, 300);
+            timeoutsRef.current.add(timeoutId);
           } else {
             // For outgoing calls, send offer
             ws.send(JSON.stringify({
@@ -204,19 +206,22 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
           callStartTimeRef.current = Date.now();
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           // Start recording - wsAuthenticatedRef should be true since we got here via call_offer
-          setTimeout(() => startRecording(), 100);
+          const timeoutId = setTimeout(() => startRecording(), 100);
+          timeoutsRef.current.add(timeoutId);
         }
 
         if (data.type === "call_declined" && data.callId === callId) {
           setCallStatus("declined");
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          setTimeout(() => navigation.goBack(), 2000);
+          const timeoutId = setTimeout(() => navigation.goBack(), 2000);
+          timeoutsRef.current.add(timeoutId);
         }
 
         if (data.type === "call_ended" && data.callId === callId) {
           setCallStatus("ended");
           stopRecording();
-          setTimeout(() => navigation.goBack(), 1500);
+          const timeoutId = setTimeout(() => navigation.goBack(), 1500);
+          timeoutsRef.current.add(timeoutId);
         }
 
         if (data.type === "audio_data" && data.callId === callId) {
@@ -355,7 +360,8 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
     } catch (error) {
       recordingRef.current = null;
       if (callStatusRef.current === "ongoing" && !isMutedRef.current && wsAuthenticatedRef.current) {
-        setTimeout(() => startRecording(), 300);
+        const timeoutId = setTimeout(() => startRecording(), 300);
+        timeoutsRef.current.add(timeoutId);
       }
     }
   };
@@ -454,7 +460,8 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
     } catch (error) {
       isPlayingRef.current = false;
       // Try next chunk after a small delay
-      setTimeout(() => playNextAudio(), 50);
+      const timeoutId = setTimeout(() => playNextAudio(), 50);
+      timeoutsRef.current.add(timeoutId);
     }
   };
 
@@ -500,7 +507,8 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
     await stopRecording();
     setCallStatus("ended");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    setTimeout(() => navigation.goBack(), 500);
+    const timeoutId = setTimeout(() => navigation.goBack(), 500);
+    timeoutsRef.current.add(timeoutId);
   };
 
   const toggleMute = async () => {
@@ -559,6 +567,8 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
     return () => {
       isMounted = false;
       stopRecording();
+      timeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
+      timeoutsRef.current.clear();
       if (soundRef.current) {
         soundRef.current.unloadAsync();
       }

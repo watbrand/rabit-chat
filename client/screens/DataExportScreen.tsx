@@ -117,7 +117,11 @@ export function DataExportScreen() {
   };
 
   const openDownload = async (url: string) => {
-    await WebBrowser.openBrowserAsync(url);
+    try {
+      await WebBrowser.openBrowserAsync(url);
+    } catch (error: any) {
+      Alert.alert("Error", error?.message || "Failed to open download");
+    }
   };
 
   const formatDate = (date: string) => {

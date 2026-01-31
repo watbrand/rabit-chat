@@ -117,7 +117,8 @@ export default function VideoCallScreen({ route, navigation }: CallScreenProps) 
 
   useEffect(() => {
     if (call?.status === "ENDED" || call?.status === "DECLINED") {
-      setTimeout(() => navigation.goBack(), 2000);
+      const timer = setTimeout(() => navigation.goBack(), 2000);
+      return () => clearTimeout(timer);
     }
   }, [call?.status]);
 
