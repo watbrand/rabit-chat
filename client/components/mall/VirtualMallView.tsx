@@ -126,6 +126,7 @@ export function VirtualMallView({
   const [isEntering, setIsEntering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+  const isOfflineRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -176,10 +177,11 @@ export function VirtualMallView({
     const subscription = AppState.addEventListener("change", handleAppStateChange);
 
     const unsubscribeNetInfo = NetInfo.addEventListener((state) => {
-      const wasOffline = isOffline;
+      const wasOffline = isOfflineRef.current;
       const nowOffline = !state.isConnected;
       
       if (isMountedRef.current) {
+        isOfflineRef.current = nowOffline;
         setIsOffline(nowOffline);
         
         if (wasOffline && !nowOffline) {
