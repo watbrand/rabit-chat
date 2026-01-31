@@ -409,7 +409,8 @@ export function AnonymousGossipTab() {
               tintColor={Colors.light.primary}
             />
           }
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={true}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
         />
       )}
 

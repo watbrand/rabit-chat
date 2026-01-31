@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -115,6 +116,7 @@ function ConversationCard({
 export function GossipDMList() {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const [deviceId, setDeviceId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -194,7 +196,7 @@ export function GossipDMList() {
         data={conversations}
         keyExtractor={(item) => item.id}
         renderItem={renderConversation}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + Spacing["3xl"] }]}
         ListEmptyComponent={renderEmptyState}
         refreshControl={
           <RefreshControl
@@ -203,7 +205,8 @@ export function GossipDMList() {
             tintColor={theme.primary}
           />
         }
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
     </View>
   );

@@ -6,11 +6,11 @@ import {
   Modal,
   TextInput,
   Pressable,
-  KeyboardAvoidingView,
   Platform,
   Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -294,7 +294,8 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.overlay}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior="padding"
+        keyboardVerticalOffset={0}
       >
         <Pressable style={styles.dismiss} onPress={onClose} />
         <View
@@ -354,6 +355,8 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
               )}
               contentContainerStyle={styles.repliesList}
               ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
+              showsVerticalScrollIndicator={true}
+              scrollIndicatorInsets={{ bottom: insets.bottom }}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
                   <Feather name="message-circle" size={32} color={theme.textTertiary} />

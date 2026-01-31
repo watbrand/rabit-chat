@@ -2,6 +2,7 @@ import React from "react";
 import { View, FlatList, StyleSheet, Pressable } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -122,6 +123,7 @@ function StreakCard({ entry }: { entry: StreakEntry }) {
 
 export function GossipLeaderboard({ onClose }: GossipLeaderboardProps) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const { data: leaderboard = [], isLoading: loadingLeaderboard } = useQuery<LeaderboardEntry[]>({
     queryKey: ["/api/gossip/leaderboard"],
@@ -178,8 +180,10 @@ export function GossipLeaderboard({ onClose }: GossipLeaderboardProps) {
           data={leaderboard}
           keyExtractor={(item) => `${item.countryCode}-${item.zaLocationId || "all"}`}
           renderItem={({ item, index }) => <LeaderboardCard entry={item} index={index} />}
-          contentContainerStyle={styles.leaderboardList}
+          contentContainerStyle={[styles.leaderboardList, { paddingBottom: insets.bottom + Spacing.lg }]}
           ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
+          showsVerticalScrollIndicator={true}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Feather name="bar-chart-2" size={48} color={theme.textTertiary} />

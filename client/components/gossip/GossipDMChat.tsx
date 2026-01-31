@@ -236,13 +236,14 @@ export function GossipDMChat({ conversationId, theirAlias }: GossipDMChatProps) 
           styles.listContent,
           messages.length === 0 && styles.listEmpty,
         ]}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
+        scrollIndicatorInsets={{ top: insets.bottom }}
       />
 
       <View
         style={[
           styles.inputContainer,
-          { borderTopColor: theme.glassBorder, paddingBottom: insets.bottom || Spacing.md },
+          { borderTopColor: theme.glassBorder, paddingBottom: insets.bottom + Spacing.sm },
         ]}
       >
         <View
