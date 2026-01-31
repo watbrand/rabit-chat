@@ -222,7 +222,9 @@ export default function AdminReportsScreen() {
     options.push({
       text: "Cancel",
       style: "cancel",
-      onPress: () => {},
+      onPress: () => {
+        Haptics.selectionAsync();
+      },
     });
 
     Alert.alert("Update Status", "Choose a new status for this report", options);
@@ -306,7 +308,9 @@ export default function AdminReportsScreen() {
     options.push({
       text: "Cancel",
       style: "cancel",
-      onPress: () => {},
+      onPress: () => {
+        Haptics.selectionAsync();
+      },
     });
 
     if (options.length === 1) {

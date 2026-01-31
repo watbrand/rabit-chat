@@ -1595,6 +1595,7 @@ function DiscoverPeopleTab() {
           paddingTop: Spacing.md,
           paddingBottom: tabBarHeight + Spacing.lg,
         }}
+        scrollIndicatorInsets={{ bottom: tabBarHeight }}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
@@ -2102,6 +2103,7 @@ function GossipTab() {
           styles.listContent,
           { paddingBottom: tabBarHeight + Spacing.xl + 80 },
         ]}
+        scrollIndicatorInsets={{ bottom: tabBarHeight }}
         ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
         refreshControl={
           <RefreshControl

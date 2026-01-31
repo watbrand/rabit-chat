@@ -368,7 +368,7 @@ export default function PayFastCheckoutScreen() {
       />
 
       {checkingStatus ? (
-        <View style={styles.statusOverlay}>
+        <View style={[styles.statusOverlay, { bottom: insets.bottom + Spacing.xl }]}>
           <LoadingIndicator size="small" />
           <ThemedText style={[styles.statusText, { color: theme.textSecondary }]}>
             Verifying payment...
@@ -433,7 +433,6 @@ const styles = StyleSheet.create({
   },
   statusOverlay: {
     position: "absolute",
-    bottom: 100,
     left: 0,
     right: 0,
     flexDirection: "row",

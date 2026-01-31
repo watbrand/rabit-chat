@@ -162,7 +162,9 @@ export default function AdminReportsScreen() {
     options.push({
       text: "Cancel",
       style: "cancel",
-      onPress: () => {},
+      onPress: () => {
+        Haptics.selectionAsync();
+      },
     });
 
     Alert.alert(
