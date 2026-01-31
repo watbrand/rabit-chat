@@ -569,6 +569,7 @@ export default function CreatorSignupScreen() {
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         bottomOffset={80}
       >
         <Animated.View

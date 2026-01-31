@@ -423,6 +423,7 @@ export default function CompleteProfileScreen() {
           { paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <Animated.View
           entering={FadeInUp.delay(100).springify()}

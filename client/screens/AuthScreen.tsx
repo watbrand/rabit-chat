@@ -249,6 +249,7 @@ export default function AuthScreen() {
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <View style={styles.logoContainer}>
           <Image

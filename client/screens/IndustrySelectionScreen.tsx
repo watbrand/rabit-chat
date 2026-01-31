@@ -242,6 +242,7 @@ export default function IndustrySelectionScreen() {
           { paddingBottom: insets.bottom + 120 },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <View style={styles.grid}>
           {INDUSTRIES.map((industry, index) => (

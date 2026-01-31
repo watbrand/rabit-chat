@@ -265,6 +265,7 @@ export default function EditProfileScreen() {
         paddingBottom: insets.bottom + Spacing.xl + 80,
         paddingHorizontal: Spacing.lg,
       }}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <View style={styles.avatarSection}>
         <TouchableOpacity 

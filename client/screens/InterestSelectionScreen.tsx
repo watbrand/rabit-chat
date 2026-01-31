@@ -257,6 +257,7 @@ export default function InterestSelectionScreen() {
           { paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         {categories.map((category, index) => (
           <InterestCard

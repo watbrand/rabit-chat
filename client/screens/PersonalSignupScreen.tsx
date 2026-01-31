@@ -454,6 +454,7 @@ export default function PersonalSignupScreen() {
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         bottomOffset={80}
       >
         <Animated.View
