@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   FlatList,
@@ -31,8 +31,6 @@ import { Spacing, BorderRadius, Shadows } from "@/constants/theme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { MallGridSkeleton } from "@/components/ShimmerPlaceholder";
 import { GradientBackground } from "@/components/GradientBackground";
-import VirtualMallView from "@/components/mall/VirtualMallView";
-import { ShopInteriorView } from "@/components/mall/ShopInteriorView";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 // 3-column compact grid for Instagram/TikTok shop style
@@ -98,16 +96,6 @@ export default function MallScreen() {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MallItem | null>(null);
   const [purchaseQuantity, setPurchaseQuantity] = useState(1);
-  const [viewMode, setViewMode] = useState<"list" | "virtual" | "shop-interior">("list");
-  const [virtualShopCategoryId, setVirtualShopCategoryId] = useState<string | null>(null);
-
-  const toggleViewMode = useCallback(() => {
-    if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-    setViewMode((prev) => (prev === "list" ? "virtual" : "list"));
-    setVirtualShopCategoryId(null);
-  }, []);
 
   const { data: top50, isLoading: top50Loading } = useQuery<WealthyUser[]>({
     queryKey: ["/api/mall/top50"],
@@ -223,7 +211,7 @@ export default function MallScreen() {
     if (selectedItem) {
       const totalCost = getItemCoinPrice(selectedItem) * purchaseQuantity;
       if (wallet && wallet.coinBalance < totalCost) {
-        setPurchaseError("Insufficient Rabit Coins. Please top up your wallet.");
+        setPurchaseError("Insufficient coins. Please top up your wallet.");
         return;
       }
       if (wallet?.isFrozen) {
@@ -581,7 +569,7 @@ export default function MallScreen() {
                 <ThemedText type="subhead">Total:</ThemedText>
                 <View style={[styles.totalBadge, { backgroundColor: theme.goldLight }]}>
                   <ThemedText style={[styles.totalValue, { color: theme.gold }]} weight="bold">
-                    {(getItemCoinPrice(selectedItem) * purchaseQuantity).toLocaleString()} Rabit Coins
+                    {(getItemCoinPrice(selectedItem) * purchaseQuantity).toLocaleString()} coins
                   </ThemedText>
                 </View>
               </View>
@@ -593,7 +581,7 @@ export default function MallScreen() {
                     Your Balance:
                   </ThemedText>
                   <ThemedText style={[styles.walletBalanceValue, { color: wallet && wallet.coinBalance >= getItemCoinPrice(selectedItem) * purchaseQuantity ? theme.success : theme.error }]} weight="bold">
-                    {wallet?.coinBalance?.toLocaleString() || 0} Rabit Coins
+                    {wallet?.coinBalance?.toLocaleString() || 0} coins
                   </ThemedText>
                 </View>
                 <View style={styles.netWorthGainRow}>
@@ -690,7 +678,7 @@ export default function MallScreen() {
 
               <View style={[styles.detailValueContainer, { backgroundColor: theme.goldLight }]}>
                 <ThemedText style={[styles.detailValue, { color: theme.gold }]} weight="bold">
-                  {getItemCoinPrice(selectedItem).toLocaleString()} Rabit Coins
+                  {getItemCoinPrice(selectedItem).toLocaleString()} coins
                 </ThemedText>
               </View>
 
@@ -727,74 +715,6 @@ export default function MallScreen() {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.backgroundRoot, paddingTop: headerHeight }]}>
         <MallGridSkeleton />
-      </View>
-    );
-  }
-
-  const handleShopEnter = useCallback((categoryId: string) => {
-    setSelectedCategory(categoryId);
-    setVirtualShopCategoryId(categoryId);
-    setViewMode("shop-interior");
-    if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-  }, []);
-
-  const handleShopInteriorBack = useCallback(() => {
-    setViewMode("virtual");
-    setVirtualShopCategoryId(null);
-  }, []);
-
-  const handleShopInteriorPurchase = useCallback((itemId: string, quantity: number) => {
-    const item = items?.find((i) => i.id === itemId);
-    if (item) {
-      setSelectedItem(item);
-      setPurchaseQuantity(quantity);
-      setPurchaseError(null);
-      setPurchaseModalVisible(true);
-    }
-  }, [items]);
-
-  if (viewMode === "shop-interior" && virtualShopCategoryId) {
-    const currentCategory = categories?.find((c) => c.id === virtualShopCategoryId);
-    const shopItems = items?.filter((item) => item.categoryId === virtualShopCategoryId) || [];
-    
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <ShopInteriorView
-          categoryId={virtualShopCategoryId}
-          categoryName={currentCategory?.name || "Shop"}
-          items={shopItems}
-          usersInShop={[]}
-          walletBalance={wallet?.coinBalance || 0}
-          onPurchase={handleShopInteriorPurchase}
-          onBack={handleShopInteriorBack}
-          onUserPress={handleUserPress}
-          isPurchasing={purchaseMutation.isPending}
-        />
-        {renderPurchaseModal()}
-      </View>
-    );
-  }
-
-  if (viewMode === "virtual") {
-    return (
-      <View style={styles.container}>
-        <VirtualMallView
-          categories={categories || []}
-          onShopEnter={handleShopEnter}
-          onUserPress={handleUserPress}
-        />
-        {renderPurchaseModal()}
-        {renderDetailModal()}
-        <Pressable
-          style={[styles.exitTourButton, { backgroundColor: theme.error }]}
-          onPress={toggleViewMode}
-          testID="exit-tour-button"
-        >
-          <Feather name="x" size={20} color="#fff" />
-          <ThemedText style={styles.exitTourText}>Exit Tour</ThemedText>
-        </Pressable>
       </View>
     );
   }
@@ -854,16 +774,6 @@ export default function MallScreen() {
         }
         ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
       />
-
-      <Pressable
-        style={[styles.virtualTourFab, { backgroundColor: theme.primary, bottom: tabBarHeight + Spacing.lg }]}
-        onPress={toggleViewMode}
-        testID="toggle-virtual-tour"
-      >
-        <Feather name="map" size={20} color="#FFFFFF" />
-        <ThemedText style={styles.virtualTourFabText} weight="semiBold">Virtual Tour</ThemedText>
-      </Pressable>
-
       {renderPurchaseModal()}
       {renderDetailModal()}
       
@@ -1527,37 +1437,5 @@ const styles = StyleSheet.create({
   },
   compactCategoryText: {
     fontSize: 11,
-  },
-  virtualTourFab: {
-    position: "absolute",
-    right: Spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    ...Shadows.md,
-  },
-  virtualTourFabText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-  },
-  exitTourButton: {
-    position: "absolute",
-    top: 60,
-    right: Spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    ...Shadows.md,
-  },
-  exitTourText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "600",
   },
 });

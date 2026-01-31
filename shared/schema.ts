@@ -6946,43 +6946,6 @@ export type DuetStitchType = "DUET" | "STITCH";
 export type GroupConversationMemberRole = "ADMIN" | "MEMBER";
 export type PlatformImportStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
 
-// ===== VIRTUAL MALL PRESENCE SYSTEM =====
-// Track users' presence and position in the virtual mall
-
-export const mallPresence = pgTable("mall_presence", {
-  id: varchar("id")
-    .primaryKey()
-    .default(sql`gen_random_uuid()`),
-  userId: varchar("user_id")
-    .notNull()
-    .unique()
-    .references(() => users.id, { onDelete: "cascade" }),
-  currentShopId: varchar("current_shop_id")
-    .references(() => mallCategories.id, { onDelete: "set null" }),
-  positionX: integer("position_x").notNull().default(50), // 0-100 percentage position
-  positionY: integer("position_y").notNull().default(50), // 0-100 percentage position
-  isActive: boolean("is_active").default(true).notNull(),
-  lastActiveAt: timestamp("last_active_at").defaultNow().notNull(),
-  enteredAt: timestamp("entered_at").defaultNow().notNull(),
-}, (table) => [
-  index("mall_presence_shop_id_idx").on(table.currentShopId),
-  index("mall_presence_active_idx").on(table.isActive),
-]);
-
-export const mallPresenceRelations = relations(mallPresence, ({ one }) => ({
-  user: one(users, {
-    fields: [mallPresence.userId],
-    references: [users.id],
-  }),
-  currentShop: one(mallCategories, {
-    fields: [mallPresence.currentShopId],
-    references: [mallCategories.id],
-  }),
-}));
-
-export type MallPresence = typeof mallPresence.$inferSelect;
-export type InsertMallPresence = typeof mallPresence.$inferInsert;
-
 // ===== ADVERTISING SYSTEM =====
 // Re-export all ads schema tables and types
 export * from "./ads-schema";
