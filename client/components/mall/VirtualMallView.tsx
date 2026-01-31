@@ -6,10 +6,7 @@ import {
   Pressable,
   ScrollView,
   Platform,
-  AppState,
-  AppStateStatus,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -17,7 +14,6 @@ import Animated, {
   withTiming,
   Easing,
   runOnJS,
-  cancelAnimation,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { LinearGradient } from "expo-linear-gradient";
@@ -118,18 +114,9 @@ export function VirtualMallView({
 }: VirtualMallViewProps) {
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
-  const insets = useSafeAreaInsets();
   const [mallUsers, setMallUsers] = useState<MallUser[]>([]);
   const [myPosition, setMyPosition] = useState({ x: 50, y: 85 });
-  const [wsConnected, setWsConnected] = useState(false);
-  const [isEntering, setIsEntering] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 5;
-  const isMountedRef = useRef(true);
   
   const shopPositions = React.useMemo(
     () => generateShopPositions(categories),
@@ -140,200 +127,88 @@ export function VirtualMallView({
   const positionY = useSharedValue(myPosition.y);
   const isWalking = useSharedValue(false);
 
-  const cleanupWebSocket = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-    if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current);
-      pingIntervalRef.current = null;
-    }
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    setWsConnected(false);
-  }, []);
-
   useEffect(() => {
-    isMountedRef.current = true;
     if (!user) return;
 
     enterMall();
     connectWebSocket();
 
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (nextAppState === "active" && user) {
-        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-          connectWebSocket();
-        }
-      }
-    };
-
-    const subscription = AppState.addEventListener("change", handleAppStateChange);
-
     return () => {
-      isMountedRef.current = false;
       leaveMall();
-      cleanupWebSocket();
-      cancelAnimation(positionX);
-      cancelAnimation(positionY);
-      subscription.remove();
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
     };
   }, [user?.id]);
 
   const enterMall = async () => {
-    if (!isMountedRef.current) return;
-    setIsEntering(true);
-    setError(null);
     try {
       await apiRequest("POST", "/api/mall/presence/enter", {
         positionX: myPosition.x,
         positionY: myPosition.y,
       });
-    } catch (err) {
-      console.error("Failed to enter mall:", err);
-      if (isMountedRef.current) {
-        setError("Failed to enter the mall. Please try again.");
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setIsEntering(false);
-      }
+    } catch (error) {
+      console.error("Failed to enter mall:", error);
     }
   };
 
   const leaveMall = async () => {
     try {
       await apiRequest("POST", "/api/mall/presence/leave", {});
-    } catch (err) {
-      console.error("Failed to leave mall:", err);
+    } catch (error) {
+      console.error("Failed to leave mall:", error);
     }
   };
 
-  const scheduleReconnect = useCallback(() => {
-    if (!isMountedRef.current) return;
-    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-      console.log("[VirtualMall] Max reconnect attempts reached");
-      setError("Connection lost. Please exit and re-enter the mall.");
-      return;
-    }
-
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
-    console.log(`[VirtualMall] Scheduling reconnect in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1})`);
-    
-    reconnectTimeoutRef.current = setTimeout(() => {
-      if (isMountedRef.current) {
-        reconnectAttemptsRef.current += 1;
-        connectWebSocket();
-      }
-    }, delay);
-  }, []);
-
-  const connectWebSocket = useCallback(() => {
-    if (!isMountedRef.current || !user) return;
-    
-    cleanupWebSocket();
-    
+  const connectWebSocket = () => {
     try {
       const baseUrl = getApiUrl();
       const wsUrl = baseUrl.replace("https://", "wss://").replace("http://", "ws://");
+      // Ensure proper URL construction with /ws path
       const separator = wsUrl.endsWith("/") ? "" : "/";
-      const fullWsUrl = `${wsUrl}${separator}ws?channel=mall&userId=${user.id}`;
+      const fullWsUrl = `${wsUrl}${separator}ws?channel=mall${user?.id ? `&userId=${user.id}` : ""}`;
       const ws = new WebSocket(fullWsUrl);
       
       ws.onopen = () => {
-        if (!isMountedRef.current) {
-          ws.close();
-          return;
-        }
         console.log("[VirtualMall] WebSocket connected");
-        setWsConnected(true);
-        setError(null);
-        reconnectAttemptsRef.current = 0;
-
-        pingIntervalRef.current = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "ping" }));
-          }
-        }, 30000);
       };
 
       ws.onmessage = (event) => {
-        if (!isMountedRef.current) return;
         try {
           const data = JSON.parse(event.data);
-          switch (data.type) {
-            case "mall_presence_update":
-              setMallUsers(data.users || []);
-              break;
-            case "auth_success":
-              console.log("[VirtualMall] Auth success");
-              break;
-            case "auth_error":
-              console.error("[VirtualMall] Auth error:", data.message);
-              setError("Authentication failed. Please re-enter the mall.");
-              break;
-            case "pong":
-              break;
-            default:
-              break;
+          if (data.type === "mall_presence_update") {
+            setMallUsers(data.users || []);
           }
         } catch (e) {
           console.error("[VirtualMall] Failed to parse message:", e);
         }
       };
 
-      ws.onerror = (event) => {
-        console.error("[VirtualMall] WebSocket error:", event);
+      ws.onerror = (error) => {
+        console.error("[VirtualMall] WebSocket error:", error);
       };
 
-      ws.onclose = (event) => {
-        if (!isMountedRef.current) return;
-        console.log("[VirtualMall] WebSocket closed:", event.code, event.reason);
-        setWsConnected(false);
-        
-        if (pingIntervalRef.current) {
-          clearInterval(pingIntervalRef.current);
-          pingIntervalRef.current = null;
-        }
-
-        if (event.code !== 1000 && event.code !== 1001) {
-          scheduleReconnect();
-        }
+      ws.onclose = () => {
+        console.log("[VirtualMall] WebSocket closed");
       };
 
       wsRef.current = ws;
-    } catch (err) {
-      console.error("[VirtualMall] Failed to connect WebSocket:", err);
-      scheduleReconnect();
+    } catch (error) {
+      console.error("[VirtualMall] Failed to connect WebSocket:", error);
     }
-  }, [user, cleanupWebSocket, scheduleReconnect]);
+  };
 
-  const lastPositionUpdateRef = useRef<number>(0);
-  const positionUpdateDebounceMs = 500;
-  
-  const updatePosition = useCallback(async (x: number, y: number, shopId?: string) => {
-    const now = Date.now();
-    if (now - lastPositionUpdateRef.current < positionUpdateDebounceMs) {
-      return;
-    }
-    lastPositionUpdateRef.current = now;
-    
-    const clampedX = Math.max(0, Math.min(100, x));
-    const clampedY = Math.max(0, Math.min(100, y));
-    
+  const updatePosition = async (x: number, y: number, shopId?: string) => {
     try {
       await apiRequest("POST", "/api/mall/presence/move", {
-        positionX: clampedX,
-        positionY: clampedY,
+        positionX: x,
+        positionY: y,
         currentShopId: shopId || null,
       });
-    } catch (err) {
-      console.error("Failed to update position:", err);
+    } catch (error) {
+      console.error("Failed to update position:", error);
     }
-  }, []);
+  };
 
   const handleMallTap = useCallback((x: number, y: number) => {
     const mallX = (x / SCREEN_WIDTH) * 100;
@@ -417,30 +292,6 @@ export function VirtualMallView({
             end={{ x: 1, y: 1 }}
           />
 
-          {error ? (
-            <View style={[styles.errorBanner, { backgroundColor: theme.error }]}>
-              <Feather name="alert-circle" size={16} color="#fff" />
-              <ThemedText style={styles.errorText}>{error}</ThemedText>
-              <Pressable 
-                onPress={() => setError(null)}
-                accessibilityLabel="Dismiss error"
-                accessibilityRole="button"
-              >
-                <Feather name="x" size={16} color="#fff" />
-              </Pressable>
-            </View>
-          ) : null}
-
-          {isEntering ? (
-            <View style={styles.loadingOverlay}>
-              <View style={[styles.loadingBox, { backgroundColor: theme.glassBackground }]}>
-                <ThemedText style={{ color: theme.textSecondary }}>
-                  Entering mall...
-                </ThemedText>
-              </View>
-            </View>
-          ) : null}
-
           <View style={styles.mallFloor}>
             <View
               style={[
@@ -450,7 +301,7 @@ export function VirtualMallView({
             />
           </View>
 
-          <View style={[styles.mallTitle, { paddingTop: insets.top + Spacing.md }]}>
+          <View style={styles.mallTitle}>
             <Feather
               name="award"
               size={24}
@@ -459,11 +310,6 @@ export function VirtualMallView({
             <ThemedText style={styles.mallTitleText} weight="bold">
               RabitChat Luxury Mall
             </ThemedText>
-            {wsConnected ? (
-              <View style={[styles.connectionBadge, { backgroundColor: theme.success }]}>
-                <ThemedText style={styles.connectionText}>Live</ThemedText>
-              </View>
-            ) : null}
           </View>
 
           {categories.map((category) => {
@@ -483,9 +329,6 @@ export function VirtualMallView({
                 ]}
                 onPress={() => onShopEnter(category.id)}
                 testID={`shop-${category.id}`}
-                accessibilityLabel={`Enter ${category.name} shop`}
-                accessibilityRole="button"
-                accessibilityHint="Double tap to browse items in this shop"
               >
                 <LinearGradient
                   colors={isDark
@@ -559,7 +402,7 @@ export function VirtualMallView({
             </Animated.View>
           ) : null}
 
-          <View style={[styles.instructions, { paddingBottom: insets.bottom + Spacing.md }]}>
+          <View style={styles.instructions}>
             <View style={[styles.instructionBadge, { backgroundColor: theme.glassBackground }]}>
               <Feather name="navigation" size={14} color={theme.textSecondary} />
               <ThemedText style={[styles.instructionText, { color: theme.textSecondary }]}>
@@ -600,6 +443,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    paddingTop: Spacing.xl,
     paddingBottom: Spacing.md,
     gap: Spacing.sm,
   },
@@ -679,47 +523,6 @@ const styles = StyleSheet.create({
   },
   instructionText: {
     fontSize: 12,
-  },
-  errorBanner: {
-    position: "absolute",
-    top: Spacing.xl,
-    left: Spacing.md,
-    right: Spacing.md,
-    zIndex: 200,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-  },
-  errorText: {
-    flex: 1,
-    color: "#fff",
-    fontSize: 13,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 150,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
-  },
-  loadingBox: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.md,
-  },
-  connectionBadge: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
-    marginLeft: Spacing.xs,
-  },
-  connectionText: {
-    fontSize: 10,
-    color: "#fff",
-    fontWeight: "600",
   },
 });
 
