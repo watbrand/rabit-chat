@@ -299,7 +299,7 @@ export function EliteCircleScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.lg,
+            paddingTop: headerHeight + Spacing.md,
             paddingBottom: insets.bottom + 120,
           },
         ]}

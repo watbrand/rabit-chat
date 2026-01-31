@@ -253,7 +253,7 @@ export default function InterestSelectionScreen() {
         style={styles.scrollView}
         contentContainerStyle={[
           styles.grid,
-          { paddingBottom: insets.bottom + 100 },
+          { paddingBottom: insets.bottom + Spacing.lg + 80 },
         ]}
         showsVerticalScrollIndicator={false}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
@@ -338,8 +338,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingBottom: 16,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
@@ -373,8 +373,8 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    paddingHorizontal: 16,
-    gap: 12,
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.md,
   },
   card: {
     width: CARD_WIDTH,
@@ -438,8 +438,8 @@ const styles = StyleSheet.create({
     right: 0,
   },
   footerBlur: {
-    paddingTop: 16,
-    paddingHorizontal: 24,
+    paddingTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
   },
   footerContent: {
     alignItems: "center",

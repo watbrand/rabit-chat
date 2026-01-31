@@ -273,8 +273,8 @@ export default function CreatorDashboardScreen({ navigation }: any) {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: headerHeight + Spacing.lg,
-            paddingBottom: insets.bottom + Spacing.xl,
+            paddingTop: headerHeight + Spacing.md,
+            paddingBottom: insets.bottom + Spacing.lg,
           },
         ]}
         refreshControl={

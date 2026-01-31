@@ -468,8 +468,6 @@ export default function MyBoostsScreen() {
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   
-  // Calculate safe top padding - use headerHeight if available, otherwise fallback to insets + estimated header
-  const topPadding = Platform.OS === "android" ? Spacing.xl : Math.max(headerHeight, insets.top + 44) + Spacing.lg;
 
   const { data: campaigns, isLoading, refetch, isRefetching } = useQuery<Campaign[]>({
     queryKey: ["/api/ads/campaigns"],
@@ -526,7 +524,7 @@ export default function MyBoostsScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topPadding, paddingBottom: insets.bottom + Spacing.xl }
+          { paddingTop: headerHeight + Spacing.md, paddingBottom: insets.bottom + Spacing.lg }
         ]}
         showsVerticalScrollIndicator={false}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
@@ -535,7 +533,6 @@ export default function MyBoostsScreen() {
             refreshing={isRefetching}
             onRefresh={refetch}
             tintColor={theme.primary}
-            progressViewOffset={topPadding}
           />
         }
       >

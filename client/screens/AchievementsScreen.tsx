@@ -249,8 +249,8 @@ export default function AchievementsScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.lg,
-            paddingBottom: insets.bottom + Spacing.xl,
+            paddingTop: headerHeight + Spacing.md,
+            paddingBottom: insets.bottom + Spacing.lg,
           },
         ]}
         scrollIndicatorInsets={{ bottom: insets.bottom }}

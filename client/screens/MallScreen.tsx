@@ -721,9 +721,9 @@ export default function MallScreen() {
       <FlatList
         style={styles.list}
         contentContainerStyle={{
-          paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.lg,
-          paddingBottom: tabBarHeight + Spacing.xl,
-          paddingHorizontal: Spacing.md,
+          paddingTop: headerHeight + Spacing.md,
+          paddingBottom: tabBarHeight + Spacing.lg,
+          paddingHorizontal: Spacing.lg,
           flexGrow: 1,
         }}
         scrollIndicatorInsets={{ bottom: insets.bottom }}

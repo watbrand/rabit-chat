@@ -631,7 +631,8 @@ export default function CreatePostScreen() {
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
       contentContainerStyle={{
         paddingTop: headerHeight + Spacing.md,
-        paddingBottom: insets.bottom + Spacing["4xl"],
+        paddingBottom: insets.bottom + Spacing.lg,
+        paddingHorizontal: Spacing.lg,
         flexGrow: 1,
       }}
       scrollIndicatorInsets={{ bottom: insets.bottom }}

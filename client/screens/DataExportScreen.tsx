@@ -140,8 +140,8 @@ export function DataExportScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: headerHeight + Spacing.lg,
-            paddingBottom: insets.bottom + Spacing["2xl"],
+            paddingTop: headerHeight + Spacing.md,
+            paddingBottom: insets.bottom + Spacing.lg,
           },
         ]}
         refreshControl={

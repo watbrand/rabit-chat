@@ -312,7 +312,7 @@ export default function PrivacySetupScreen() {
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + 120 },
+          { paddingBottom: insets.bottom + Spacing.lg + 100 },
         ]}
         showsVerticalScrollIndicator={false}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
@@ -415,8 +415,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingBottom: 8,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
   },
   headerContent: {
     alignItems: "center",
@@ -438,8 +438,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
   },
   section: {
     borderRadius: BorderRadius.xl,
@@ -519,8 +519,8 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 24,
-    paddingTop: 16,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
     borderTopWidth: 1,
   },
   continueButton: {

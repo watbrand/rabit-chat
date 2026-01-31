@@ -274,7 +274,7 @@ export default function MessagesScreen() {
     if (!top50 || top50.length === 0) return null;
     
     return (
-      <View style={styles.netWorthCarouselContainer}>
+      <View style={[styles.netWorthCarouselContainer, { paddingTop: headerHeight + Spacing.md }]}>
         <View style={styles.netWorthHeader}>
           <LinearGradient
             colors={Gradients.primary}
@@ -333,7 +333,7 @@ export default function MessagesScreen() {
     <GradientBackground variant="subtle">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
         {renderNetWorthCarousel()}
-        <View style={[styles.tabBar, { paddingTop: top50 && top50.length > 0 ? Spacing.sm : (Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.sm) }]}>
+        <View style={[styles.tabBar, { paddingTop: top50 && top50.length > 0 ? Spacing.sm : headerHeight + Spacing.sm }]}>
           {(["PRIMARY", "GENERAL", "REQUESTS"] as TabType[]).map((tab) => {
           const labels: Record<TabType, string> = {
             PRIMARY: "Primary",
@@ -383,8 +383,8 @@ export default function MessagesScreen() {
       <FlatList
         style={{ flex: 1 }}
         contentContainerStyle={{
-          paddingTop: Spacing.lg,
-          paddingBottom: tabBarHeight + Spacing.xl,
+          paddingTop: Spacing.md,
+          paddingBottom: tabBarHeight + Spacing.lg,
           paddingHorizontal: Spacing.lg,
           flexGrow: 1,
         }}
@@ -532,7 +532,6 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   netWorthCarouselContainer: {
-    paddingTop: Spacing.lg,
     paddingBottom: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(139, 92, 246, 0.1)",

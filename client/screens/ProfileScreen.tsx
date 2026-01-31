@@ -915,8 +915,8 @@ export default function ProfileScreen() {
       <FlatList
         style={{ flex: 1 }}
         contentContainerStyle={{
-          paddingTop: Platform.OS === "android" ? Spacing.md : headerHeight + Spacing.md,
-          paddingBottom: tabBarHeight + Spacing.xl,
+          paddingTop: headerHeight + Spacing.md,
+          paddingBottom: tabBarHeight + Spacing.lg,
           paddingHorizontal: Spacing.lg,
         }}
         scrollIndicatorInsets={{ bottom: insets.bottom }}

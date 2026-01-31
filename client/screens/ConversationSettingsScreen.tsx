@@ -390,8 +390,8 @@ export default function ConversationSettingsScreen() {
       <KeyboardAwareScrollViewCompat
         style={styles.scrollView}
         contentContainerStyle={{
-          paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.xl,
-          paddingBottom: insets.bottom + Spacing.xl,
+          paddingTop: headerHeight + Spacing.md,
+          paddingBottom: insets.bottom + Spacing.lg,
           paddingHorizontal: Spacing.lg,
         }}
         showsVerticalScrollIndicator={false}
