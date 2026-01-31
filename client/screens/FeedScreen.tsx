@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { View, FlatList, StyleSheet, RefreshControl, Image, Platform, Pressable, ScrollView, TextInput, Text, Dimensions } from "react-native";
+import { View, FlatList, StyleSheet, RefreshControl, Image, Platform, Pressable, ScrollView, TextInput, Text, Dimensions, Alert } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -422,6 +422,7 @@ export default function FeedScreen() {
       if (context?.previousData) {
         queryClient.setQueryData(["/api/posts/feed"], context.previousData);
       }
+      Alert.alert("Error", "Failed to update like. Please try again.");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });

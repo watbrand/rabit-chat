@@ -94,15 +94,15 @@ export default function PostDetailScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       return { previousComments };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/posts/${postId}/comments`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/posts/${postId}`] });
-    },
     onError: (error: any, _, context) => {
       if (context?.previousComments) {
         queryClient.setQueryData([`/api/posts/${postId}/comments`], context.previousComments);
       }
       Alert.alert("Error", error.message || "Failed to post comment");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/posts/${postId}/comments`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/posts/${postId}`] });
     },
   });
 
@@ -134,6 +134,7 @@ export default function PostDetailScreen() {
       if (context?.previousPost) {
         queryClient.setQueryData([`/api/posts/${variables.postId}`], context.previousPost);
       }
+      Alert.alert("Error", "Failed to update like. Please try again.");
     },
     onSettled: (_, __, variables) => {
       queryClient.invalidateQueries({ queryKey: [`/api/posts/${variables.postId}`] });

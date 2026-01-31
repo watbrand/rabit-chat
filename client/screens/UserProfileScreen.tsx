@@ -270,6 +270,7 @@ export default function UserProfileScreen() {
       if (context?.previousData) {
         queryClient.setQueryData([`/api/users/${userId}/posts`], context.previousData);
       }
+      Alert.alert("Error", "Failed to update like. Please try again.");
     },
     onSettled: (_, __, variables) => {
       queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/posts`] });

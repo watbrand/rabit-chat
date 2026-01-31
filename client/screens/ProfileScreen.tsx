@@ -139,7 +139,32 @@ export default function ProfileScreen() {
       }
       return { postId };
     },
-    onSuccess: (_, variables) => {
+    onMutate: async ({ postId, hasLiked }) => {
+      await queryClient.cancelQueries({ queryKey: [`/api/users/${user?.id}/posts`] });
+      const previousData = queryClient.getQueryData([`/api/users/${user?.id}/posts`]);
+      
+      queryClient.setQueryData([`/api/users/${user?.id}/posts`], (old: any) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((post: any) =>
+          post.id === postId
+            ? {
+                ...post,
+                hasLiked: !hasLiked,
+                likesCount: hasLiked ? Math.max(0, post.likesCount - 1) : post.likesCount + 1,
+              }
+            : post
+        );
+      });
+      
+      return { previousData };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData([`/api/users/${user?.id}/posts`], context.previousData);
+      }
+      Alert.alert("Error", "Failed to update like. Please try again.");
+    },
+    onSettled: (_, __, variables) => {
       queryClient.invalidateQueries({ queryKey: [`/api/users/${user?.id}/posts`] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
       queryClient.invalidateQueries({ queryKey: [`/api/posts/${variables.postId}`] });
