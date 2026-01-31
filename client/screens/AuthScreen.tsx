@@ -73,7 +73,6 @@ export default function AuthScreen() {
         setUsernameSuggestions(result.suggestions || []);
       }
     } catch (error) {
-      console.error("Username check error:", error);
     } finally {
       setIsCheckingUsername(false);
     }

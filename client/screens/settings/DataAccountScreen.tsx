@@ -82,7 +82,6 @@ export default function DataAccountScreen() {
       }
     },
     onError: (error: any) => {
-      console.error("Failed to create data export:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         "Export Failed",
@@ -103,7 +102,6 @@ export default function DataAccountScreen() {
       ]);
     },
     onError: (error: any) => {
-      console.error("Failed to deactivate account:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to deactivate account. Please try again.");
     },
@@ -120,7 +118,6 @@ export default function DataAccountScreen() {
       ]);
     },
     onError: (error: any) => {
-      console.error("Failed to delete account:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to delete account. Please try again.");
     },
@@ -168,7 +165,6 @@ export default function DataAccountScreen() {
         Linking.openURL(exportRequest.downloadUrl);
       }
     } catch (error: any) {
-      console.error("Download error:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         "Download Failed",

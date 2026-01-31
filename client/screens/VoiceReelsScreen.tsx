@@ -111,7 +111,6 @@ function VoiceReelItem({
       setIsPlaying(false);
       setIsPaused(true);
     } catch (err) {
-      console.error("Error stopping voice reel:", err);
     }
   }, []);
 
@@ -198,7 +197,6 @@ function VoiceReelItem({
           setIsPlaying(true);
         }
       } catch (error) {
-        console.error("Audio playback error:", error);
       }
     };
 
@@ -481,7 +479,6 @@ export default function VoiceReelsScreen() {
       await apiRequest("POST", `/api/posts/${postId}/share`, { platform: "other" });
       queryClient.invalidateQueries({ queryKey: ["/api/discover/voices"] });
     } catch (error) {
-      console.error("Share error:", error);
     }
   };
 

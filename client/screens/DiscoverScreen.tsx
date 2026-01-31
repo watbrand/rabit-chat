@@ -880,7 +880,6 @@ function ReelsTab() {
         url: `https://rabitchat.app/posts/${postId}`,
       });
     } catch (error) {
-      console.error("Share failed:", error);
     }
   };
 
@@ -1659,7 +1658,6 @@ function GossipTab() {
       }
       setIsPlayingPreview(false);
     } catch (err) {
-      console.error("Error stopping gossip preview:", err);
     }
   }, []);
 
@@ -1674,11 +1672,11 @@ function GossipTab() {
   useEffect(() => {
     return () => {
       if (recordingRef.current) {
-        recordingRef.current.stopAndUnloadAsync().catch(console.error);
+        recordingRef.current.stopAndUnloadAsync().catch(() => {});
         recordingRef.current = null;
       }
       if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(console.error);
+        soundRef.current.unloadAsync().catch(() => {});
         soundRef.current = null;
       }
       if (recordingIntervalRef.current) {
@@ -1731,7 +1729,6 @@ function GossipTab() {
         clearInterval(recordingIntervalRef.current);
         recordingIntervalRef.current = null;
       }
-      console.error("Failed to start recording:", error);
       Alert.alert("Recording Error", "Could not start recording. Please try again.");
     }
   };
@@ -1779,7 +1776,6 @@ function GossipTab() {
       setIsRecording(false);
       setIsUploadingAudio(false);
       recordingRef.current = null;
-      console.error("Failed to stop recording:", error);
       Alert.alert("Upload Error", "Could not upload recording. Please try again.");
     }
   };
@@ -1809,7 +1805,6 @@ function GossipTab() {
       setUploadProgress(0);
       setIsPlayingPreview(false);
     } catch (error) {
-      console.error("Error canceling recording:", error);
     }
   };
 
@@ -1848,7 +1843,6 @@ function GossipTab() {
         }
       });
     } catch (error) {
-      console.error("Error playing audio preview:", error);
       setIsPlayingPreview(false);
     }
   };
@@ -1864,7 +1858,7 @@ function GossipTab() {
     setUploadProgress(0);
     setIsPlayingPreview(false);
     if (soundRef.current) {
-      soundRef.current.unloadAsync().catch(console.error);
+      soundRef.current.unloadAsync().catch(() => {});
       soundRef.current = null;
     }
   };

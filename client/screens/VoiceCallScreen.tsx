@@ -139,7 +139,6 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
       setIsInitializing(false);
       return true;
     } catch (error) {
-      console.error("[VoiceCall] Audio setup error:", error);
       setInitError("Failed to initialize audio. Please try again.");
       setIsInitializing(false);
       return false;
@@ -148,7 +147,6 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
 
   const connectWebSocket = useCallback(() => {
     if (!user?.id) {
-      console.error("[VoiceCall] Cannot connect WebSocket - no user ID");
       return;
     }
     
@@ -230,7 +228,6 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
           setCallId(data.callId);
         }
       } catch (error) {
-        console.error("[VoiceCall] WebSocket message error:", error);
       }
     };
 
@@ -239,7 +236,6 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
     };
 
     ws.onerror = (error) => {
-      console.error("[VoiceCall] WebSocket error:", error);
     };
 
     return () => {
@@ -289,7 +285,6 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
       }, 300);
       
     } catch (error) {
-      console.error("[VoiceCall] Recording error:", error);
     }
   };
 
@@ -448,7 +443,6 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
         }).catch(() => {});
       }
     } catch (error) {
-      console.error("[VoiceCall] Audio playback error:", error);
       isPlayingRef.current = false;
       // Try next chunk after a small delay
       setTimeout(() => playNextAudio(), 50);
@@ -544,7 +538,6 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
           // See ws.onmessage handler for auth_success
         }
       } catch (error) {
-        console.error("[VoiceCall] Call initialization error:", error);
         if (isMounted) {
           setInitError("Failed to start call. Please try again.");
           setIsInitializing(false);

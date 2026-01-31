@@ -370,7 +370,6 @@ export default function ReelsScreen() {
       await apiRequest("POST", `/api/posts/${postId}/share`, { platform: "other" });
       queryClient.invalidateQueries({ queryKey: ["/api/posts/videos"] });
     } catch (error) {
-      console.error("Share error:", error);
     }
   };
 

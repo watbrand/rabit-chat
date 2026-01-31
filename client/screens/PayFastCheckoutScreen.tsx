@@ -152,7 +152,6 @@ export default function PayFastCheckoutScreen() {
         }
       }
     } catch (err) {
-      console.error("[PayFast] Failed to check status:", err);
     } finally {
       setCheckingStatus(false);
     }
@@ -235,7 +234,6 @@ export default function PayFastCheckoutScreen() {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
       } catch (error) {
-        console.error("[PayFast] Failed to complete purchase:", error);
         Alert.alert("Error", "Failed to process purchase. Please contact support.");
         setPaymentComplete(true);
       }
@@ -255,7 +253,6 @@ export default function PayFastCheckoutScreen() {
         navigation.dispatch(CommonActions.goBack());
       }
     } catch (error) {
-      console.error("[PayFast] Navigation error:", error);
       // Last resort: navigate to main tabs
       navigation.dispatch(
         CommonActions.reset({

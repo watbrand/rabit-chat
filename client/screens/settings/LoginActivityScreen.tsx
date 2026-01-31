@@ -62,7 +62,6 @@ export default function LoginActivityScreen() {
       Alert.alert("Success", "Session has been terminated");
     },
     onError: (error: any) => {
-      console.error("Failed to terminate session:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         "Error",
@@ -81,7 +80,6 @@ export default function LoginActivityScreen() {
       Alert.alert("Success", "All other sessions have been terminated");
     },
     onError: (error: any) => {
-      console.error("Failed to terminate all sessions:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         "Error",

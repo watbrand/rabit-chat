@@ -176,7 +176,6 @@ export default function NewTicketScreen() {
       setAttachedFiles((prev) => [...prev, ...newFiles]);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
-      console.error("Document picker error:", error);
     }
   }, []);
 

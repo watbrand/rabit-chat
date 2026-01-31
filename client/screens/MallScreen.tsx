@@ -10,6 +10,7 @@ import {
   Modal,
   Dimensions,
   Image,
+  Alert,
 } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -115,8 +116,6 @@ export default function MallScreen() {
         : new URL("/api/mall/items", getApiUrl());
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error("[Mall] Items fetch error:", res.status, errorText);
         throw new Error(`Failed to fetch items: ${res.status}`);
       }
       const data = await res.json();

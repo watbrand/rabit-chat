@@ -117,7 +117,6 @@ export function CheckInScreen() {
         }
       }
     } catch (error) {
-      console.error("Location error:", error);
       Alert.alert("Error", "Could not get your location. Please try again.");
     } finally {
       setIsGettingLocation(false);

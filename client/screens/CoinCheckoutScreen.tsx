@@ -189,7 +189,6 @@ export default function CoinCheckoutScreen() {
         }
       }
     } catch (err) {
-      console.error("[CoinCheckout] Failed to check/complete status:", err);
       // Even on error, assume success since server-side completion already happened
       setPaymentComplete(true);
     } finally {
@@ -347,8 +346,6 @@ export default function CoinCheckoutScreen() {
           return true; // Allow all other URLs
         }}
         onError={(syntheticEvent: any) => {
-          const { nativeEvent } = syntheticEvent;
-          console.error("[CoinCheckout] WebView error:", nativeEvent.description);
         }}
       />
 

@@ -538,3 +538,57 @@ export const withdrawalRequestSchema = z.object({
   accountNumber: z.string().min(5, "Invalid account number").max(30, "Account number too long"),
   accountHolder: z.string().min(2, "Account holder name required").max(100, "Name too long"),
 });
+
+const storyTypeEnum = z.enum(["PHOTO", "VIDEO", "TEXT", "VOICE"]);
+const replySettingEnum = z.enum(["EVERYONE", "FOLLOWING", "NOBODY"]);
+const storyReactionTypeEnum = z.enum(["FIRE", "HEART", "LAUGH", "WOW", "SAD", "CLAP"]);
+
+export const createStorySchema = z.object({
+  type: storyTypeEnum,
+  caption: z.string().max(500, "Caption too long").optional().nullable(),
+  mediaUrl: z.string().url().optional().nullable(),
+  thumbnailUrl: z.string().url().optional().nullable(),
+  durationMs: z.union([z.number().int().positive(), z.string().transform(val => parseInt(val, 10))]).optional().nullable(),
+  textContent: z.string().max(500, "Text content too long").optional().nullable(),
+  backgroundColor: z.string().optional().nullable(),
+  isGradient: z.union([z.boolean(), z.string().transform(val => val === "true")]).optional(),
+  gradientColors: z.union([z.array(z.string()), z.string()]).optional().nullable(),
+  fontFamily: z.string().optional().nullable(),
+  textAlignment: z.string().optional().nullable(),
+  textAnimation: z.string().optional().nullable(),
+  textBackgroundPill: z.union([z.boolean(), z.string().transform(val => val === "true")]).optional(),
+  fontSize: z.union([z.number(), z.string().transform(val => parseInt(val, 10))]).optional().nullable(),
+  audioUrl: z.string().url().optional().nullable(),
+  audioDuration: z.union([z.number(), z.string().transform(val => parseInt(val, 10))]).optional().nullable(),
+  audioTranscript: z.string().optional().nullable(),
+  musicUrl: z.string().url().optional().nullable(),
+  musicTitle: z.string().optional().nullable(),
+  musicArtist: z.string().optional().nullable(),
+  musicStartTime: z.union([z.number(), z.string().transform(val => parseInt(val, 10))]).optional().nullable(),
+  musicDuration: z.union([z.number(), z.string().transform(val => parseInt(val, 10))]).optional().nullable(),
+  filterName: z.string().optional().nullable(),
+  textOverlays: z.any().optional().nullable(),
+  drawings: z.any().optional().nullable(),
+  isCloseFriends: z.union([z.boolean(), z.string().transform(val => val === "true")]).optional(),
+  replySetting: replySettingEnum.optional(),
+  scheduledAt: z.string().optional().nullable(),
+  locationName: z.string().optional().nullable(),
+  locationLat: z.union([z.number(), z.string().transform(val => parseFloat(val))]).optional().nullable(),
+  locationLng: z.union([z.number(), z.string().transform(val => parseFloat(val))]).optional().nullable(),
+  stickers: z.any().optional().nullable(),
+});
+
+export const storyReactionSchema = z.object({
+  reactionType: storyReactionTypeEnum,
+});
+
+export const dataImportSchema = z.object({
+  data: z.object({
+    users: z.array(z.any()).optional(),
+    posts: z.array(z.any()).optional(),
+    follows: z.array(z.any()).optional(),
+    likes: z.array(z.any()).optional(),
+    comments: z.array(z.any()).optional(),
+  }),
+  overwrite: z.boolean().optional().default(false),
+});

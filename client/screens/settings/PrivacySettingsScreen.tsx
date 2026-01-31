@@ -101,7 +101,6 @@ export default function PrivacySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/me/settings"] });
     },
     onError: (error: any, _variables, _context) => {
-      console.error("Failed to update privacy settings:", error);
       if (settings) {
         setPrivateAccount(settings.privateAccount);
         setCommentPolicy(settings.commentPolicy);
@@ -122,7 +121,6 @@ export default function PrivacySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/privacy/restricted"] });
     },
     onError: (error: any) => {
-      console.error("Failed to unrestrict account:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to unrestrict account. Please try again.");
     },
@@ -137,7 +135,6 @@ export default function PrivacySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/privacy/muted"] });
     },
     onError: (error: any) => {
-      console.error("Failed to unmute account:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to unmute account. Please try again.");
     },
@@ -158,7 +155,6 @@ export default function PrivacySettingsScreen() {
       setNewKeyword("");
     },
     onError: (error: any) => {
-      console.error("Failed to add keyword filter:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to add keyword filter. Please try again.");
     },
@@ -173,7 +169,6 @@ export default function PrivacySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/privacy/keyword-filters"] });
     },
     onError: (error: any) => {
-      console.error("Failed to remove keyword filter:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to remove keyword filter. Please try again.");
     },

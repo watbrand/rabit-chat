@@ -286,7 +286,6 @@ export default function ProfileScreen() {
         await WebBrowser.openBrowserAsync(fullUrl);
       }
     } catch (error) {
-      console.error("Failed to open link:", error);
       Alert.alert("Error", "Could not open link");
     }
   };

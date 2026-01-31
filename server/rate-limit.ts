@@ -123,3 +123,51 @@ export const uploadLimiter = rateLimit({
   handler: rateLimitHandler,
   skip: (req) => !req.session?.userId,
 });
+
+export const storiesLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: "Too many stories. Please slow down.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skip: (req) => !req.session?.userId,
+});
+
+export const reactionsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: "Too many reactions. Please slow down.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skip: (req) => !req.session?.userId,
+});
+
+export const reportsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many reports. Please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skip: (req) => !req.session?.userId,
+});
+
+interface RateLimitOptions {
+  windowMs: number;
+  max: number;
+  message?: string;
+}
+
+export function createRateLimit(options: RateLimitOptions) {
+  return rateLimit({
+    windowMs: options.windowMs,
+    max: options.max,
+    message: options.message || "Too many requests. Please slow down.",
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: rateLimitHandler,
+    skip: (req) => !req.session?.userId,
+  });
+}

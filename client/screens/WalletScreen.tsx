@@ -261,7 +261,6 @@ export default function WalletScreen({ navigation }: any) {
               }
             }
           } catch (err: any) {
-            console.error("[Wallet] Auto-recovery failed for purchase:", purchase.id, err);
             Alert.alert(
               "Recovery Issue",
               `Could not auto-recover purchase. Please try manually or contact support. Error: ${err?.message || "Unknown error"}`
@@ -521,7 +520,6 @@ export default function WalletScreen({ navigation }: any) {
                 );
               }
             } catch (err: any) {
-              console.error("[Wallet] Check payments failed:", err);
               Alert.alert(
                 "Connection Error",
                 err?.message || "Could not check payment status. Please check your internet connection and try again."

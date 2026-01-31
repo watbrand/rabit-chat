@@ -82,7 +82,6 @@ export default function TrustedDevicesScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/security/devices"] });
     },
     onError: (error: any) => {
-      console.error("Failed to remove device:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         "Error",
@@ -110,7 +109,6 @@ export default function TrustedDevicesScreen() {
       setSelectedDevice(null);
     },
     onError: (error: any) => {
-      console.error("Failed to update trust level:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         "Error",

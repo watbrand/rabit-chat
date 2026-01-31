@@ -154,7 +154,6 @@ export default function CameraScreen() {
         setCapturedMedia({ uri: video.uri, type: "video" });
       }
     } catch (error) {
-      console.error("Error recording video:", error);
       setIsRecording(false);
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
@@ -168,7 +167,6 @@ export default function CameraScreen() {
     try {
       await cameraRef.current.stopRecording();
     } catch (error) {
-      console.error("Error stopping recording:", error);
     } finally {
       setIsRecording(false);
       recordingProgress.value = 0;
@@ -196,7 +194,6 @@ export default function CameraScreen() {
         setCapturedMedia({ uri: photo.uri, type: "photo" });
       }
     } catch (error) {
-      console.error("Error taking picture:", error);
     }
   };
 
@@ -259,7 +256,6 @@ export default function CameraScreen() {
         });
       }
     } catch (error) {
-      console.error("Error picking from gallery:", error);
     }
   };
 
@@ -361,7 +357,6 @@ export default function CameraScreen() {
                     try {
                       await Linking.openSettings();
                     } catch (error) {
-                      console.error("Error opening settings:", error);
                     }
                   }}
                   style={styles.permissionButton}

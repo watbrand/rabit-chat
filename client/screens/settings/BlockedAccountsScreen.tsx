@@ -112,7 +112,6 @@ export default function BlockedAccountsScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
     onError: (error: any) => {
-      console.error("Failed to unblock user:", error);
       setUnblockingUserId(null);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to unblock user. Please try again.");

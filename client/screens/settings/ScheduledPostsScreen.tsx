@@ -46,7 +46,6 @@ export default function ScheduledPostsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduled-posts"] });
     },
     onError: (error: any) => {
-      console.error("Failed to cancel scheduled post:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to cancel scheduled post. Please try again.");
     },
@@ -62,7 +61,6 @@ export default function ScheduledPostsScreen() {
       Alert.alert("Success", "Post rescheduled successfully");
     },
     onError: (error: any) => {
-      console.error("Failed to reschedule post:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to reschedule post. Please try again.");
     },
@@ -78,7 +76,6 @@ export default function ScheduledPostsScreen() {
       Alert.alert("Success", "Post published successfully!");
     },
     onError: (error: any) => {
-      console.error("Failed to publish post:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to publish post. Please try again.");
     },

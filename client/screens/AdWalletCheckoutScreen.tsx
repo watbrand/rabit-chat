@@ -148,7 +148,6 @@ export default function AdWalletCheckoutScreen() {
         }
       }
     } catch (err) {
-      console.error("[AdWalletCheckout] Failed to check status:", err);
     } finally {
       setCheckingStatus(false);
     }
@@ -215,7 +214,6 @@ export default function AdWalletCheckoutScreen() {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
       } catch (error) {
-        console.error("[AdWalletCheckout] Failed to complete:", error);
         Alert.alert("Processing", "Your payment is being processed. Please check your balance in a moment.");
         setPaymentComplete(true);
       }
@@ -234,7 +232,6 @@ export default function AdWalletCheckoutScreen() {
         navigation.dispatch(CommonActions.goBack());
       }
     } catch (error) {
-      console.error("[AdWalletCheckout] Navigation error:", error);
       navigation.dispatch(
         CommonActions.reset({
           index: 0,
@@ -343,8 +340,6 @@ export default function AdWalletCheckoutScreen() {
         thirdPartyCookiesEnabled
         sharedCookiesEnabled
         onError={(syntheticEvent: any) => {
-          const { nativeEvent } = syntheticEvent;
-          console.error("[AdWalletCheckout] WebView error:", nativeEvent.description);
         }}
       />
 

@@ -228,7 +228,7 @@ export default function ChatScreen() {
     if (messages && messages.length > 0) {
       const hasUnread = messages.some(m => m.senderId !== user?.id && !m.readAt);
       if (hasUnread) {
-        apiRequest("POST", `/api/conversations/${conversationId}/read`, {}).catch(console.error);
+        apiRequest("POST", `/api/conversations/${conversationId}/read`, {}).catch(() => {});
       }
     }
   }, [messages, conversationId, user?.id]);
@@ -261,7 +261,6 @@ export default function ChatScreen() {
           }
           
           if (data.type === "auth_error") {
-            console.error("WebSocket auth failed:", data.message);
             Alert.alert("Connection Error", "Failed to connect to chat. Please try again.");
             ws?.close();
             return;
@@ -315,7 +314,6 @@ export default function ChatScreen() {
             });
           }
         } catch (error) {
-          console.error("WebSocket message parse error:", error);
         }
       };
       
@@ -429,7 +427,6 @@ export default function ChatScreen() {
       setReplyTo(null);
     },
     onError: (error) => {
-      console.error("Failed to send message:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     },
   });
@@ -543,7 +540,6 @@ export default function ChatScreen() {
         });
       }
     } catch (uploadError: any) {
-      console.error("Failed to upload voice message:", uploadError);
       Alert.alert("Upload Failed", uploadError.message || "Could not upload voice message. Please try again.");
     }
   }, [sendMutation]);
@@ -562,7 +558,6 @@ export default function ChatScreen() {
         });
       }
     } catch (uploadError: any) {
-      console.error(`Failed to upload ${type}:`, uploadError);
       Alert.alert("Upload Failed", uploadError.message || `Could not upload ${type}. Please try again.`);
     }
   }, [sendMutation]);
@@ -588,7 +583,6 @@ export default function ChatScreen() {
         });
       }
     } catch (uploadError: any) {
-      console.error("Failed to upload document:", uploadError);
       Alert.alert("Upload Failed", uploadError.message || "Could not upload document. Please try again.");
     }
   }, [sendMutation]);

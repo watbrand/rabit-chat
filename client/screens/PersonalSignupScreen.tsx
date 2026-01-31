@@ -109,7 +109,6 @@ export default function PersonalSignupScreen() {
         setUsernameSuggestions(result.suggestions || []);
       }
     } catch (error) {
-      console.error("Username check error:", error);
     } finally {
       setIsCheckingUsername(false);
     }

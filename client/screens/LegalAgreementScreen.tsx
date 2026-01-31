@@ -272,7 +272,7 @@ export function LegalAgreementScreen() {
       }
       
       // Invalidate queries in background - don't await
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] }).catch(console.error);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] }).catch(() => {});
       
       setIsSubmitting(false);
       
@@ -284,7 +284,6 @@ export function LegalAgreementScreen() {
           navigation.replace("MainTabs");
         }
       } catch (navError) {
-        console.error("[LegalAgreement] Navigation error:", navError);
         Alert.alert("Success", "Legal agreements accepted! Please restart the app to continue.");
       }
     },

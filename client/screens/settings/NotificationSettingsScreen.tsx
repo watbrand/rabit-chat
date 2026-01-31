@@ -58,7 +58,6 @@ export default function NotificationSettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/me/settings"] });
     },
     onError: (error: any) => {
-      console.error("Failed to update notification settings:", error);
       if (settings?.notifications) {
         setNotifications(settings.notifications);
       }

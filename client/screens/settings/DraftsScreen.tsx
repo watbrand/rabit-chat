@@ -43,7 +43,6 @@ export default function DraftsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/drafts"] });
     },
     onError: (error: any) => {
-      console.error("Failed to delete draft:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to delete draft. Please try again.");
     },
@@ -60,7 +59,6 @@ export default function DraftsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
     },
     onError: (error: any) => {
-      console.error("Failed to publish draft:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to publish draft. Please try again.");
     },

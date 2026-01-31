@@ -133,7 +133,6 @@ export default function SecuritySettingsScreen() {
       setConfirmPassword("");
     },
     onError: (error: any) => {
-      console.error("Failed to change password:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to change password. Please try again.");
     },
@@ -150,7 +149,6 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/security/sessions"] });
     },
     onError: (error: any) => {
-      console.error("Failed to revoke sessions:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to revoke sessions. Please try again.");
     },
@@ -165,7 +163,6 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/security/sessions"] });
     },
     onError: (error: any) => {
-      console.error("Failed to end session:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to end session. Please try again.");
     },
@@ -181,7 +178,6 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/security/sessions"] });
     },
     onError: (error: any) => {
-      console.error("Failed to logout all devices:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to logout all devices. Please try again.");
     },
@@ -196,7 +192,6 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/security/devices"] });
     },
     onError: (error: any) => {
-      console.error("Failed to remove device:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to remove device. Please try again.");
     },
@@ -213,7 +208,6 @@ export default function SecuritySettingsScreen() {
       setTwoFactorStep("verify");
     },
     onError: (error: any) => {
-      console.error("Failed to start 2FA setup:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to start 2FA setup. Please try again.");
     },
@@ -238,7 +232,6 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/me/2fa/status"] });
     },
     onError: (error: any) => {
-      console.error("Failed to verify 2FA code:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Invalid verification code. Please check and try again.");
     },
@@ -260,7 +253,6 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/me/2fa/status"] });
     },
     onError: (error: any) => {
-      console.error("Failed to disable 2FA:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", error.message || "Failed to disable 2FA. Please try again.");
     },

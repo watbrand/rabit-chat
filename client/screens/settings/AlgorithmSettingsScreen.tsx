@@ -75,7 +75,6 @@ export default function AlgorithmSettingsScreen() {
         }
         return res.json();
       } catch (error) {
-        console.error("Failed to fetch algorithm preferences:", error);
         return {
           showNetWorthPriority: true,
           showVerifiedPriority: true,
@@ -97,7 +96,6 @@ export default function AlgorithmSettingsScreen() {
       }
     },
     onError: (error: any) => {
-      console.error("Failed to remove interest:", error);
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
@@ -116,7 +114,6 @@ export default function AlgorithmSettingsScreen() {
       }
     },
     onError: (error: any) => {
-      console.error("Failed to update preferences:", error);
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }

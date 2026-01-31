@@ -334,7 +334,6 @@ export default function StoryComposerScreen() {
       
       await postStoryMutation.mutateAsync(storyData);
     } catch (error: any) {
-      console.error("[StoryComposer] Upload error:", error);
       Alert.alert("Upload Failed", error.message || "Could not upload story");
     } finally {
       setIsUploading(false);

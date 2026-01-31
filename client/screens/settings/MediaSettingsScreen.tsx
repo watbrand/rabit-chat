@@ -62,7 +62,6 @@ export default function MediaSettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/me/settings"] });
     },
     onError: (error: any) => {
-      console.error("Failed to update media settings:", error);
       if (settings?.mediaPrefs) {
         setMediaPrefs(settings.mediaPrefs);
       }

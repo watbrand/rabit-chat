@@ -127,7 +127,6 @@ export default function VerificationScreen() {
       );
     },
     onError: (error: any) => {
-      console.error("Failed to submit verification request:", error);
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
@@ -198,7 +197,6 @@ export default function VerificationScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
     } catch (error: any) {
-      console.error("Failed to take photo:", error);
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
@@ -232,7 +230,6 @@ export default function VerificationScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
     } catch (error: any) {
-      console.error("Failed to pick image:", error);
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
@@ -287,7 +284,6 @@ export default function VerificationScreen() {
         links: linksArray,
       });
     } catch (error: any) {
-      console.error("Failed to upload document:", error);
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }

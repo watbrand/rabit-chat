@@ -309,7 +309,6 @@ export default function ExplorePicturesScreen() {
         url: post.mediaUrl,
       });
     } catch (error) {
-      console.error("Share error:", error);
     }
   };
 

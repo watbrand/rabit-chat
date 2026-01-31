@@ -348,7 +348,7 @@ export default function TicketChatScreen() {
     if (messages && messages.length > 0) {
       const hasUnread = messages.some(m => m.sender_type !== "USER" && !m.read_at);
       if (hasUnread) {
-        apiRequest("POST", `/api/support/tickets/${ticketId}/read`, {}).catch(console.error);
+        apiRequest("POST", `/api/support/tickets/${ticketId}/read`, {}).catch(() => {});
       }
     }
   }, [messages, ticketId]);
@@ -449,7 +449,6 @@ export default function TicketChatScreen() {
               queryClient.invalidateQueries({ queryKey: ["/api/support/inbox"] });
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (error) {
-              console.error("Failed to close ticket:", error);
               Alert.alert("Error", "Failed to close ticket. Please try again.");
             }
           },
@@ -487,7 +486,6 @@ export default function TicketChatScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/support/inbox"] });
     },
     onError: (error) => {
-      console.error("Failed to send message:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", "Failed to send message. Please try again.");
     },
@@ -520,7 +518,6 @@ export default function TicketChatScreen() {
         });
       }
     } catch (error: any) {
-      console.error(`Failed to upload ${type}:`, error);
       Alert.alert("Upload Failed", error.message || `Could not upload ${type}. Please try again.`);
     } finally {
       setIsUploading(false);
@@ -548,7 +545,6 @@ export default function TicketChatScreen() {
         });
       }
     } catch (error: any) {
-      console.error("Failed to upload document:", error);
       Alert.alert("Upload Failed", error.message || "Could not upload document. Please try again.");
     } finally {
       setIsUploading(false);

@@ -80,7 +80,6 @@ export default function CreatePostScreen() {
       }
       setIsPlayingPreview(false);
     } catch (err) {
-      console.error("Error stopping preview:", err);
     }
   }, []);
 
@@ -94,16 +93,12 @@ export default function CreatePostScreen() {
   useEffect(() => {
     return () => {
       if (recordingRef.current) {
-        recordingRef.current.stopAndUnloadAsync().catch((error) => {
-          console.error("Error cleaning up recording on unmount:", error);
-        });
+        recordingRef.current.stopAndUnloadAsync().catch(() => {});
         recordingRef.current = null;
       }
       
       if (soundRef.current) {
-        soundRef.current.unloadAsync().catch((error) => {
-          console.error("Error cleaning up audio on unmount:", error);
-        });
+        soundRef.current.unloadAsync().catch(() => {});
         soundRef.current = null;
       }
       
@@ -139,7 +134,6 @@ export default function CreatePostScreen() {
         }
         await uploadSelectedMedia(asset);
       } catch (error: any) {
-        console.error("Error auto-opening media picker:", error);
         // Check if it's a permission error
         const errorMessage = error?.message || "";
         if (errorMessage.includes("Permission") || errorMessage.includes("permission")) {
@@ -197,7 +191,6 @@ export default function CreatePostScreen() {
         }
       });
     } catch (error) {
-      console.error("Error playing audio preview:", error);
       setIsPlayingPreview(false);
     }
   };
@@ -243,9 +236,6 @@ export default function CreatePostScreen() {
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error: any) {
-      console.error("Upload error:", error);
-      console.error("Error name:", error?.name);
-      console.error("Error code:", error?.code);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       const errorMsg = error?.message || "Could not upload media";
       const errorCode = error?.code ? ` (Code: ${error.code})` : "";
@@ -367,9 +357,6 @@ export default function CreatePostScreen() {
         recordingIntervalRef.current = null;
       }
 
-      // Log error for debugging
-      console.error("Failed to start recording:", error);
-
       // Provide specific error message based on the error type
       let errorMessage = "Could not start recording";
       
@@ -450,7 +437,6 @@ export default function CreatePostScreen() {
       // Ensure recording ref is cleaned up
       recordingRef.current = null;
       
-      console.error("Failed to stop recording:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       
       let errorMessage = error.message || "Could not upload recording";
@@ -468,9 +454,7 @@ export default function CreatePostScreen() {
   const handleRemoveMedia = () => {
     if (isRecording && recordingRef.current) {
       // Stop any active recording
-      recordingRef.current.stopAndUnloadAsync().catch((error) => {
-        console.error("Error stopping recording during cleanup:", error);
-      });
+      recordingRef.current.stopAndUnloadAsync().catch(() => {});
       recordingRef.current = null;
       
       // Clear the duration timer
