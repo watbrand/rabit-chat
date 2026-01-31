@@ -105,6 +105,30 @@ export default function AlgorithmSettingsScreen() {
     },
   });
 
+  const updatePreferencesMutation = useMutation({
+    mutationFn: async (updates: Partial<AlgorithmPreferences>) => {
+      return apiRequest("PATCH", "/api/algorithm/preferences", updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/algorithm/preferences"] });
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    },
+    onError: (error: any) => {
+      console.error("Failed to update preferences:", error);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      Alert.alert("Error", error.message || "Failed to update preferences. Please try again.");
+    },
+  });
+
+  const handleTogglePreference = (key: keyof AlgorithmPreferences) => {
+    if (!preferences) return;
+    updatePreferencesMutation.mutate({ [key]: !preferences[key] });
+  };
+
   const handleRemoveInterest = (interest: string, name: string) => {
     Alert.alert(
       "Remove Interest",
@@ -294,6 +318,78 @@ export default function AlgorithmSettingsScreen() {
 
   const renderFooter = () => (
     <View style={styles.footer}>
+      <View style={styles.section}>
+        <ThemedText style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          Feed Preferences
+        </ThemedText>
+        <View
+          style={[
+            styles.preferencesCard,
+            { backgroundColor: theme.glassBackground, borderColor: theme.glassBorder },
+          ]}
+        >
+          <View style={styles.preferenceRow}>
+            <View style={styles.preferenceInfo}>
+              <ThemedText style={styles.preferenceLabel}>Net Worth Priority</ThemedText>
+              <ThemedText style={[styles.preferenceDescription, { color: theme.textSecondary }]}>
+                Show higher net worth users more prominently
+              </ThemedText>
+            </View>
+            <Switch
+              value={preferences?.showNetWorthPriority ?? true}
+              onValueChange={() => handleTogglePreference("showNetWorthPriority")}
+              trackColor={{ false: theme.border, true: theme.primary + "80" }}
+              thumbColor={preferences?.showNetWorthPriority ? theme.primary : theme.textSecondary}
+            />
+          </View>
+          <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
+          <View style={styles.preferenceRow}>
+            <View style={styles.preferenceInfo}>
+              <ThemedText style={styles.preferenceLabel}>Verified Priority</ThemedText>
+              <ThemedText style={[styles.preferenceDescription, { color: theme.textSecondary }]}>
+                Prioritize verified accounts in your feed
+              </ThemedText>
+            </View>
+            <Switch
+              value={preferences?.showVerifiedPriority ?? true}
+              onValueChange={() => handleTogglePreference("showVerifiedPriority")}
+              trackColor={{ false: theme.border, true: theme.primary + "80" }}
+              thumbColor={preferences?.showVerifiedPriority ? theme.primary : theme.textSecondary}
+            />
+          </View>
+          <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
+          <View style={styles.preferenceRow}>
+            <View style={styles.preferenceInfo}>
+              <ThemedText style={styles.preferenceLabel}>Diversify Feed</ThemedText>
+              <ThemedText style={[styles.preferenceDescription, { color: theme.textSecondary }]}>
+                Show variety of content beyond your interests
+              </ThemedText>
+            </View>
+            <Switch
+              value={preferences?.diversifyFeed ?? true}
+              onValueChange={() => handleTogglePreference("diversifyFeed")}
+              trackColor={{ false: theme.border, true: theme.primary + "80" }}
+              thumbColor={preferences?.diversifyFeed ? theme.primary : theme.textSecondary}
+            />
+          </View>
+          <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
+          <View style={styles.preferenceRow}>
+            <View style={styles.preferenceInfo}>
+              <ThemedText style={styles.preferenceLabel}>Creator Content</ThemedText>
+              <ThemedText style={[styles.preferenceDescription, { color: theme.textSecondary }]}>
+                Show content from creators you support
+              </ThemedText>
+            </View>
+            <Switch
+              value={preferences?.showCreatorContent ?? true}
+              onValueChange={() => handleTogglePreference("showCreatorContent")}
+              trackColor={{ false: theme.border, true: theme.primary + "80" }}
+              thumbColor={preferences?.showCreatorContent ? theme.primary : theme.textSecondary}
+            />
+          </View>
+        </View>
+      </View>
+
       <View style={styles.section}>
         <ThemedText style={[styles.sectionTitle, { color: theme.textSecondary }]}>
           Algorithm Stats
@@ -536,6 +632,29 @@ const styles = StyleSheet.create({
   },
   footer: {
     marginTop: Spacing.lg,
+  },
+  preferencesCard: {
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  preferenceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+  },
+  preferenceInfo: {
+    flex: 1,
+    marginRight: Spacing.md,
+  },
+  preferenceLabel: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  preferenceDescription: {
+    fontSize: 12,
+    marginTop: 2,
   },
   statsCard: {
     padding: Spacing.lg,
