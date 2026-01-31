@@ -40,7 +40,7 @@ import {
   hasPermission,
   createPolicyError,
 } from "./policy";
-import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes } from "@shared/schema";
+import { insertUserSchema, type AuditAction, phoneVerificationTokens, emailVerificationTokens, passwordResetTokens, userInterests, users, follows, conversations, messages, groups, groupMembers, groupJoinRequests, liveStreams, liveStreamViewers, wallets, coinTransactions, giftTransactions, giftTypes, mallItems, mallPurchases, mallCategories, netWorthLedger, notifications, events, eventRsvps, subscriptionTiers, subscriptions, hashtags, blocks, mutedAccounts, restrictedAccounts, exploreCategories, posts, likes, comments, broadcastChannels, broadcastMessages, broadcastChannelSubscribers, userKyc, withdrawalRequests, coinBundles, coinPurchases, platformRevenue, wealthClubs, userWealthClub, stakingTiers, platformBattles, battleParticipants, achievements, userAchievements, totpSecrets, backupCodes, userSettings } from "@shared/schema";
 import cloudinary, {
   uploadToCloudinary,
   uploadToCloudinaryFromFile,
@@ -8595,11 +8595,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/me/2fa/status", requireAuth, async (req, res) => {
     try {
       const userId = req.session.userId!;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
+      
+      // Get 2FA status from userSettings
+      const [settings] = await db.select().from(userSettings).where(eq(userSettings.userId, userId));
+      
       const backupCodesResult = await db
         .select({ count: sql<number>`count(*)` })
         .from(backupCodes)
@@ -8607,7 +8606,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const backupCodesCount = Number(backupCodesResult[0]?.count || 0);
 
       res.json({
-        enabled: user.twoFactorEnabled,
+        enabled: settings?.twoFactorEnabled || false,
         hasBackupCodes: backupCodesCount > 0,
       });
     } catch (error) {
@@ -8625,7 +8624,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      if (user.twoFactorEnabled) {
+      // Check 2FA status from userSettings
+      const [settings] = await db.select().from(userSettings).where(eq(userSettings.userId, userId));
+      if (settings?.twoFactorEnabled) {
         return res.status(400).json({ message: "2FA is already enabled. Disable it first to set up again." });
       }
 
@@ -8683,7 +8684,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      if (user.twoFactorEnabled) {
+      // Check 2FA status from userSettings
+      const [currentSettings] = await db.select().from(userSettings).where(eq(userSettings.userId, userId));
+      if (currentSettings?.twoFactorEnabled) {
         return res.status(400).json({ message: "2FA is already enabled" });
       }
 
@@ -8709,7 +8712,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({ isEnabled: true, verifiedAt: new Date() })
         .where(eq(totpSecrets.userId, userId));
 
-      await storage.updateUser(userId, { twoFactorEnabled: true });
+      // Update 2FA status in userSettings
+      if (currentSettings) {
+        await db.update(userSettings).set({ twoFactorEnabled: true, updatedAt: new Date() }).where(eq(userSettings.userId, userId));
+      } else {
+        await db.insert(userSettings).values({ userId, twoFactorEnabled: true });
+      }
 
       await db.delete(backupCodes).where(eq(backupCodes.userId, userId));
 
@@ -8760,7 +8768,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      if (!user.twoFactorEnabled) {
+      // Check 2FA status from userSettings
+      const [currentSettings] = await db.select().from(userSettings).where(eq(userSettings.userId, userId));
+      if (!currentSettings?.twoFactorEnabled) {
         return res.status(400).json({ message: "2FA is not enabled" });
       }
 
@@ -8784,7 +8794,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid TOTP code" });
       }
 
-      await storage.updateUser(userId, { twoFactorEnabled: false });
+      // Update 2FA status in userSettings
+      await db.update(userSettings).set({ twoFactorEnabled: false, updatedAt: new Date() }).where(eq(userSettings.userId, userId));
       await db.delete(totpSecrets).where(eq(totpSecrets.userId, userId));
       await db.delete(backupCodes).where(eq(backupCodes.userId, userId));
 
@@ -8818,7 +8829,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      if (!user.twoFactorEnabled) {
+      // Check 2FA status from userSettings
+      const [currentSettings] = await db.select().from(userSettings).where(eq(userSettings.userId, userId));
+      if (!currentSettings?.twoFactorEnabled) {
         return res.status(400).json({ message: "2FA is not enabled" });
       }
 
@@ -8842,7 +8855,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await storage.createAuditLog({
         actorId: userId,
-        action: "security.backup_codes_regenerated",
+        action: "REGENERATE_BACKUP_CODES",
         targetType: "user",
         targetId: userId,
         details: {},
@@ -8873,7 +8886,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      if (!user.twoFactorEnabled) {
+      // Check 2FA status from userSettings
+      const [currentSettings] = await db.select().from(userSettings).where(eq(userSettings.userId, userId));
+      if (!currentSettings?.twoFactorEnabled) {
         return res.status(400).json({ message: "2FA is not enabled" });
       }
 
@@ -17932,6 +17947,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/admin/economy/status - Get current emergency control status
+  app.get("/api/admin/economy/status", requireAdmin, async (req, res) => {
+    try {
+      // Check if all wallets are frozen (if there are no unfrozen wallets, consider all frozen)
+      const [unfrozenCount] = await db.select({
+        count: sql<number>`count(*)`
+      }).from(wallets).where(eq(wallets.isFrozen, false));
+
+      const [totalCount] = await db.select({
+        count: sql<number>`count(*)`
+      }).from(wallets);
+
+      const allWalletsFrozen = Number(totalCount?.count || 0) > 0 && Number(unfrozenCount?.count || 0) === 0;
+
+      // Check if withdrawals are paused via economy config
+      const economyConfig = await storage.getEconomyConfig();
+      const withdrawalsPaused = economyConfig["withdrawals_enabled"] === "false";
+
+      res.json({
+        allWalletsFrozen,
+        withdrawalsPaused
+      });
+    } catch (error: any) {
+      console.error("Failed to get economy status:", error);
+      res.status(500).json({ message: "Failed to get economy status" });
+    }
+  });
+
   // POST /api/admin/economy/freeze-all-wallets - Freeze all wallets (emergency control)
   app.post("/api/admin/economy/freeze-all-wallets", requireAdmin, async (req, res) => {
     try {
@@ -18026,7 +18069,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const wallet of allWallets) {
         const [txSum] = await db.select({
           total: sql<number>`COALESCE(SUM(amount), 0)`
-        }).from(coinTransactions).where(eq(coinTransactions.userId, wallet.userId));
+        }).from(coinTransactions).where(eq(coinTransactions.walletId, wallet.id));
 
         const calculatedBalance = Number(txSum?.total || 0);
         const currentBalance = Number(wallet.coinBalance);

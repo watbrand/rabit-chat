@@ -3,6 +3,7 @@ import { View, StyleSheet, FlatList, Pressable, Alert, Platform } from "react-na
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
+import { useNavigation } from "@react-navigation/native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -27,6 +28,7 @@ export default function DraftsScreen() {
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const queryClient = useQueryClient();
+  const navigation = useNavigation<any>();
 
   const { data: drafts, isLoading } = useQuery<Draft[]>({
     queryKey: ["/api/drafts"],
@@ -45,7 +47,24 @@ export default function DraftsScreen() {
     },
   });
 
+  const publishMutation = useMutation({
+    mutationFn: async (draftId: string) => {
+      return apiRequest("POST", `/api/drafts/${draftId}/publish`);
+    },
+    onSuccess: () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Success", "Your draft has been published!");
+      queryClient.invalidateQueries({ queryKey: ["/api/drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+    },
+    onError: (error: any) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to publish draft");
+    },
+  });
+
   const handleDelete = (draft: Draft) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       "Delete Draft",
       "Are you sure you want to delete this draft? This cannot be undone.",
@@ -55,6 +74,33 @@ export default function DraftsScreen() {
           text: "Delete",
           style: "destructive",
           onPress: () => deleteMutation.mutate(draft.id),
+        },
+      ]
+    );
+  };
+
+  const handleEdit = (draft: Draft) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.navigate("CreatePost", {
+      draftId: draft.id,
+      mode: "edit",
+      postType: draft.postType,
+      content: draft.content,
+      mediaUrls: draft.mediaUrls,
+      visibility: draft.visibility,
+    });
+  };
+
+  const handlePublish = (draft: Draft) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(
+      "Publish Draft",
+      "Are you sure you want to publish this draft now?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Publish",
+          onPress: () => publishMutation.mutate(draft.id),
         },
       ]
     );
@@ -101,6 +147,18 @@ export default function DraftsScreen() {
           </ThemedText>
         </View>
         <View style={styles.draftActions}>
+          <Pressable
+            style={[styles.actionButton, { borderColor: theme.primary }]}
+            onPress={() => handleEdit(item)}
+          >
+            <Feather name="edit-2" size={16} color={theme.primary} />
+          </Pressable>
+          <Pressable
+            style={[styles.actionButton, { borderColor: theme.success }]}
+            onPress={() => handlePublish(item)}
+          >
+            <Feather name="send" size={16} color={theme.success} />
+          </Pressable>
           <Pressable
             style={[styles.actionButton, { borderColor: theme.error }]}
             onPress={() => handleDelete(item)}

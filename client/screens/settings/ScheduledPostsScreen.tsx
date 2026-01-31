@@ -1,5 +1,5 @@
-import React from "react";
-import { View, StyleSheet, FlatList, Pressable, Alert, Platform } from "react-native";
+import React, { useState } from "react";
+import { View, StyleSheet, FlatList, Pressable, Alert, Platform, Modal, TextInput } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -33,6 +33,9 @@ export default function ScheduledPostsScreen() {
     queryKey: ["/api/scheduled-posts"],
   });
 
+  const [rescheduleModalVisible, setRescheduleModalVisible] = useState(false);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+
   const deleteMutation = useMutation({
     mutationFn: async (postId: string) => {
       return apiRequest("DELETE", `/api/scheduled-posts/${postId}`);
@@ -46,7 +49,72 @@ export default function ScheduledPostsScreen() {
     },
   });
 
+  const rescheduleMutation = useMutation({
+    mutationFn: async ({ postId, scheduledFor }: { postId: string; scheduledFor: string }) => {
+      return apiRequest("PATCH", `/api/scheduled-posts/${postId}/reschedule`, { scheduledFor });
+    },
+    onSuccess: () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduled-posts"] });
+      Alert.alert("Success", "Post rescheduled successfully");
+    },
+    onError: (error: any) => {
+      Alert.alert("Error", error.message || "Failed to reschedule post");
+    },
+  });
+
+  const publishNowMutation = useMutation({
+    mutationFn: async (postId: string) => {
+      return apiRequest("POST", `/api/scheduled-posts/${postId}/publish-now`);
+    },
+    onSuccess: () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduled-posts"] });
+      Alert.alert("Success", "Post published successfully!");
+    },
+    onError: (error: any) => {
+      Alert.alert("Error", error.message || "Failed to publish post");
+    },
+  });
+
+  const handleReschedule = (postId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedPostId(postId);
+    setRescheduleModalVisible(true);
+  };
+
+  const handleRescheduleOption = (hours: number) => {
+    if (!selectedPostId) return;
+    
+    const newDate = new Date();
+    newDate.setHours(newDate.getHours() + hours);
+    
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    rescheduleMutation.mutate({ postId: selectedPostId, scheduledFor: newDate.toISOString() });
+    setRescheduleModalVisible(false);
+    setSelectedPostId(null);
+  };
+
+  const handlePublishNow = (post: ScheduledPost) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert(
+      "Publish Now",
+      "Are you sure you want to publish this post immediately?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Publish",
+          onPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            publishNowMutation.mutate(post.id);
+          },
+        },
+      ]
+    );
+  };
+
   const handleCancel = (post: ScheduledPost) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
       "Cancel Scheduled Post",
       "Are you sure you want to cancel this scheduled post?",
@@ -140,12 +208,26 @@ export default function ScheduledPostsScreen() {
           </View>
         </View>
         {item.status === "PENDING" ? (
-          <Pressable
-            style={[styles.cancelButton, { borderColor: theme.error }]}
-            onPress={() => handleCancel(item)}
-          >
-            <Feather name="x" size={16} color={theme.error} />
-          </Pressable>
+          <View style={styles.actionButtons}>
+            <Pressable
+              style={[styles.actionButton, { borderColor: theme.primary }]}
+              onPress={() => handlePublishNow(item)}
+            >
+              <Feather name="send" size={16} color={theme.primary} />
+            </Pressable>
+            <Pressable
+              style={[styles.actionButton, { borderColor: theme.gold }]}
+              onPress={() => handleReschedule(item.id)}
+            >
+              <Feather name="calendar" size={16} color={theme.gold} />
+            </Pressable>
+            <Pressable
+              style={[styles.actionButton, { borderColor: theme.error }]}
+              onPress={() => handleCancel(item)}
+            >
+              <Feather name="x" size={16} color={theme.error} />
+            </Pressable>
+          </View>
         ) : null}
       </View>
       {item.content ? (
@@ -176,6 +258,78 @@ export default function ScheduledPostsScreen() {
     </View>
   );
 
+  const RescheduleModal = () => (
+    <Modal
+      visible={rescheduleModalVisible}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setRescheduleModalVisible(false)}
+    >
+      <Pressable
+        style={styles.modalOverlay}
+        onPress={() => setRescheduleModalVisible(false)}
+      >
+        <View
+          style={[
+            styles.modalContent,
+            { backgroundColor: theme.backgroundElevated, borderColor: theme.glassBorder },
+          ]}
+        >
+          <ThemedText style={[styles.modalTitle, { color: theme.text }]}>
+            Reschedule to when?
+          </ThemedText>
+          <Pressable
+            style={[styles.optionButton, { backgroundColor: theme.glassBackground }]}
+            onPress={() => handleRescheduleOption(1)}
+          >
+            <Feather name="clock" size={18} color={theme.primary} />
+            <ThemedText style={[styles.optionText, { color: theme.text }]}>
+              In 1 hour
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            style={[styles.optionButton, { backgroundColor: theme.glassBackground }]}
+            onPress={() => handleRescheduleOption(6)}
+          >
+            <Feather name="clock" size={18} color={theme.primary} />
+            <ThemedText style={[styles.optionText, { color: theme.text }]}>
+              In 6 hours
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            style={[styles.optionButton, { backgroundColor: theme.glassBackground }]}
+            onPress={() => handleRescheduleOption(24)}
+          >
+            <Feather name="sunrise" size={18} color={theme.gold} />
+            <ThemedText style={[styles.optionText, { color: theme.text }]}>
+              Tomorrow same time
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            style={[styles.optionButton, { backgroundColor: theme.glassBackground }]}
+            onPress={() => handleRescheduleOption(48)}
+          >
+            <Feather name="calendar" size={18} color={theme.gold} />
+            <ThemedText style={[styles.optionText, { color: theme.text }]}>
+              In 2 days
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            style={[styles.cancelOptionButton, { borderColor: theme.textSecondary }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setRescheduleModalVisible(false);
+            }}
+          >
+            <ThemedText style={[styles.cancelOptionText, { color: theme.textSecondary }]}>
+              Cancel
+            </ThemedText>
+          </Pressable>
+        </View>
+      </Pressable>
+    </Modal>
+  );
+
   if (isLoading) {
     return (
       <LoadingIndicator fullScreen />
@@ -184,6 +338,7 @@ export default function ScheduledPostsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+      <RescheduleModal />
       <FlatList
         data={scheduledPosts}
         keyExtractor={(item) => item.id}
@@ -260,7 +415,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
   },
-  cancelButton: {
+  actionButtons: {
+    flexDirection: "row",
+    gap: Spacing.xs,
+  },
+  actionButton: {
     width: 36,
     height: 36,
     borderRadius: BorderRadius.sm,
@@ -313,5 +472,48 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     paddingHorizontal: Spacing.xl,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    padding: Spacing.xl,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: Spacing.lg,
+  },
+  optionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    marginBottom: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  optionText: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  cancelOptionButton: {
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    marginTop: Spacing.sm,
+  },
+  cancelOptionText: {
+    fontSize: 15,
+    fontWeight: "500",
   },
 });

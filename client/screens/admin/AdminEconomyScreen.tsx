@@ -29,6 +29,17 @@ interface WalletStats {
   pendingWithdrawals: number;
 }
 
+interface EconomyStatus {
+  allWalletsFrozen: boolean;
+  withdrawalsPaused: boolean;
+}
+
+interface RecalculateResult {
+  processed: number;
+  discrepancies: number;
+  message: string;
+}
+
 interface UserWallet {
   id: string;
   userId: string;
@@ -103,6 +114,60 @@ export default function AdminEconomyScreen() {
   const { data: withdrawals, isLoading: withdrawalsLoading, refetch: refetchWithdrawals } = useQuery<Withdrawal[]>({
     queryKey: ["/api/admin/withdrawals"],
     enabled: activeTab === "withdrawals",
+  });
+
+  const { data: economyStatus, refetch: refetchEconomyStatus } = useQuery<EconomyStatus>({
+    queryKey: ["/api/admin/economy/status"],
+    enabled: activeTab === "emergency",
+  });
+
+  const freezeAllWalletsMutation = useMutation({
+    mutationFn: async (freeze: boolean) => {
+      const endpoint = freeze ? "freeze-all-wallets" : "unfreeze-all-wallets";
+      return apiRequest("POST", `/api/admin/economy/${endpoint}`);
+    },
+    onSuccess: async (_, freeze) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/wallet/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/wallets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/economy/status"] });
+      Alert.alert("Success", freeze ? "All wallets have been frozen" : "All wallets have been unfrozen");
+    },
+    onError: (error: any) => {
+      Alert.alert("Error", error.message || "Failed to update wallet status");
+    },
+  });
+
+  const pauseWithdrawalsMutation = useMutation({
+    mutationFn: async (pause: boolean) => {
+      const endpoint = pause ? "pause-withdrawals" : "resume-withdrawals";
+      return apiRequest("POST", `/api/admin/economy/${endpoint}`);
+    },
+    onSuccess: async (_, pause) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/economy/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/withdrawals"] });
+      Alert.alert("Success", pause ? "Withdrawals have been paused" : "Withdrawals have been resumed");
+    },
+    onError: (error: any) => {
+      Alert.alert("Error", error.message || "Failed to update withdrawal status");
+    },
+  });
+
+  const recalculateBalancesMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/admin/economy/recalculate-balances");
+      return response.json() as Promise<RecalculateResult>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/wallet/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/wallets"] });
+      Alert.alert(
+        "Recalculation Complete",
+        `Processed: ${result.processed} wallets\nDiscrepancies found: ${result.discrepancies}\n\n${result.message || ""}`
+      );
+    },
+    onError: (error: any) => {
+      Alert.alert("Error", error.message || "Failed to recalculate balances");
+    },
   });
 
   const freezeWalletMutation = useMutation({
@@ -182,6 +247,7 @@ export default function AdminEconomyScreen() {
       activeTab === "gifts" && refetchGifts(),
       activeTab === "bundles" && refetchBundles(),
       activeTab === "withdrawals" && refetchWithdrawals(),
+      activeTab === "emergency" && refetchEconomyStatus(),
     ]);
     setRefreshing(false);
   };
@@ -623,122 +689,178 @@ export default function AdminEconomyScreen() {
     </View>
   );
 
-  const renderEmergency = () => (
-    <View style={styles.emergencyContainer}>
-      <Animated.View entering={FadeInUp.delay(100).springify()}>
-        <Card variant="glass" style={{ ...styles.emergencyCard, borderColor: theme.warning }}>
-          <View style={styles.emergencyHeader}>
-            <View style={[styles.emergencyIcon, { backgroundColor: theme.warning + "20" }]}>
-              <Feather name="alert-triangle" size={24} color={theme.warning} />
-            </View>
-            <View style={styles.emergencyInfo}>
-              <ThemedText style={[styles.emergencyTitle, { color: theme.text }]}>
-                Freeze All Wallets
-              </ThemedText>
-              <ThemedText style={[styles.emergencyDesc, { color: theme.textSecondary }]}>
-                Emergency freeze all user wallets to prevent transactions
-              </ThemedText>
-            </View>
-          </View>
-          <Pressable
-            style={[styles.emergencyButton, { backgroundColor: theme.warning }]}
-            onPress={() => {
-              Alert.alert(
-                "Freeze All Wallets",
-                "This will freeze ALL user wallets immediately. Are you absolutely sure?",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Freeze All",
-                    style: "destructive",
-                    onPress: () => Alert.alert("Info", "Emergency freeze endpoint not configured"),
-                  },
-                ]
-              );
-            }}
-          >
-            <Feather name="lock" size={16} color="#fff" />
-            <ThemedText style={styles.buttonText}>Freeze All</ThemedText>
-          </Pressable>
-        </Card>
-      </Animated.View>
+  const handleFreezeAllWallets = () => {
+    const isFrozen = economyStatus?.allWalletsFrozen;
+    const action = isFrozen ? "Unfreeze" : "Freeze";
+    Alert.alert(
+      `${action} All Wallets`,
+      isFrozen
+        ? "This will unfreeze ALL user wallets, allowing transactions again. Continue?"
+        : "This will freeze ALL user wallets immediately, preventing all transactions. Are you absolutely sure?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: `${action} All`,
+          style: isFrozen ? "default" : "destructive",
+          onPress: () => freezeAllWalletsMutation.mutate(!isFrozen),
+        },
+      ]
+    );
+  };
 
-      <Animated.View entering={FadeInUp.delay(200).springify()}>
-        <Card variant="glass" style={{ ...styles.emergencyCard, borderColor: theme.error }}>
-          <View style={styles.emergencyHeader}>
-            <View style={[styles.emergencyIcon, { backgroundColor: theme.error + "20" }]}>
-              <Feather name="pause-circle" size={24} color={theme.error} />
-            </View>
-            <View style={styles.emergencyInfo}>
-              <ThemedText style={[styles.emergencyTitle, { color: theme.text }]}>
-                Pause Withdrawals
-              </ThemedText>
-              <ThemedText style={[styles.emergencyDesc, { color: theme.textSecondary }]}>
-                Temporarily pause all withdrawal processing
-              </ThemedText>
-            </View>
-          </View>
-          <Pressable
-            style={[styles.emergencyButton, { backgroundColor: theme.error }]}
-            onPress={() => {
-              Alert.alert(
-                "Pause Withdrawals",
-                "This will pause all pending and new withdrawal requests. Continue?",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Pause",
-                    style: "destructive",
-                    onPress: () => Alert.alert("Info", "Withdrawal pause endpoint not configured"),
-                  },
-                ]
-              );
-            }}
-          >
-            <Feather name="pause" size={16} color="#fff" />
-            <ThemedText style={styles.buttonText}>Pause</ThemedText>
-          </Pressable>
-        </Card>
-      </Animated.View>
+  const handlePauseWithdrawals = () => {
+    const isPaused = economyStatus?.withdrawalsPaused;
+    const action = isPaused ? "Resume" : "Pause";
+    Alert.alert(
+      `${action} Withdrawals`,
+      isPaused
+        ? "This will resume processing of all withdrawal requests. Continue?"
+        : "This will pause all pending and new withdrawal requests. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: action,
+          style: isPaused ? "default" : "destructive",
+          onPress: () => pauseWithdrawalsMutation.mutate(!isPaused),
+        },
+      ]
+    );
+  };
 
-      <Animated.View entering={FadeInUp.delay(300).springify()}>
-        <Card variant="glass" style={{ ...styles.emergencyCard, borderColor: theme.primary }}>
-          <View style={styles.emergencyHeader}>
-            <View style={[styles.emergencyIcon, { backgroundColor: theme.primary + "20" }]}>
-              <Feather name="refresh-cw" size={24} color={theme.primary} />
+  const handleRecalculateBalances = () => {
+    Alert.alert(
+      "Recalculate Balances",
+      "This will recalculate all wallet balances from transaction history. This operation may take several minutes for large datasets. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Recalculate",
+          onPress: () => recalculateBalancesMutation.mutate(),
+        },
+      ]
+    );
+  };
+
+  const renderEmergency = () => {
+    const isFrozen = economyStatus?.allWalletsFrozen ?? false;
+    const isPaused = economyStatus?.withdrawalsPaused ?? false;
+
+    return (
+      <View style={styles.emergencyContainer}>
+        <Animated.View entering={FadeInUp.delay(100).springify()}>
+          <Card variant="glass" style={{ ...styles.emergencyCard, borderColor: isFrozen ? theme.success : theme.warning }}>
+            <View style={styles.emergencyHeader}>
+              <View style={[styles.emergencyIcon, { backgroundColor: (isFrozen ? theme.success : theme.warning) + "20" }]}>
+                <Feather name={isFrozen ? "unlock" : "lock"} size={24} color={isFrozen ? theme.success : theme.warning} />
+              </View>
+              <View style={styles.emergencyInfo}>
+                <ThemedText style={[styles.emergencyTitle, { color: theme.text }]}>
+                  {isFrozen ? "Unfreeze All Wallets" : "Freeze All Wallets"}
+                </ThemedText>
+                <ThemedText style={[styles.emergencyDesc, { color: theme.textSecondary }]}>
+                  {isFrozen
+                    ? "All wallets are currently frozen. Unfreeze to allow transactions."
+                    : "Emergency freeze all user wallets to prevent transactions"}
+                </ThemedText>
+              </View>
             </View>
-            <View style={styles.emergencyInfo}>
-              <ThemedText style={[styles.emergencyTitle, { color: theme.text }]}>
-                Recalculate All Balances
-              </ThemedText>
-              <ThemedText style={[styles.emergencyDesc, { color: theme.textSecondary }]}>
-                Recalculate all wallet balances from transaction history
-              </ThemedText>
+            <Pressable
+              style={[
+                styles.emergencyButton,
+                { backgroundColor: isFrozen ? theme.success : theme.warning },
+                freezeAllWalletsMutation.isPending && styles.emergencyButtonDisabled,
+              ]}
+              onPress={handleFreezeAllWallets}
+              disabled={freezeAllWalletsMutation.isPending}
+            >
+              {freezeAllWalletsMutation.isPending ? (
+                <LoadingIndicator size="small" />
+              ) : (
+                <>
+                  <Feather name={isFrozen ? "unlock" : "lock"} size={16} color="#fff" />
+                  <ThemedText style={styles.buttonText}>{isFrozen ? "Unfreeze All" : "Freeze All"}</ThemedText>
+                </>
+              )}
+            </Pressable>
+          </Card>
+        </Animated.View>
+
+        <Animated.View entering={FadeInUp.delay(200).springify()}>
+          <Card variant="glass" style={{ ...styles.emergencyCard, borderColor: isPaused ? theme.success : theme.error }}>
+            <View style={styles.emergencyHeader}>
+              <View style={[styles.emergencyIcon, { backgroundColor: (isPaused ? theme.success : theme.error) + "20" }]}>
+                <Feather name={isPaused ? "play-circle" : "pause-circle"} size={24} color={isPaused ? theme.success : theme.error} />
+              </View>
+              <View style={styles.emergencyInfo}>
+                <ThemedText style={[styles.emergencyTitle, { color: theme.text }]}>
+                  {isPaused ? "Resume Withdrawals" : "Pause Withdrawals"}
+                </ThemedText>
+                <ThemedText style={[styles.emergencyDesc, { color: theme.textSecondary }]}>
+                  {isPaused
+                    ? "Withdrawals are currently paused. Resume to allow processing."
+                    : "Temporarily pause all withdrawal processing"}
+                </ThemedText>
+              </View>
             </View>
-          </View>
-          <Pressable
-            style={[styles.emergencyButton, { backgroundColor: theme.primary }]}
-            onPress={() => {
-              Alert.alert(
-                "Recalculate Balances",
-                "This will recalculate all balances from transaction history. This may take a while.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Recalculate",
-                    onPress: () => Alert.alert("Info", "Balance recalculation endpoint not configured"),
-                  },
-                ]
-              );
-            }}
-          >
-            <Feather name="refresh-cw" size={16} color="#fff" />
-            <ThemedText style={styles.buttonText}>Recalculate</ThemedText>
-          </Pressable>
-        </Card>
-      </Animated.View>
-    </View>
-  );
+            <Pressable
+              style={[
+                styles.emergencyButton,
+                { backgroundColor: isPaused ? theme.success : theme.error },
+                pauseWithdrawalsMutation.isPending && styles.emergencyButtonDisabled,
+              ]}
+              onPress={handlePauseWithdrawals}
+              disabled={pauseWithdrawalsMutation.isPending}
+            >
+              {pauseWithdrawalsMutation.isPending ? (
+                <LoadingIndicator size="small" />
+              ) : (
+                <>
+                  <Feather name={isPaused ? "play" : "pause"} size={16} color="#fff" />
+                  <ThemedText style={styles.buttonText}>{isPaused ? "Resume" : "Pause"}</ThemedText>
+                </>
+              )}
+            </Pressable>
+          </Card>
+        </Animated.View>
+
+        <Animated.View entering={FadeInUp.delay(300).springify()}>
+          <Card variant="glass" style={{ ...styles.emergencyCard, borderColor: theme.primary }}>
+            <View style={styles.emergencyHeader}>
+              <View style={[styles.emergencyIcon, { backgroundColor: theme.primary + "20" }]}>
+                <Feather name="refresh-cw" size={24} color={theme.primary} />
+              </View>
+              <View style={styles.emergencyInfo}>
+                <ThemedText style={[styles.emergencyTitle, { color: theme.text }]}>
+                  Recalculate All Balances
+                </ThemedText>
+                <ThemedText style={[styles.emergencyDesc, { color: theme.textSecondary }]}>
+                  Recalculate all wallet balances from transaction history
+                </ThemedText>
+              </View>
+            </View>
+            <Pressable
+              style={[
+                styles.emergencyButton,
+                { backgroundColor: theme.primary },
+                recalculateBalancesMutation.isPending && styles.emergencyButtonDisabled,
+              ]}
+              onPress={handleRecalculateBalances}
+              disabled={recalculateBalancesMutation.isPending}
+            >
+              {recalculateBalancesMutation.isPending ? (
+                <LoadingIndicator size="small" />
+              ) : (
+                <>
+                  <Feather name="refresh-cw" size={16} color="#fff" />
+                  <ThemedText style={styles.buttonText}>Recalculate</ThemedText>
+                </>
+              )}
+            </Pressable>
+          </Card>
+        </Animated.View>
+      </View>
+    );
+  };
 
   const renderContent = () => {
     switch (activeTab) {
@@ -1140,5 +1262,9 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
     paddingVertical: Spacing.sm,
     borderRadius: 8,
+    minHeight: 44,
+  },
+  emergencyButtonDisabled: {
+    opacity: 0.7,
   },
 });
