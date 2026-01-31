@@ -331,28 +331,34 @@ export default function UserProfileScreen() {
 
   const handleBlockPress = async () => {
     setShowBlockAlert(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     if (blockStatus?.isBlocked) {
       Alert.alert(
         "Unblock User",
-        "Are you sure you want to unblock this user?",
+        "Are you sure you want to unblock this user?\n\nThey will be able to see your profile and message you again.",
         [
-          { text: "Cancel", onPress: () => {} },
+          { text: "Cancel", style: "cancel" },
           {
             text: "Unblock",
-            onPress: () => blockMutation.mutate(false),
-            style: "destructive",
+            onPress: () => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              blockMutation.mutate(false);
+            },
           },
         ]
       );
     } else {
       Alert.alert(
         "Block User",
-        "This user won't be able to see your profile, posts, or message you.",
+        "Are you sure you want to block this user?\n\nThey will:\n• Not be able to see your profile or posts\n• Not be able to message you\n• Not be notified that they are blocked\n\nYou can unblock them later from settings.",
         [
-          { text: "Cancel", onPress: () => {} },
+          { text: "Cancel", style: "cancel" },
           {
             text: "Block",
-            onPress: () => blockMutation.mutate(true),
+            onPress: () => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              blockMutation.mutate(true);
+            },
             style: "destructive",
           },
         ]

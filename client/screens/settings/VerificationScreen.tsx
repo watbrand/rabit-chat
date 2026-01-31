@@ -127,7 +127,11 @@ export default function VerificationScreen() {
       );
     },
     onError: (error: any) => {
-      Alert.alert("Error", error.message || "Failed to submit verification request");
+      console.error("Failed to submit verification request:", error);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      Alert.alert("Error", error.message || "Failed to submit verification request. Please try again.");
     },
   });
 
@@ -194,7 +198,11 @@ export default function VerificationScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
     } catch (error: any) {
-      Alert.alert("Error", error.message || "Failed to take photo");
+      console.error("Failed to take photo:", error);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      Alert.alert("Error", error.message || "Failed to take photo. Please try again.");
     }
   };
 
@@ -224,7 +232,11 @@ export default function VerificationScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
     } catch (error: any) {
-      Alert.alert("Error", error.message || "Failed to pick image");
+      console.error("Failed to pick image:", error);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      Alert.alert("Error", error.message || "Failed to pick image. Please try again.");
     }
   };
 
@@ -275,7 +287,11 @@ export default function VerificationScreen() {
         links: linksArray,
       });
     } catch (error: any) {
-      Alert.alert("Upload Error", error.message || "Failed to upload document");
+      console.error("Failed to upload document:", error);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      Alert.alert("Upload Error", error.message || "Failed to upload document. Please try again.");
     } finally {
       setIsUploading(false);
     }

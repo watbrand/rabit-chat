@@ -130,8 +130,9 @@ export default function SecuritySettingsScreen() {
       setConfirmPassword("");
     },
     onError: (error: any) => {
+      console.error("Failed to change password:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Error", error.message || "Failed to change password");
+      Alert.alert("Error", error.message || "Failed to change password. Please try again.");
     },
   });
 
@@ -146,7 +147,9 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/security/sessions"] });
     },
     onError: (error: any) => {
-      Alert.alert("Error", error.message || "Failed to revoke sessions");
+      console.error("Failed to revoke sessions:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to revoke sessions. Please try again.");
     },
   });
 
@@ -159,7 +162,9 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/security/sessions"] });
     },
     onError: (error: any) => {
-      Alert.alert("Error", error.message || "Failed to end session");
+      console.error("Failed to end session:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to end session. Please try again.");
     },
   });
 
@@ -173,7 +178,9 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/security/sessions"] });
     },
     onError: (error: any) => {
-      Alert.alert("Error", error.message || "Failed to logout all");
+      console.error("Failed to logout all devices:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to logout all devices. Please try again.");
     },
   });
 
@@ -186,7 +193,9 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/security/devices"] });
     },
     onError: (error: any) => {
-      Alert.alert("Error", error.message || "Failed to remove device");
+      console.error("Failed to remove device:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to remove device. Please try again.");
     },
   });
 
@@ -201,8 +210,9 @@ export default function SecuritySettingsScreen() {
       setTwoFactorStep("verify");
     },
     onError: (error: any) => {
+      console.error("Failed to start 2FA setup:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Error", error.message || "Failed to start 2FA setup");
+      Alert.alert("Error", error.message || "Failed to start 2FA setup. Please try again.");
     },
   });
 
@@ -225,8 +235,9 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/me/2fa/status"] });
     },
     onError: (error: any) => {
+      console.error("Failed to verify 2FA code:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Error", error.message || "Invalid verification code");
+      Alert.alert("Error", error.message || "Invalid verification code. Please check and try again.");
     },
   });
 
@@ -246,8 +257,9 @@ export default function SecuritySettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/me/2fa/status"] });
     },
     onError: (error: any) => {
+      console.error("Failed to disable 2FA:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Error", error.message || "Failed to disable 2FA");
+      Alert.alert("Error", error.message || "Failed to disable 2FA. Please try again.");
     },
   });
 
@@ -277,15 +289,19 @@ export default function SecuritySettingsScreen() {
       Alert.alert("No Other Sessions", "You only have one active session");
       return;
     }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       "Sign Out Other Sessions",
-      `This will sign out ${otherSessions} other session${otherSessions > 1 ? "s" : ""}. Continue?`,
+      `This will immediately sign out ${otherSessions} device${otherSessions > 1 ? "s" : ""} and they will need to log in again.\n\nContinue?`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Sign Out All",
           style: "destructive",
-          onPress: () => revokeSessionsMutation.mutate(),
+          onPress: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            revokeSessionsMutation.mutate();
+          },
         },
       ]
     );
@@ -962,16 +978,19 @@ export default function SecuritySettingsScreen() {
                     {!session.isCurrent && session.isActive ? (
                       <Pressable
                         onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                           Alert.alert(
                             "End Session",
-                            "This will sign out this device. Continue?",
+                            `This will immediately sign out "${session.deviceInfo || session.deviceName || session.browser || "this device"}".\n\nThe device will need to log in again to access the account.`,
                             [
                               { text: "Cancel", style: "cancel" },
                               {
                                 text: "End Session",
                                 style: "destructive",
-                                onPress: () =>
-                                  invalidateSessionMutation.mutate(session.id),
+                                onPress: () => {
+                                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                                  invalidateSessionMutation.mutate(session.id);
+                                },
                               },
                             ]
                           );
@@ -995,15 +1014,19 @@ export default function SecuritySettingsScreen() {
                       );
                       return;
                     }
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
                     Alert.alert(
-                      "Logout All Devices",
-                      "This will sign you out from all other devices. You'll stay logged in here.",
+                      "Logout All Other Devices",
+                      `This will immediately sign out ${otherCount} device${otherCount > 1 ? "s" : ""}.\n\nAll other devices will need to log in again. Your current session will not be affected.\n\nContinue?`,
                       [
                         { text: "Cancel", style: "cancel" },
                         {
                           text: "Logout All",
                           style: "destructive",
-                          onPress: () => logoutAllMutation.mutate(),
+                          onPress: () => {
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                            logoutAllMutation.mutate();
+                          },
                         },
                       ]
                     );
@@ -1084,15 +1107,19 @@ export default function SecuritySettingsScreen() {
                     </View>
                     <Pressable
                       onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                         Alert.alert(
-                          "Remove Device",
-                          `Remove "${device.deviceName}" from trusted devices?`,
+                          "Remove Trusted Device",
+                          `Remove "${device.deviceName}" from trusted devices?\n\nYou'll need to verify again when logging in from this device.`,
                           [
                             { text: "Cancel", style: "cancel" },
                             {
                               text: "Remove",
                               style: "destructive",
-                              onPress: () => removeDeviceMutation.mutate(device.id),
+                              onPress: () => {
+                                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                                removeDeviceMutation.mutate(device.id);
+                              },
                             },
                           ]
                         );

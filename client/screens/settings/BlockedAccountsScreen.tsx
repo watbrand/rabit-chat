@@ -111,22 +111,24 @@ export default function BlockedAccountsScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
     onError: (error: any) => {
+      console.error("Failed to unblock user:", error);
       setUnblockingUserId(null);
-      Alert.alert("Error", error.message || "Failed to unblock user");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to unblock user. Please try again.");
     },
   });
 
   const handleUnblock = (user: BlockedUser) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       "Unblock User",
-      `Are you sure you want to unblock @${user.username}?`,
+      `Are you sure you want to unblock @${user.username}?\n\nThey will be able to:\n• See your profile and posts\n• Message you again\n• Follow you (if your account is public)`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Unblock",
           onPress: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             setUnblockingUserId(user.id);
             unblockMutation.mutate(user.id);
           },

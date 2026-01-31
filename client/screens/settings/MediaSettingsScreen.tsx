@@ -4,6 +4,7 @@ import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import * as Haptics from "expo-haptics";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { ThemedText } from "@/components/ThemedText";
@@ -61,10 +62,12 @@ export default function MediaSettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/me/settings"] });
     },
     onError: (error: any) => {
+      console.error("Failed to update media settings:", error);
       if (settings?.mediaPrefs) {
         setMediaPrefs(settings.mediaPrefs);
       }
-      Alert.alert("Error", error.message || "Failed to update settings");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to update settings. Please try again.");
     },
   });
 

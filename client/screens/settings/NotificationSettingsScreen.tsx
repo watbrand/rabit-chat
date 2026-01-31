@@ -4,6 +4,7 @@ import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import * as Haptics from "expo-haptics";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { ThemedText } from "@/components/ThemedText";
@@ -57,10 +58,12 @@ export default function NotificationSettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/me/settings"] });
     },
     onError: (error: any) => {
+      console.error("Failed to update notification settings:", error);
       if (settings?.notifications) {
         setNotifications(settings.notifications);
       }
-      Alert.alert("Error", error.message || "Failed to update settings");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to update settings. Please try again.");
     },
   });
 

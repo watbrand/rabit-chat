@@ -74,7 +74,8 @@ export default function AlgorithmSettingsScreen() {
           };
         }
         return res.json();
-      } catch {
+      } catch (error) {
+        console.error("Failed to fetch algorithm preferences:", error);
         return {
           showNetWorthPriority: true,
           showVerifiedPriority: true,
@@ -94,6 +95,13 @@ export default function AlgorithmSettingsScreen() {
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
+    },
+    onError: (error: any) => {
+      console.error("Failed to remove interest:", error);
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+      Alert.alert("Error", error.message || "Failed to remove interest. Please try again.");
     },
   });
 

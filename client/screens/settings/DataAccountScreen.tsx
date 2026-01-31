@@ -39,6 +39,7 @@ export default function DataAccountScreen() {
   const queryClient = useQueryClient();
 
   const [deletePassword, setDeletePassword] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showExportOptions, setShowExportOptions] = useState(false);
   const [exportOptions, setExportOptions] = useState({
@@ -81,6 +82,7 @@ export default function DataAccountScreen() {
       }
     },
     onError: (error: any) => {
+      console.error("Failed to create data export:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         "Export Failed",
@@ -101,7 +103,9 @@ export default function DataAccountScreen() {
       ]);
     },
     onError: (error: any) => {
-      Alert.alert("Error", error.message || "Failed to deactivate account");
+      console.error("Failed to deactivate account:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to deactivate account. Please try again.");
     },
   });
 
@@ -116,8 +120,9 @@ export default function DataAccountScreen() {
       ]);
     },
     onError: (error: any) => {
+      console.error("Failed to delete account:", error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Error", error.message || "Failed to delete account");
+      Alert.alert("Error", error.message || "Failed to delete account. Please try again.");
     },
   });
 
@@ -164,6 +169,7 @@ export default function DataAccountScreen() {
       }
     } catch (error: any) {
       console.error("Download error:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         "Download Failed",
         "We couldn't download your export. Would you like to open it in your browser instead?",
@@ -207,15 +213,19 @@ export default function DataAccountScreen() {
   };
 
   const handleDeactivate = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       "Deactivate Account",
-      "Your account will be hidden from others. You can reactivate it by signing in again. Continue?",
+      "Your account will be hidden from others and you will be logged out.\n\nYou can reactivate it anytime by signing in again with your credentials.\n\nContinue?",
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Deactivate",
           style: "destructive",
-          onPress: () => deactivateMutation.mutate(),
+          onPress: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            deactivateMutation.mutate();
+          },
         },
       ]
     );
@@ -226,15 +236,23 @@ export default function DataAccountScreen() {
       Alert.alert("Error", "Please enter your password to confirm deletion");
       return;
     }
+    if (deleteConfirmation !== "DELETE") {
+      Alert.alert("Error", "Please type DELETE to confirm account deletion");
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     Alert.alert(
-      "Delete Account",
-      "This action is PERMANENT and cannot be undone. All your data will be permanently deleted. Are you absolutely sure?",
+      "Permanently Delete Account?",
+      "⚠️ WARNING: This action is IRREVERSIBLE.\n\nAll of the following will be permanently deleted:\n• Your profile and all posts\n• All messages and conversations\n• All followers and following data\n• All saved content and settings\n• Your account cannot be recovered\n\nAre you absolutely certain you want to proceed?",
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete Forever",
           style: "destructive",
-          onPress: () => deleteMutation.mutate(),
+          onPress: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            deleteMutation.mutate();
+          },
         },
       ]
     );
@@ -551,6 +569,28 @@ export default function DataAccountScreen() {
             <ThemedText style={[styles.deleteWarningText, { color: theme.error }]}>
               This will permanently delete your account and all associated data
             </ThemedText>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <ThemedText style={styles.inputLabel}>Type DELETE to confirm</ThemedText>
+            <View
+              style={[
+                styles.inputWrapper,
+                { borderColor: theme.error + "40", backgroundColor: theme.backgroundRoot },
+              ]}
+            >
+              <TextInput
+                style={[styles.input, { color: theme.text }]}
+                value={deleteConfirmation}
+                onChangeText={setDeleteConfirmation}
+                placeholder="Type DELETE"
+                placeholderTextColor={theme.textSecondary}
+                autoCapitalize="characters"
+              />
+              {deleteConfirmation === "DELETE" ? (
+                <Feather name="check-circle" size={20} color="#10B981" />
+              ) : null}
+            </View>
           </View>
 
           <View style={styles.inputGroup}>

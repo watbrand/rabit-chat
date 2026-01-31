@@ -45,7 +45,9 @@ export default function ScheduledPostsScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduled-posts"] });
     },
     onError: (error: any) => {
-      Alert.alert("Error", error.message || "Failed to cancel scheduled post");
+      console.error("Failed to cancel scheduled post:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to cancel scheduled post. Please try again.");
     },
   });
 
@@ -59,7 +61,9 @@ export default function ScheduledPostsScreen() {
       Alert.alert("Success", "Post rescheduled successfully");
     },
     onError: (error: any) => {
-      Alert.alert("Error", error.message || "Failed to reschedule post");
+      console.error("Failed to reschedule post:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to reschedule post. Please try again.");
     },
   });
 
@@ -73,7 +77,9 @@ export default function ScheduledPostsScreen() {
       Alert.alert("Success", "Post published successfully!");
     },
     onError: (error: any) => {
-      Alert.alert("Error", error.message || "Failed to publish post");
+      console.error("Failed to publish post:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error.message || "Failed to publish post. Please try again.");
     },
   });
 
@@ -114,16 +120,19 @@ export default function ScheduledPostsScreen() {
   };
 
   const handleCancel = (post: ScheduledPost) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       "Cancel Scheduled Post",
-      "Are you sure you want to cancel this scheduled post?",
+      "Are you sure you want to cancel this scheduled post?\n\nThis will permanently remove the post from your schedule. You'll need to create a new post if you want to post this content later.",
       [
         { text: "Keep", style: "cancel" },
         {
           text: "Cancel Post",
           style: "destructive",
-          onPress: () => deleteMutation.mutate(post.id),
+          onPress: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            deleteMutation.mutate(post.id);
+          },
         },
       ]
     );

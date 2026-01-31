@@ -246,29 +246,37 @@ export default function ConversationSettingsScreen() {
   }, []);
 
   const handleArchive = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
       "Archive Conversation",
-      "This will move the conversation to your archives. You can unarchive it later.",
+      "This will move the conversation to your archives. You can unarchive it later from archived messages.",
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Archive",
-          onPress: () => archiveMutation.mutate(true),
+          onPress: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            archiveMutation.mutate(true);
+          },
         },
       ]
     );
   }, []);
 
   const handleBlock = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     Alert.alert(
       "Block User",
-      `Are you sure you want to block ${otherUserName}? They won't be able to message you or see your profile.`,
+      `Are you sure you want to block ${otherUserName}?\n\nThey will:\n• Not be able to message you\n• Not see your profile or posts\n• Not be notified that they are blocked\n\nYou can unblock them later from settings.`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Block",
           style: "destructive",
-          onPress: () => blockMutation.mutate(),
+          onPress: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            blockMutation.mutate();
+          },
         },
       ]
     );
