@@ -6,11 +6,11 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
-  ScrollView,
   Alert,
   Platform,
   TextInput,
 } from "react-native";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/hooks/useTheme";
@@ -379,12 +379,13 @@ export default function WalletScreen({ navigation }: any) {
   }
 
   return (
-    <ScrollView
+    <KeyboardAwareScrollViewCompat
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
       }
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Text style={[styles.title, { color: theme.text }]}>Wallet</Text>
@@ -862,7 +863,7 @@ export default function WalletScreen({ navigation }: any) {
           </View>
         )}
       </View>
-    </ScrollView>
+    </KeyboardAwareScrollViewCompat>
   );
 }
 

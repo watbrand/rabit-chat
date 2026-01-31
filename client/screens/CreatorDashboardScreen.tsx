@@ -10,6 +10,7 @@ import {
   TextInput,
   Alert,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { LinearGradient } from "expo-linear-gradient";
@@ -431,13 +432,18 @@ export default function CreatorDashboardScreen({ navigation }: any) {
         transparent
         onRequestClose={() => setWithdrawModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              { backgroundColor: isDark ? "#1A1A24" : "#FFFFFF" },
-            ]}
-          >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior="padding"
+          keyboardVerticalOffset={0}
+        >
+          <View style={styles.modalOverlay}>
+            <View
+              style={[
+                styles.modalContent,
+                { backgroundColor: isDark ? "#1A1A24" : "#FFFFFF" },
+              ]}
+            >
             <View style={styles.modalHeader}>
               <ThemedText style={[styles.modalTitle, { color: theme.text }]}>
                 Request Withdrawal
@@ -519,8 +525,9 @@ export default function CreatorDashboardScreen({ navigation }: any) {
                 )}
               </LinearGradient>
             </Pressable>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

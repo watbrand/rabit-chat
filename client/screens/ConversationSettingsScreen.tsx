@@ -2,7 +2,6 @@ import React, { useState, useRef, useCallback } from "react";
 import {
   View,
   StyleSheet,
-  ScrollView,
   Pressable,
   Switch,
   TextInput,
@@ -11,6 +10,7 @@ import {
   Dimensions,
   Platform,
 } from "react-native";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
@@ -387,7 +387,7 @@ export default function ConversationSettingsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <ScrollView
+      <KeyboardAwareScrollViewCompat
         style={styles.scrollView}
         contentContainerStyle={{
           paddingTop: Platform.OS === "android" ? Spacing.xl : headerHeight + Spacing.xl,
@@ -395,6 +395,7 @@ export default function ConversationSettingsScreen() {
           paddingHorizontal: Spacing.lg,
         }}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <View style={styles.headerSection}>
           <Avatar
@@ -586,7 +587,7 @@ export default function ConversationSettingsScreen() {
             ) : null}
           </View>
         ) : null}
-      </ScrollView>
+      </KeyboardAwareScrollViewCompat>
 
       <BottomSheet
         ref={muteDurationSheetRef}

@@ -2,12 +2,12 @@ import React, { useState } from "react";
 import {
   View,
   StyleSheet,
-  ScrollView,
   Pressable,
   Alert,
   TextInput,
   Platform,
 } from "react-native";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -130,10 +130,11 @@ export default function AdWalletTopupScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView
+      <KeyboardAwareScrollViewCompat
         style={styles.scrollView}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <View style={[styles.balanceCard, { backgroundColor: theme.backgroundSecondary }]}>
           <LinearGradient
@@ -255,7 +256,7 @@ export default function AdWalletTopupScreen() {
             </ThemedText>
           </View>
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollViewCompat>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.md, backgroundColor: theme.backgroundRoot }]}>
         <View style={styles.summaryRow}>

@@ -2,13 +2,13 @@ import React, { useState, useEffect } from "react";
 import {
   View,
   StyleSheet,
-  ScrollView,
   Pressable,
   Alert,
   Image,
   TextInput,
   Platform,
 } from "react-native";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -282,10 +282,11 @@ export default function BoostPostScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView 
+      <KeyboardAwareScrollViewCompat 
         style={styles.scrollView}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         {postMediaUrl ? (
           <View style={[styles.postPreview, { backgroundColor: theme.backgroundSecondary }]}>
@@ -626,7 +627,7 @@ export default function BoostPostScreen() {
             </ThemedText>
           ) : null}
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollViewCompat>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.md, backgroundColor: theme.backgroundRoot }]}>
         <Pressable
