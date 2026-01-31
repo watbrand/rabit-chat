@@ -255,7 +255,7 @@ export default function StoryViewerScreen() {
         await musicSoundRef.current.stopAsync();
         await musicSoundRef.current.unloadAsync();
       } catch (err) {
-        console.log("Error stopping music:", err);
+        // Music playback cleanup error - non-critical
       }
       musicSoundRef.current = null;
     }
@@ -268,7 +268,7 @@ export default function StoryViewerScreen() {
         await musicSoundRef.current.pauseAsync();
         setIsMusicPlaying(false);
       } catch (err) {
-        console.log("Error pausing music:", err);
+        // Music pause error - non-critical
       }
     }
   }, []);
@@ -279,7 +279,7 @@ export default function StoryViewerScreen() {
         await musicSoundRef.current.playAsync();
         setIsMusicPlaying(true);
       } catch (err) {
-        console.log("Error resuming music:", err);
+        // Music resume error - non-critical
       }
     }
   }, []);
@@ -317,7 +317,7 @@ export default function StoryViewerScreen() {
           }, currentStory.musicDuration * 1000);
         }
       } catch (err) {
-        console.log("Error loading music:", err);
+        // Music loading error - non-critical
         setIsMusicPlaying(false);
       }
     };

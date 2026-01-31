@@ -112,13 +112,6 @@ export default function FAQScreen() {
   
   const faqs = faqsResponse?.faqs || [];
   
-  // Debug logging
-  React.useEffect(() => {
-    console.log("[FAQScreen] Loading:", isLoading, "Error:", isError, faqsError);
-    console.log("[FAQScreen] FAQs count:", faqs.length);
-    console.log("[FAQScreen] Raw response:", faqsResponse);
-  }, [isLoading, isError, faqs.length, faqsResponse]);
-
   const filteredFaqs = useMemo(() => {
     if (!faqs) return [];
     if (!searchQuery.trim()) return faqs;

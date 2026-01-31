@@ -36,7 +36,6 @@ export default function SettingsScreen() {
   });
 
   const handleLogout = () => {
-    console.log("[SettingsScreen] handleLogout called");
     Alert.alert(
       "Sign Out",
       "Are you sure you want to sign out?",
@@ -46,10 +45,8 @@ export default function SettingsScreen() {
           text: "Sign Out",
           style: "destructive",
           onPress: () => {
-            console.log("[SettingsScreen] Sign Out confirmed, calling logout()");
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             logout();
-            console.log("[SettingsScreen] logout() called");
           },
         },
       ]
@@ -458,7 +455,6 @@ export default function SettingsScreen() {
               { backgroundColor: theme.error + "15", borderColor: theme.error + "40" },
             ]}
             onPress={() => {
-              console.log("[SettingsScreen] Sign Out button pressed directly");
               handleLogout();
             }}
             testID="button-signout"

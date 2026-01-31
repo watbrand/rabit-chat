@@ -113,16 +113,13 @@ export default function MallScreen() {
       const url = selectedCategory
         ? new URL(`/api/mall/items?categoryId=${selectedCategory}`, getApiUrl())
         : new URL("/api/mall/items", getApiUrl());
-      console.log("[Mall] Fetching items from:", url.toString());
       const res = await fetch(url, { credentials: "include" });
-      console.log("[Mall] Items response status:", res.status);
       if (!res.ok) {
         const errorText = await res.text();
         console.error("[Mall] Items fetch error:", res.status, errorText);
         throw new Error(`Failed to fetch items: ${res.status}`);
       }
       const data = await res.json();
-      console.log("[Mall] Items fetched:", data.length);
       return data;
     },
     retry: 1,

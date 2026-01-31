@@ -242,7 +242,9 @@ function ExploreVideoCard({
     // Try to play immediately
     try {
       player.play();
-    } catch (e) {}
+    } catch (e) {
+      // Video autoplay may fail silently (e.g., player not ready) - this is expected and non-critical
+    }
 
     return () => {
       statusSubscription?.remove();
@@ -261,7 +263,9 @@ function ExploreVideoCard({
         } else {
           player.pause();
         }
-      } catch (e) {}
+      } catch (e) {
+        // Playback control may fail if player is not ready - non-critical, will retry
+      }
     };
 
     playVideo();
@@ -283,7 +287,9 @@ function ExploreVideoCard({
         if (playerRef.current) {
           playerRef.current.pause();
         }
-      } catch (e) {}
+      } catch (e) {
+        // Cleanup errors are non-critical - player may already be disposed
+      }
     };
   }, []);
 

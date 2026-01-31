@@ -185,9 +185,7 @@ export default function WelcomeCompleteScreen() {
     if (isEntering) return;
     setIsEntering(true);
     
-    console.log("[WelcomeComplete] Button pressed - navigating to Main");
-    
-    // Fire API in background - don't wait
+    // Fire-and-forget API call - onboarding completion is best-effort, navigation proceeds regardless
     apiRequest("POST", "/api/onboarding/first-session-complete", {}).catch(() => {});
     
     // Clear cache

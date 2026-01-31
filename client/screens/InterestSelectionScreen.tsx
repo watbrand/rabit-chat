@@ -175,7 +175,6 @@ export default function InterestSelectionScreen() {
     },
     onError: (error: any) => {
       // Always continue - preferences can be set later
-      console.log("[InterestSelection] Error saving, continuing anyway:", error?.message);
       navigation.navigate("IndustrySelection");
     },
   });

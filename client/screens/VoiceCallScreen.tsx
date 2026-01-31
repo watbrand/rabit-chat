@@ -157,12 +157,10 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
     wsUrl.protocol = wsUrl.protocol.replace("https", "wss").replace("http", "ws");
     wsUrl.searchParams.set("userId", user.id);
     
-    console.log("[VoiceCall] Connecting WebSocket with userId:", user.id);
     const ws = new WebSocket(wsUrl.toString());
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log("[VoiceCall] WebSocket connected and authenticated");
       // Send auth_success immediately since we authenticated via URL
       // The server sends auth_success after connection with userId param
     };
@@ -172,13 +170,11 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
         const data = JSON.parse(event.data);
 
         if (data.type === "auth_success") {
-          console.log("[VoiceCall] WebSocket authenticated successfully");
           setWsAuthenticated(true);
           wsAuthenticatedRef.current = true; // Update ref immediately
           
           if (isIncoming) {
             // For incoming calls, we're already in "ongoing" state - start recording now
-            console.log("[VoiceCall] Incoming call - starting recording after auth");
             callStartTimeRef.current = Date.now();
             callStatusRef.current = "ongoing"; // Ensure ref is correct
             // Delay slightly to ensure audio is configured
@@ -204,7 +200,6 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
         }
 
         if (data.type === "call_answered" && data.callId === callId) {
-          console.log("[VoiceCall] Call answered - updating status and starting recording");
           setCallStatus("ongoing");
           callStatusRef.current = "ongoing"; // Update ref immediately
           callStartTimeRef.current = Date.now();
@@ -214,21 +209,18 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
         }
 
         if (data.type === "call_declined" && data.callId === callId) {
-          console.log("[VoiceCall] Call declined");
           setCallStatus("declined");
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           setTimeout(() => navigation.goBack(), 2000);
         }
 
         if (data.type === "call_ended" && data.callId === callId) {
-          console.log("[VoiceCall] Call ended by other party");
           setCallStatus("ended");
           stopRecording();
           setTimeout(() => navigation.goBack(), 1500);
         }
 
         if (data.type === "audio_data" && data.callId === callId) {
-          console.log("[VoiceCall] Received audio chunk, size:", data.audioData?.length, "queue:", audioQueueRef.current.length);
           setAudioStats(prev => ({ ...prev, received: prev.received + 1 }));
           audioQueueRef.current.push(data.audioData);
           playNextAudio();
@@ -243,7 +235,7 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
     };
 
     ws.onclose = () => {
-      console.log("[VoiceCall] WebSocket closed");
+      // WebSocket closed
     };
 
     ws.onerror = (error) => {
@@ -330,6 +322,7 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
           setAudioStats(prev => ({ ...prev, sent: prev.sent + 1 }));
         }
         
+        // Fire-and-forget temp file cleanup - failure is non-critical
         try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch (e) {}
       }
 
@@ -379,8 +372,11 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
       try {
         await recordingRef.current.stopAndUnloadAsync();
         const uri = recordingRef.current.getURI();
+        // Fire-and-forget temp file cleanup - failure is non-critical
         if (uri) { try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch (e) {} }
-      } catch (error) {}
+      } catch (error) {
+        // Recording may already be stopped/unloaded - non-critical cleanup error
+      }
       recordingRef.current = null;
     }
   };
@@ -406,15 +402,9 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
       tempFileCounterRef.current += 1;
       const tempUri = `${FileSystem.cacheDirectory}voice_${Date.now()}_${tempFileCounterRef.current}.m4a`;
       
-      console.log("[VoiceCall] Writing audio file, data length:", audioData?.length);
-      
       await FileSystem.writeAsStringAsync(tempUri, audioData!, {
         encoding: FileSystem.EncodingType.Base64,
       });
-      
-      // Verify file was written
-      const fileInfo = await FileSystem.getInfoAsync(tempUri);
-      console.log("[VoiceCall] Audio file written:", fileInfo.exists, "size:", (fileInfo as any).size);
       
       // Ensure audio mode is configured for playback on iOS
       if (Platform.OS === "ios") {
@@ -430,12 +420,10 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
       }
       
       // Create and play sound
-      console.log("[VoiceCall] Creating sound from:", tempUri);
       const { sound, status } = await Audio.Sound.createAsync(
         { uri: tempUri },
         { shouldPlay: true, volume: 1.0, isMuted: false }
       );
-      console.log("[VoiceCall] Sound created, status:", status.isLoaded);
       soundRef.current = sound;
 
       // Pre-prepare next audio while current plays (overlapping preparation)
@@ -444,6 +432,7 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
       sound.setOnPlaybackStatusUpdate(async (status) => {
         if (status.isLoaded && status.didJustFinish) {
           isPlayingRef.current = false;
+          // Fire-and-forget temp file cleanup - failure is non-critical
           try { await FileSystem.deleteAsync(tempUri, { idempotent: true }); } catch (e) {}
           playNextAudio();
         }
@@ -453,6 +442,7 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
       if (prepareNextChunk && audioQueueRef.current.length > 0) {
         const nextData = audioQueueRef.current[0];
         const nextUri = `${FileSystem.cacheDirectory}voice_${Date.now()}_${tempFileCounterRef.current + 1}.m4a`;
+        // Fire-and-forget background pre-caching - failure handled by main playback flow
         FileSystem.writeAsStringAsync(nextUri, nextData, {
           encoding: FileSystem.EncodingType.Base64,
         }).catch(() => {});
@@ -468,7 +458,6 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
   const answerCall = async () => {
     const audioReady = await setupAudio();
     if (!audioReady) {
-      console.log("[VoiceCall] Cannot answer - no audio permission");
       return;
     }
 
@@ -542,23 +531,17 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
     let isMounted = true;
     
     const initializeCall = async () => {
-      console.log("[VoiceCall] Initializing call, isIncoming:", isIncoming);
-      
       try {
         const ready = await setupAudio();
         
         if (!isMounted) {
-          console.log("[VoiceCall] Component unmounted during setup");
           return;
         }
         
         if (ready) {
-          console.log("[VoiceCall] Audio ready, connecting WebSocket...");
           connectWebSocket();
           // Recording will start after auth_success is received from WebSocket
           // See ws.onmessage handler for auth_success
-        } else {
-          console.log("[VoiceCall] Audio setup failed");
         }
       } catch (error) {
         console.error("[VoiceCall] Call initialization error:", error);

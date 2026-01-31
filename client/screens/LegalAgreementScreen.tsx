@@ -256,25 +256,16 @@ export function LegalAgreementScreen() {
 
   const acceptMutation = useMutation({
     mutationFn: async () => {
-      console.log("[LegalAgreement] Making API request to /api/legal/accept");
-      try {
-        const response = await apiRequest("POST", "/api/legal/accept", {
-          termsAccepted,
-          privacyAccepted,
-          guidelinesAccepted,
-          marketingOptIn,
-        });
-        console.log("[LegalAgreement] API response status:", response.status);
-        const data = await response.json();
-        console.log("[LegalAgreement] API success:", data);
-        return data;
-      } catch (error: any) {
-        console.log("[LegalAgreement] API error:", error.message);
-        throw error;
-      }
+      const response = await apiRequest("POST", "/api/legal/accept", {
+        termsAccepted,
+        privacyAccepted,
+        guidelinesAccepted,
+        marketingOptIn,
+      });
+      const data = await response.json();
+      return data;
     },
     onSuccess: (data) => {
-      console.log("[LegalAgreement] Mutation success, navigating...");
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -287,10 +278,8 @@ export function LegalAgreementScreen() {
       // Navigate immediately
       try {
         if (fromSignup) {
-          console.log("[LegalAgreement] Navigating to InterestSelection");
           navigation.replace("InterestSelection");
         } else {
-          console.log("[LegalAgreement] Navigating to MainTabs");
           navigation.replace("MainTabs");
         }
       } catch (navError) {
@@ -299,11 +288,9 @@ export function LegalAgreementScreen() {
       }
     },
     onError: (error: Error) => {
-      console.log("[LegalAgreement] Mutation error:", error.message);
       setIsSubmitting(false);
       
       // Always continue - legal acceptance can be retried later
-      console.log("[LegalAgreement] Error, continuing anyway");
       if (fromSignup) {
         navigation.replace("InterestSelection");
       } else {
@@ -315,15 +302,11 @@ export function LegalAgreementScreen() {
   const allRequiredAccepted = termsAccepted && privacyAccepted && guidelinesAccepted;
 
   const handleContinue = () => {
-    console.log("[LegalAgreement] Continue button pressed");
-    console.log("[LegalAgreement] State:", { termsAccepted, privacyAccepted, guidelinesAccepted, allRequiredAccepted });
-    
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
     if (!allRequiredAccepted) {
-      console.log("[LegalAgreement] Not all agreements accepted, showing alert");
       buttonScale.value = withSequence(
         withSpring(0.95, { damping: 10 }),
         withSpring(1.02, { damping: 10 }),
@@ -343,7 +326,6 @@ export function LegalAgreementScreen() {
       return;
     }
 
-    console.log("[LegalAgreement] All agreements accepted, submitting...");
     setIsSubmitting(true);
     acceptMutation.mutate();
   };

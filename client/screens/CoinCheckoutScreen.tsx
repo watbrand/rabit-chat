@@ -135,7 +135,6 @@ export default function CoinCheckoutScreen() {
   const checkPaymentStatus = async () => {
     try {
       setCheckingStatus(true);
-      console.log("[CoinCheckout] Checking payment status for purchaseId:", purchaseId);
       
       // The return page ALREADY completes the purchase server-side.
       // This API call is just a backup verification - if it fails (e.g., network issues
@@ -155,7 +154,6 @@ export default function CoinCheckoutScreen() {
         
         if (completeRes.ok) {
           const completeData = await completeRes.json();
-          console.log("[CoinCheckout] Complete response:", completeData);
           
           if (completeData.success) {
             setPaymentComplete(true);
@@ -163,15 +161,8 @@ export default function CoinCheckoutScreen() {
             if (Platform.OS !== "web") {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
-            console.log("[CoinCheckout] Payment completed successfully!", {
-              coinsReceived: completeData.purchase?.coinsReceived,
-              newBalance: completeData.wallet?.coinBalance,
-            });
             return;
           }
-        } else {
-          const errorText = await completeRes.text();
-          console.log("[CoinCheckout] Complete endpoint returned error:", completeRes.status, errorText);
         }
         
         // Fallback: Check status endpoint
@@ -181,7 +172,6 @@ export default function CoinCheckoutScreen() {
         );
         if (res.ok) {
           const data = await res.json();
-          console.log("[CoinCheckout] Status response:", data);
           if (data.purchase?.status === "completed") {
             setPaymentComplete(true);
             if (Platform.OS !== "web") {
@@ -192,7 +182,6 @@ export default function CoinCheckoutScreen() {
       } catch (networkErr) {
         // Network error is expected when WebView navigates to app deep link
         // The return page already completed the purchase server-side, so we can show success
-        console.log("[CoinCheckout] Network error (expected during navigation):", networkErr);
         // Still show success since server-side completion already happened
         setPaymentComplete(true);
         if (Platform.OS !== "web") {
@@ -240,31 +229,24 @@ export default function CoinCheckoutScreen() {
 
   const handleNavigationStateChange = async (navState: any) => {
     const { url } = navState;
-    console.log("[CoinCheckout] Navigation state changed:", url);
     
     // Handle deep link navigation back to app
     if (url.startsWith("rabitchat://")) {
-      console.log("[CoinCheckout] Deep link detected, handling navigation");
       // The server has already completed the purchase, show success
       if (url.includes("payment=success")) {
         setPaymentComplete(true);
         if (Platform.OS !== "web") {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
-      } else if (url.includes("payment=error")) {
-        // Don't auto-close on error, let user see the issue
-        console.log("[CoinCheckout] Payment error reported via deep link");
       }
       return;
     }
     
     if (url.includes("/api/coins/purchase/return") && !paymentComplete) {
-      console.log("[CoinCheckout] Return URL detected, checking status...");
       await checkPaymentStatus();
     }
     
     if (url.includes("/api/coins/purchase/cancel")) {
-      console.log("[CoinCheckout] Cancel URL detected");
       Alert.alert(
         "Payment Cancelled",
         "Your payment was cancelled. No coins were added to your wallet.",
@@ -350,11 +332,9 @@ export default function CoinCheckoutScreen() {
         sharedCookiesEnabled
         onShouldStartLoadWithRequest={(request) => {
           const { url } = request;
-          console.log("[CoinCheckout] Load request:", url);
           
           // Intercept rabitchat:// deep links - WebView can't navigate to these
           if (url.startsWith("rabitchat://")) {
-            console.log("[CoinCheckout] Intercepted deep link, handling payment completion");
             // The server already completed the purchase before sending this deep link
             if (url.includes("payment=success")) {
               setPaymentComplete(true);

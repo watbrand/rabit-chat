@@ -178,7 +178,6 @@ export default function IndustrySelectionScreen() {
     },
     onError: (error: any) => {
       // Always continue - preferences can be set later
-      console.log("[IndustrySelection] Error saving, continuing anyway:", error?.message);
       navigation.navigate("NetWorthTier");
     },
   });

@@ -139,33 +139,22 @@ export default function StoryComposerScreen() {
       musicStartTime?: number;
       musicDuration?: number;
     }) => {
-      console.log("[StoryComposer] Posting story with data:", JSON.stringify(data, null, 2));
-      try {
-        const response = await apiRequest("POST", "/api/stories", data);
-        console.log("[StoryComposer] API response status:", response.status);
-        const responseText = await response.text();
-        console.log("[StoryComposer] API response body:", responseText);
-        
-        if (!response.ok) {
-          let errorMessage = "Failed to create story";
-          try {
-            const errorJson = JSON.parse(responseText);
-            errorMessage = errorJson.message || errorMessage;
-          } catch {
-            errorMessage = responseText || errorMessage;
-          }
-          throw new Error(errorMessage);
+      const response = await apiRequest("POST", "/api/stories", data);
+      const responseText = await response.text();
+      
+      if (!response.ok) {
+        let errorMessage = "Failed to create story";
+        try {
+          const errorJson = JSON.parse(responseText);
+          errorMessage = errorJson.message || errorMessage;
+        } catch {
+          errorMessage = responseText || errorMessage;
         }
-        
-        const result = JSON.parse(responseText);
-        console.log("[StoryComposer] Story posted successfully:", result.id);
-        return result;
-      } catch (error: any) {
-        console.error("[StoryComposer] API error:", error);
-        console.error("[StoryComposer] Error message:", error.message);
-        console.error("[StoryComposer] Error stack:", error.stack);
-        throw error;
+        throw new Error(errorMessage);
       }
+      
+      const result = JSON.parse(responseText);
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/users/${user?.id}/stories`] });
@@ -227,17 +216,9 @@ export default function StoryComposerScreen() {
 
 
   const handleEditorSave = async (data: any) => {
-    console.log("[StoryComposer] handleEditorSave called");
-    console.log("[StoryComposer] selectedType:", selectedType);
-    console.log("[StoryComposer] textContent state:", textContent);
-    console.log("[StoryComposer] data from editor:", JSON.stringify(data, null, 2));
-    console.log("[StoryComposer] voiceUri:", voiceUri);
-    console.log("[StoryComposer] pickedMedia:", pickedMedia);
-    
     // Validate before uploading
     if (selectedType === "TEXT") {
       const finalText = (textContentRef.current || textContent || data.content || "").trim();
-      console.log("[StoryComposer] TEXT validation - finalText:", finalText);
       if (!finalText) {
         Alert.alert("Missing Content", "Please add some text to your story");
         return;
@@ -269,7 +250,6 @@ export default function StoryComposerScreen() {
       if (selectedType === "PHOTO" || selectedType === "VIDEO") {
         if (!pickedMedia) throw new Error("No media selected");
         
-        console.log("[StoryComposer] Uploading media:", pickedMedia.uri);
         const uploadResult = await uploadFileWithDuration(
           pickedMedia.uri,
           "general",
@@ -277,7 +257,6 @@ export default function StoryComposerScreen() {
           pickedMedia.duration,
           (progress) => setUploadProgress(Math.min(100, progress))
         );
-        console.log("[StoryComposer] Upload result:", uploadResult);
         
         mediaUrl = uploadResult.url;
         thumbnailUrl = uploadResult.thumbnailUrl;
@@ -287,7 +266,6 @@ export default function StoryComposerScreen() {
       let audioUrl: string | undefined;
       
       if (selectedType === "VOICE" && voiceUri) {
-        console.log("[StoryComposer] Uploading voice:", voiceUri);
         const uploadResult = await uploadFileWithDuration(
           voiceUri,
           "general",
@@ -295,7 +273,6 @@ export default function StoryComposerScreen() {
           undefined,
           (progress) => setUploadProgress(Math.min(100, progress))
         );
-        console.log("[StoryComposer] Voice upload result:", uploadResult);
         
         audioUrl = uploadResult.url;
         durationMs = uploadResult.durationMs;
@@ -322,7 +299,6 @@ export default function StoryComposerScreen() {
       let musicDuration: number | undefined;
       
       if (data.music && data.music.id) {
-        console.log("[StoryComposer] Processing music data:", data.music.title);
         musicUrl = data.music.fullUrl || data.music.previewUrl;
         musicTitle = data.music.title;
         musicArtist = data.music.artist;
@@ -330,7 +306,6 @@ export default function StoryComposerScreen() {
         const endTime = data.musicEndTime ?? 15;
         musicStartTime = startTime;
         musicDuration = endTime - startTime;
-        console.log("[StoryComposer] Music fields - url:", musicUrl, "title:", musicTitle, "artist:", musicArtist, "startTime:", musicStartTime, "duration:", musicDuration);
       }
 
       // Get text content from ref, state, or editor data
@@ -357,10 +332,7 @@ export default function StoryComposerScreen() {
         musicDuration,
       };
       
-      console.log("[StoryComposer] Final story data to post:", JSON.stringify(storyData, null, 2));
-      
       await postStoryMutation.mutateAsync(storyData);
-      console.log("[StoryComposer] Story posted successfully!");
     } catch (error: any) {
       console.error("[StoryComposer] Upload error:", error);
       Alert.alert("Upload Failed", error.message || "Could not upload story");
@@ -399,7 +371,6 @@ export default function StoryComposerScreen() {
     return (
       <TextStoryEditor
         onSave={(data) => {
-          console.log("[StoryComposer] TextStoryEditor saved with:", data.textContent);
           textContentRef.current = data.textContent; // Store immediately in ref
           setTextContent(data.textContent);
           setStep("editor");
@@ -425,7 +396,6 @@ export default function StoryComposerScreen() {
     const editorMediaUri = selectedType === "VOICE" ? voiceUri : pickedMedia?.uri;
     // Use ref for immediate access to text content (avoids async state timing issues)
     const editorInitialContent = textContentRef.current || textContent;
-    console.log("[StoryComposer] Rendering editor with initialContent:", editorInitialContent);
     
     return (
       <View style={styles.container}>

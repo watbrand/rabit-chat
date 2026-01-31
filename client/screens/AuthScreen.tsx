@@ -153,7 +153,7 @@ export default function AuthScreen() {
             }
           }
         } catch (e) {
-          console.log("Could not check onboarding status");
+          // Could not check onboarding status, continue with default flow
         }
       } else {
         await signup(username, email, password, displayName);

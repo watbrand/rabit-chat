@@ -69,10 +69,8 @@ export default function PostDetailScreen() {
 
   const commentMutation = useMutation({
     mutationFn: async (content: string) => {
-      console.log("[Comment] Submitting comment:", content);
       const res = await apiRequest("POST", `/api/posts/${postId}/comments`, { content });
       const data = await res.json();
-      console.log("[Comment] Response:", data);
       return data;
     },
     onMutate: async (content: string) => {
@@ -101,7 +99,6 @@ export default function PostDetailScreen() {
       queryClient.invalidateQueries({ queryKey: [`/api/posts/${postId}`] });
     },
     onError: (error: any, _, context) => {
-      console.log("[Comment] Error:", error);
       if (context?.previousComments) {
         queryClient.setQueryData([`/api/posts/${postId}/comments`], context.previousComments);
       }
@@ -126,12 +123,9 @@ export default function PostDetailScreen() {
   });
 
   const handleSubmitComment = () => {
-    console.log("[Comment] handleSubmitComment called, comment:", comment, "isPending:", commentMutation.isPending);
     if (!comment.trim() || commentMutation.isPending) {
-      console.log("[Comment] Blocked - empty or pending");
       return;
     }
-    console.log("[Comment] Calling mutate with:", comment.trim());
     commentMutation.mutate(comment.trim());
   };
 
@@ -139,6 +133,7 @@ export default function PostDetailScreen() {
   useEffect(() => {
     if (postId && !viewRecordedRef.current) {
       viewRecordedRef.current = true;
+      // Fire-and-forget view tracking - failure doesn't affect user experience
       apiRequest("POST", `/api/posts/${postId}/view`).catch(() => {});
     }
   }, [postId]);

@@ -177,8 +177,6 @@ export default function AdWalletCheckoutScreen() {
     const { url } = navState;
     
     if (url.includes("/api/ads/wallet/payfast/return") && !paymentComplete) {
-      console.log("[AdWalletCheckout] Return URL detected, calling server...");
-      
       try {
         const completeUrl = new URL("/api/ads/wallet/payfast/complete-topup", getApiUrl());
         
@@ -190,7 +188,6 @@ export default function AdWalletCheckoutScreen() {
         });
         
         const data = await response.json();
-        console.log("[AdWalletCheckout] Complete response:", JSON.stringify(data));
         
         if (data.success || data.status === "COMPLETED") {
           setNewBalance(data.newBalance);

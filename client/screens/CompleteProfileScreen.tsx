@@ -273,7 +273,6 @@ export default function CompleteProfileScreen() {
     },
     onError: (error: Error) => {
       // Always continue - profile can be updated later
-      console.log("[CompleteProfile] Error saving, continuing anyway:", error?.message);
       navigation.navigate("LegalAgreement", { fromSignup: true });
     },
   });

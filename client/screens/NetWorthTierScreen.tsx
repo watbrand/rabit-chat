@@ -222,7 +222,6 @@ export default function NetWorthTierScreen() {
     },
     onError: (error: any) => {
       // Always continue - preferences can be set later
-      console.log("[NetWorthTier] Error saving, continuing anyway:", error?.message);
       navigation.navigate("SuggestedUsers");
     },
   });

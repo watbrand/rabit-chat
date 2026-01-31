@@ -313,7 +313,6 @@ export default function SuggestedUsersScreen() {
     },
     onError: (error: any) => {
       // Always continue - onboarding state can be updated later
-      console.log("[SuggestedUsers] Error completing, continuing anyway:", error?.message);
       navigation.navigate("WelcomeComplete");
     },
   });

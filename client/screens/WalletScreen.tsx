@@ -244,13 +244,11 @@ export default function WalletScreen({ navigation }: any) {
   useEffect(() => {
     const autoRecoverPurchases = async () => {
       if (pendingPurchasesData?.pendingPurchases && pendingPurchasesData.pendingPurchases.length > 0) {
-        console.log("[Wallet] Found pending purchases, attempting auto-recovery...");
         for (const purchase of pendingPurchasesData.pendingPurchases) {
           try {
             const response = await apiRequest("POST", `/api/coins/recover/${purchase.id}`);
             const data = await response.json();
             if (data.success) {
-              console.log("[Wallet] Auto-recovered purchase:", purchase.id);
               queryClient.invalidateQueries({ queryKey: ["/api/wallet"] });
               queryClient.invalidateQueries({ queryKey: ["/api/coins/pending"] });
               queryClient.invalidateQueries({ queryKey: ["/api/wallet/transactions"] });

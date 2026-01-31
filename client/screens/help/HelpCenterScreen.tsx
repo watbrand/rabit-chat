@@ -98,14 +98,6 @@ export default function HelpCenterScreen() {
     enabled: searchQuery.length > 2,
   });
 
-  // Debug logging for API issues
-  React.useEffect(() => {
-    console.log("[HelpCenterScreen] Categories loading:", categoriesLoading, "error:", categoriesError, categoriesErrorMsg);
-    console.log("[HelpCenterScreen] Articles loading:", articlesLoading, "error:", articlesError, articlesErrorMsg);
-    console.log("[HelpCenterScreen] Featured articles count:", featuredArticles.length);
-    console.log("[HelpCenterScreen] Categories count:", categories.length);
-  }, [categoriesLoading, categoriesError, articlesLoading, articlesError, featuredArticles.length, categories.length]);
-
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = useCallback(async () => {

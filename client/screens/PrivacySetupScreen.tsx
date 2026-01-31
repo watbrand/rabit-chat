@@ -255,7 +255,6 @@ export default function PrivacySetupScreen() {
     useState<VisibilityOption>("FOLLOWERS");
 
   const handleContinue = () => {
-    console.log("[PrivacySetup] Continue button pressed - navigating immediately");
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     
     // Fire API in background - don't wait for it

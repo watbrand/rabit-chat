@@ -181,16 +181,10 @@ export default function PayFastCheckoutScreen() {
   const handleNavigationStateChange = async (navState: any) => {
     const { url } = navState;
     if (url.includes("/api/payments/payfast/return") && !paymentComplete) {
-      console.log("[PayFast] Return URL detected, calling server to process payment...");
-      console.log("[PayFast] Order ID:", orderId);
-      console.log("[PayFast] API URL:", getApiUrl());
-      
       // CRITICAL: Call the complete-purchase endpoint to trigger server-side processing
       // This ensures the order is marked complete and net worth is updated
       try {
         const completeUrl = new URL(`/api/payments/payfast/complete-purchase`, getApiUrl());
-        
-        console.log("[PayFast] Calling complete-purchase endpoint:", completeUrl.toString());
         
         const response = await fetch(completeUrl.toString(), {
           method: "POST",
@@ -200,11 +194,8 @@ export default function PayFastCheckoutScreen() {
         });
         
         const data = await response.json();
-        console.log("[PayFast] Complete-purchase response:", JSON.stringify(data));
         
         if (data.success) {
-          console.log("[PayFast] Purchase completed! New net worth:", data.newNetWorth);
-          
           // CRITICAL: Refresh auth context user data
           await refreshUser();
           
@@ -233,14 +224,10 @@ export default function PayFastCheckoutScreen() {
             }) : Promise.resolve(),
           ]);
           
-          console.log("[PayFast] All caches invalidated and refetched");
-          
           Alert.alert(
             "Purchase Successful!",
             `Your net worth is now R${(data.newNetWorth || 0).toLocaleString()}`
           );
-        } else {
-          console.log("[PayFast] Purchase response:", data.message);
         }
         
         setPaymentComplete(true);
@@ -258,7 +245,6 @@ export default function PayFastCheckoutScreen() {
   };
 
   const handleClose = () => {
-    console.log("[PayFast] handleClose called, paymentComplete:", paymentComplete);
     // Use multiple approaches for reliable navigation back to Mall
     try {
       // Method 1: Try dispatch with reset to clear stack and go to Mall tab
