@@ -10,7 +10,6 @@ import {
   AppStateStatus,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import NetInfo from "@react-native-community/netinfo";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -125,8 +124,6 @@ export function VirtualMallView({
   const [wsConnected, setWsConnected] = useState(false);
   const [isEntering, setIsEntering] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isOffline, setIsOffline] = useState(false);
-  const isOfflineRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -176,24 +173,6 @@ export function VirtualMallView({
 
     const subscription = AppState.addEventListener("change", handleAppStateChange);
 
-    const unsubscribeNetInfo = NetInfo.addEventListener((state) => {
-      const wasOffline = isOfflineRef.current;
-      const nowOffline = !state.isConnected;
-      
-      if (isMountedRef.current) {
-        isOfflineRef.current = nowOffline;
-        setIsOffline(nowOffline);
-        
-        if (wasOffline && !nowOffline) {
-          reconnectAttemptsRef.current = 0;
-          connectWebSocket();
-          setError(null);
-        } else if (nowOffline && !wasOffline) {
-          setError("You're offline. Some features may be unavailable.");
-        }
-      }
-    });
-
     return () => {
       isMountedRef.current = false;
       leaveMall();
@@ -201,7 +180,6 @@ export function VirtualMallView({
       cancelAnimation(positionX);
       cancelAnimation(positionY);
       subscription.remove();
-      unsubscribeNetInfo();
     };
   }, [user?.id]);
 
@@ -438,13 +416,6 @@ export function VirtualMallView({
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           />
-
-          {isOffline ? (
-            <View style={[styles.offlineBanner, { backgroundColor: theme.warning || "#f59e0b" }]}>
-              <Feather name="wifi-off" size={16} color="#fff" />
-              <ThemedText style={styles.offlineText}>No internet connection</ThemedText>
-            </View>
-          ) : null}
 
           {error ? (
             <View style={[styles.errorBanner, { backgroundColor: theme.error }]}>
@@ -748,25 +719,6 @@ const styles = StyleSheet.create({
   connectionText: {
     fontSize: 10,
     color: "#fff",
-    fontWeight: "600",
-  },
-  offlineBanner: {
-    position: "absolute",
-    top: Spacing.xl * 2,
-    left: Spacing.md,
-    right: Spacing.md,
-    zIndex: 200,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-  },
-  offlineText: {
-    flex: 1,
-    color: "#fff",
-    fontSize: 13,
     fontWeight: "600",
   },
 });
