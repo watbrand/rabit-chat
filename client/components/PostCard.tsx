@@ -152,6 +152,7 @@ export const PostCard = memo(function PostCard({ post, onLike, showFullContent =
   const [showFullscreenMedia, setShowFullscreenMedia] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [isContentExpanded, setIsContentExpanded] = useState(false);
   const [currentReaction, setCurrentReaction] = useState<PostReactionType | null>(
     (post as any).reactionType || (post.hasLiked ? "LIKE" : null)
   );
@@ -452,8 +453,22 @@ export const PostCard = memo(function PostCard({ post, onLike, showFullContent =
         </View>
 
         {post.content ? (
-          <View style={{ maxHeight: showFullContent ? undefined : 80, overflow: "hidden" }}>
-            <MentionText text={post.content} style={styles.content} />
+          <View>
+            <MentionText 
+              text={post.content} 
+              style={styles.content} 
+              numberOfLines={(showFullContent || isContentExpanded) ? undefined : 3}
+            />
+            {!showFullContent && post.content.length > 150 ? (
+              <Pressable 
+                onPress={() => setIsContentExpanded(!isContentExpanded)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <ThemedText style={[styles.seeMoreText, { color: theme.primary }]}>
+                  {isContentExpanded ? "See less" : "See more"}
+                </ThemedText>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 
@@ -612,8 +627,13 @@ const styles = StyleSheet.create({
     marginRight: -Spacing.sm,
   },
   content: {
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
     lineHeight: 22,
+  },
+  seeMoreText: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: Spacing.md,
   },
   mediaContainer: {
     marginHorizontal: -Spacing.md,

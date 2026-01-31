@@ -63,6 +63,50 @@ function formatCount(count: number): string {
   return count.toString();
 }
 
+function ExpandableCaption({ text, theme }: { text: string; theme: any }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const needsTruncation = text.length > 100;
+
+  return (
+    <View>
+      <ThemedText 
+        style={captionStyles.caption} 
+        numberOfLines={isExpanded ? undefined : 3}
+      >
+        {text}
+      </ThemedText>
+      {needsTruncation ? (
+        <Pressable 
+          onPress={() => setIsExpanded(!isExpanded)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <ThemedText style={[captionStyles.seeMoreText, { color: theme.primary }]}>
+            {isExpanded ? "See less" : "See more"}
+          </ThemedText>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+const captionStyles = StyleSheet.create({
+  caption: {
+    fontSize: 14,
+    color: "#FFFFFF",
+    textShadowColor: "rgba(0,0,0,0.75)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  seeMoreText: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginTop: 4,
+    textShadowColor: "rgba(0,0,0,0.75)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+});
+
 export function SwipeViewer({
   posts,
   isLoading,
@@ -177,9 +221,7 @@ export function SwipeViewer({
           </Pressable>
 
           {(item.caption || item.content) && item.mediaUrl ? (
-            <ThemedText style={styles.caption} numberOfLines={3}>
-              {item.caption || item.content}
-            </ThemedText>
+            <ExpandableCaption text={item.caption || item.content || ''} theme={theme} />
           ) : null}
         </View>
 

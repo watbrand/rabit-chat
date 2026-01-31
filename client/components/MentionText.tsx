@@ -8,9 +8,10 @@ interface MentionTextProps {
   text: string;
   style?: TextStyle;
   mentionStyle?: TextStyle;
+  numberOfLines?: number;
 }
 
-export function MentionText({ text, style, mentionStyle }: MentionTextProps) {
+export function MentionText({ text, style, mentionStyle, numberOfLines }: MentionTextProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
 
@@ -63,7 +64,7 @@ export function MentionText({ text, style, mentionStyle }: MentionTextProps) {
   };
 
   return (
-    <Text style={style}>
+    <Text style={style} numberOfLines={numberOfLines}>
       {renderTextWithMentions()}
     </Text>
   );

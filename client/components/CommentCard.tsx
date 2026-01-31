@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
@@ -39,12 +39,15 @@ function formatTimeAgo(dateString: string): string {
 export function CommentCard({ comment }: CommentCardProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const handleUserPress = () => {
     if (comment.author?.username) {
       navigation.navigate("ProfilePage", { username: comment.author.username });
     }
   };
+
+  const needsTruncation = comment.content && comment.content.length > 150;
 
   return (
     <View
@@ -72,7 +75,21 @@ export function CommentCard({ comment }: CommentCardProps) {
             {formatTimeAgo(comment.createdAt)}
           </ThemedText>
         </View>
-        <MentionText text={comment.content} style={styles.text} />
+        <MentionText 
+          text={comment.content} 
+          style={styles.text} 
+          numberOfLines={isExpanded ? undefined : 3}
+        />
+        {needsTruncation ? (
+          <Pressable 
+            onPress={() => setIsExpanded(!isExpanded)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ThemedText style={[styles.seeMoreText, { color: theme.primary }]}>
+              {isExpanded ? "See less" : "See more"}
+            </ThemedText>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -109,5 +126,10 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: Typography.small.fontSize,
+  },
+  seeMoreText: {
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: Spacing.xs,
   },
 });
