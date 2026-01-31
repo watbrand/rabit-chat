@@ -6,6 +6,24 @@ RabitChat is a Forbes-style mobile social network application targeting high-net
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes (January 31, 2026)
+**Major Backend API Completion - 60+ Endpoints Added:**
+- **Subscriptions/Super Follows**: 9 endpoints for creator subscriptions, tiers, subscriber management
+- **Check-In System**: 7 endpoints for location updates, venue discovery, nearby users
+- **Digital Wellness**: 3 endpoints for focus mode settings, usage statistics
+- **Chat Folders**: 5 endpoints for organizing conversations into folders
+- **Social Features**: 7 endpoints for pokes, BFF status, close friends management
+- **Broadcast Channels**: 9 endpoints for channel creation, subscriptions, messaging
+- **Webhooks/Developer Tools**: 6 endpoints for webhook management and delivery history
+- **Groups**: 6 endpoints for group CRUD, join/leave, member management
+- **Events**: 4 endpoints for event CRUD, RSVP functionality
+- **Content Features**: 10 endpoints for threads, duets/stitches, AR filters
+- **Privacy Controls**: 7 endpoints for keyword filters, muted/restricted accounts
+- **AI Features**: 5 endpoints for AI avatars and translations
+- **Live Streams**: 7 endpoints for stream viewing, comments, reactions
+- **Algorithm Settings**: Added mutation and UI for updating feed preferences
+- **Fixed 2FA Bug**: All 6 2FA endpoints now correctly use `userSettings` table instead of `users` table
+
 ## System Architecture
 
 ### Frontend
