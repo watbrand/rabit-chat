@@ -6955,6 +6955,7 @@ export const mallPresence = pgTable("mall_presence", {
     .default(sql`gen_random_uuid()`),
   userId: varchar("user_id")
     .notNull()
+    .unique()
     .references(() => users.id, { onDelete: "cascade" }),
   currentShopId: varchar("current_shop_id")
     .references(() => mallCategories.id, { onDelete: "set null" }),
@@ -6964,7 +6965,6 @@ export const mallPresence = pgTable("mall_presence", {
   lastActiveAt: timestamp("last_active_at").defaultNow().notNull(),
   enteredAt: timestamp("entered_at").defaultNow().notNull(),
 }, (table) => [
-  index("mall_presence_user_id_idx").on(table.userId),
   index("mall_presence_shop_id_idx").on(table.currentShopId),
   index("mall_presence_active_idx").on(table.isActive),
 ]);

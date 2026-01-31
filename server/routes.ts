@@ -25,7 +25,7 @@ import { registerApiUsageRoutes } from "./routes-api-usage";
 import { registerHelpCenterRoutes } from "./routes-help-center";
 import { adsEngine, type AuctionResult } from "./ads-engine";
 import { pool, db } from "./db";
-import { sql, and, eq, gt, gte, isNull, inArray, desc, or, like, asc, ilike } from "drizzle-orm";
+import { sql, and, eq, gt, gte, isNull, isNotNull, inArray, desc, or, like, asc, ilike } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
   getViewerContext,

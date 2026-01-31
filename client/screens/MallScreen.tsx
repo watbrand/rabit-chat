@@ -728,15 +728,31 @@ export default function MallScreen() {
     );
   }
 
+  const handleShopEnter = useCallback((categoryId: string) => {
+    setSelectedCategory(categoryId);
+    setViewMode("list");
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+  }, []);
+
   if (viewMode === "virtual") {
     return (
       <View style={styles.container}>
         <VirtualMallView
           categories={categories || []}
-          onExitTour={toggleViewMode}
+          onShopEnter={handleShopEnter}
+          onUserPress={handleUserPress}
         />
         {renderPurchaseModal()}
         {renderDetailModal()}
+        <Pressable
+          style={[styles.exitTourButton, { backgroundColor: theme.error }]}
+          onPress={toggleViewMode}
+        >
+          <Feather name="x" size={20} color="#fff" />
+          <ThemedText style={styles.exitTourText}>Exit Tour</ThemedText>
+        </Pressable>
       </View>
     );
   }
@@ -1479,10 +1495,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-    ...Shadows.medium,
+    ...Shadows.md,
   },
   virtualTourFabText: {
     color: "#FFFFFF",
     fontSize: 13,
+  },
+  exitTourButton: {
+    position: "absolute",
+    top: 60,
+    right: Spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    ...Shadows.md,
+  },
+  exitTourText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
   },
 });
