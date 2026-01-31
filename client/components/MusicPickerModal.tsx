@@ -26,6 +26,7 @@ import { Colors, Spacing, BorderRadius } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 import { useQuery } from '@tanstack/react-query';
 import { getApiUrl } from '@/lib/query-client';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export interface MusicTrackData {
   id: string;
@@ -50,6 +51,7 @@ const MAX_CLIP_DURATION = 15; // Maximum clip length in seconds
 
 export default function MusicPickerModal({ visible, onSelect, onClose }: Props) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
@@ -350,6 +352,7 @@ export default function MusicPickerModal({ visible, onSelect, onClose }: Props) 
               data={featuredTracks}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.featuredList}
+              scrollIndicatorInsets={{ bottom: insets.bottom }}
               renderItem={renderFeaturedTrack}
             />
           </View>
@@ -369,6 +372,7 @@ export default function MusicPickerModal({ visible, onSelect, onClose }: Props) 
               renderItem={renderTrack}
               contentContainerStyle={styles.trackList}
               showsVerticalScrollIndicator={false}
+              scrollIndicatorInsets={{ bottom: insets.bottom }}
               ListEmptyComponent={
                 <View style={styles.emptyState}>
                   <Feather name="music" size={48} color={theme.textSecondary} />

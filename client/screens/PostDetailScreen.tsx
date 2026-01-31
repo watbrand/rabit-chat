@@ -155,7 +155,9 @@ export default function PostDetailScreen() {
     if (postId && !viewRecordedRef.current) {
       viewRecordedRef.current = true;
       // Fire-and-forget view tracking - failure doesn't affect user experience
-      apiRequest("POST", `/api/posts/${postId}/view`).catch(() => {});
+      apiRequest("POST", `/api/posts/${postId}/view`).catch((error) => {
+        console.warn('Failed to record post view:', error);
+      });
     }
   }, [postId]);
 

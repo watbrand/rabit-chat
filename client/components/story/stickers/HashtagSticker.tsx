@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { useQuery } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Hashtag {
   tag: string;
@@ -23,6 +24,7 @@ export default function HashtagSticker({
   onSelect,
   onPress,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const [inputTag, setInputTag] = useState('');
 
   const { data: suggestions = [] } = useQuery<Hashtag[]>({
@@ -80,6 +82,7 @@ export default function HashtagSticker({
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.suggestionsList}
+              scrollIndicatorInsets={{ bottom: insets.bottom }}
               renderItem={({ item }) => (
                 <Pressable 
                   onPress={() => handleSelectSuggestion(item.tag)}

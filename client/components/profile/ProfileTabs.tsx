@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { LoadingIndicator, InlineLoader } from "@/components/animations";
 import { Feather } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ProfileGridTile } from "./ProfileGridTile";
 import { ThemedText } from "@/components/ThemedText";
@@ -66,6 +67,7 @@ export function ProfileTabs({
 }: ProfileTabsProps) {
   const { theme } = useTheme();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   const numColumns = width < 500 ? 2 : 4;
 
@@ -171,6 +173,7 @@ export function ProfileTabs({
           ListEmptyComponent={renderEmpty}
           scrollEnabled={false}
           nestedScrollEnabled
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
         />
       )}
     </View>

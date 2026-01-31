@@ -372,6 +372,7 @@ export function FullscreenMediaViewer({
                 renderItem={renderComment}
                 style={styles.commentsList}
                 contentContainerStyle={styles.commentsListContent}
+                scrollIndicatorInsets={{ bottom: insets.bottom }}
                 ListEmptyComponent={
                   commentsLoading ? (
                     <LoadingIndicator size="small" style={{ marginTop: Spacing.xl }} />

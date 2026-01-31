@@ -328,6 +328,7 @@ export function SwipeViewer({
         ListEmptyComponent={renderEmpty}
         snapToInterval={height - insets.top - insets.bottom}
         decelerationRate="fast"
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
     </View>
   );

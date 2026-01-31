@@ -14,6 +14,7 @@ import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface StoryTemplate {
   id: number;
@@ -41,6 +42,7 @@ const CARD_HEIGHT = CARD_WIDTH * 1.6;
 const CATEGORIES = ['All', 'Celebration', 'Question', 'Quote', 'Countdown', 'Promo', 'Minimal'];
 
 export default function StoryTemplatesScreen({ onClose, onSelectTemplate }: Props) {
+  const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState('All');
 
   const { data: templates = [], isLoading } = useQuery<StoryTemplate[]>({
@@ -122,6 +124,7 @@ export default function StoryTemplatesScreen({ onClose, onSelectTemplate }: Prop
         keyExtractor={item => item}
         contentContainerStyle={styles.categoryList}
         style={styles.categoryContainer}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
         renderItem={({ item }) => (
           <Pressable 
             onPress={() => {
@@ -162,6 +165,7 @@ export default function StoryTemplatesScreen({ onClose, onSelectTemplate }: Prop
           numColumns={2}
           contentContainerStyle={styles.templateGrid}
           columnWrapperStyle={styles.templateRow}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           renderItem={renderTemplate}
         />
       )}

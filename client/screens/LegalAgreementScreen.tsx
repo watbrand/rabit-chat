@@ -272,7 +272,9 @@ export function LegalAgreementScreen() {
       }
       
       // Invalidate queries in background - don't await
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] }).catch(() => {});
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] }).catch((error) => {
+        console.warn('Failed to invalidate auth query:', error);
+      });
       
       setIsSubmitting(false);
       

@@ -348,7 +348,9 @@ export default function TicketChatScreen() {
     if (messages && messages.length > 0) {
       const hasUnread = messages.some(m => m.sender_type !== "USER" && !m.read_at);
       if (hasUnread) {
-        apiRequest("POST", `/api/support/tickets/${ticketId}/read`, {}).catch(() => {});
+        apiRequest("POST", `/api/support/tickets/${ticketId}/read`, {}).catch((error) => {
+          console.warn('Failed to mark ticket as read:', error);
+        });
       }
     }
   }, [messages, ticketId]);

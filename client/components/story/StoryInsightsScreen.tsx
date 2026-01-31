@@ -13,6 +13,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { useQuery } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface StoryInsight {
   views: number;
@@ -44,6 +45,7 @@ interface Props {
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function StoryInsightsScreen({ storyId, onClose }: Props) {
+  const insets = useSafeAreaInsets();
   const { data: insights } = useQuery<StoryInsight>({
     queryKey: ['/api/stories', storyId, 'analytics'],
   });
@@ -188,6 +190,7 @@ export default function StoryInsightsScreen({ storyId, onClose }: Props) {
               data={viewers}
               keyExtractor={item => item.id.toString()}
               scrollEnabled={false}
+              scrollIndicatorInsets={{ bottom: insets.bottom }}
               renderItem={({ item }) => (
                 <View style={styles.viewerItem}>
                   {item.avatar ? (

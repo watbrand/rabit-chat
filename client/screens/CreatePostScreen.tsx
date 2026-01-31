@@ -80,6 +80,7 @@ export default function CreatePostScreen() {
       }
       setIsPlayingPreview(false);
     } catch (err) {
+      // Cleanup - ignore errors: sound may already be unloaded
     }
   }, []);
 
@@ -93,11 +94,13 @@ export default function CreatePostScreen() {
   useEffect(() => {
     return () => {
       if (recordingRef.current) {
+        // Cleanup - ignore errors: recording may already be stopped
         recordingRef.current.stopAndUnloadAsync().catch(() => {});
         recordingRef.current = null;
       }
       
       if (soundRef.current) {
+        // Cleanup - ignore errors: sound may already be unloaded
         soundRef.current.unloadAsync().catch(() => {});
         soundRef.current = null;
       }
@@ -453,7 +456,7 @@ export default function CreatePostScreen() {
 
   const handleRemoveMedia = () => {
     if (isRecording && recordingRef.current) {
-      // Stop any active recording
+      // Cleanup - ignore errors: recording may already be stopped
       recordingRef.current.stopAndUnloadAsync().catch(() => {});
       recordingRef.current = null;
       

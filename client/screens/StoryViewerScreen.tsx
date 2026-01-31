@@ -654,7 +654,9 @@ export default function StoryViewerScreen() {
         apiRequest('POST', `/api/stories/${currentStory.id}/stickers/${stickerId}/interact`, {
           action,
           payload,
-        }).catch(() => {});
+        }).catch((error) => {
+          console.warn('Failed to record sticker interaction:', error);
+        });
         break;
       case 'tip':
         Alert.alert('Tip', `You're about to tip R${payload?.amount}`, [

@@ -228,7 +228,9 @@ export default function ChatScreen() {
     if (messages && messages.length > 0) {
       const hasUnread = messages.some(m => m.senderId !== user?.id && !m.readAt);
       if (hasUnread) {
-        apiRequest("POST", `/api/conversations/${conversationId}/read`, {}).catch(() => {});
+        apiRequest("POST", `/api/conversations/${conversationId}/read`, {}).catch((error) => {
+          console.warn('Failed to mark messages as read:', error);
+        });
       }
     }
   }, [messages, conversationId, user?.id]);

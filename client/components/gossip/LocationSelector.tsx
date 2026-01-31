@@ -235,6 +235,7 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
                   </Pressable>
                 )}
                 ListEmptyComponent={<ThemedText style={styles.emptyText}>No countries found</ThemedText>}
+                scrollIndicatorInsets={{ bottom: insets.bottom }}
               />
             ) : step === "province" && !isLoading ? (
               <FlatList
@@ -251,6 +252,7 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
                   </Pressable>
                 )}
                 ListEmptyComponent={<ThemedText style={styles.emptyText}>No provinces available</ThemedText>}
+                scrollIndicatorInsets={{ bottom: insets.bottom }}
               />
             ) : step === "city" && !isLoading ? (
               <FlatList
@@ -267,6 +269,7 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
                   </Pressable>
                 )}
                 ListEmptyComponent={<ThemedText style={styles.emptyText}>No cities in {selectedProvince?.name}</ThemedText>}
+                scrollIndicatorInsets={{ bottom: insets.bottom }}
               />
             ) : step === "kasi" && !isLoading ? (
               <FlatList
@@ -283,6 +286,7 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
                   </Pressable>
                 )}
                 ListEmptyComponent={<ThemedText style={styles.emptyText}>No kasis in {selectedCity?.name}</ThemedText>}
+                scrollIndicatorInsets={{ bottom: insets.bottom }}
               />
             ) : null}
             </View>

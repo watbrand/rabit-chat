@@ -1672,10 +1672,12 @@ function GossipTab() {
   useEffect(() => {
     return () => {
       if (recordingRef.current) {
+        // Cleanup - ignore errors: recording may already be stopped
         recordingRef.current.stopAndUnloadAsync().catch(() => {});
         recordingRef.current = null;
       }
       if (soundRef.current) {
+        // Cleanup - ignore errors: sound may already be unloaded
         soundRef.current.unloadAsync().catch(() => {});
         soundRef.current = null;
       }
@@ -1858,6 +1860,7 @@ function GossipTab() {
     setUploadProgress(0);
     setIsPlayingPreview(false);
     if (soundRef.current) {
+      // Cleanup - ignore errors: sound may already be unloaded
       soundRef.current.unloadAsync().catch(() => {});
       soundRef.current = null;
     }

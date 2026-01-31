@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { useQuery } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface User {
   id: number;
@@ -26,6 +27,7 @@ export default function MentionSticker({
   onSelect,
   onPress,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
 
   const { data: users = [], isLoading } = useQuery<User[]>({
@@ -63,6 +65,7 @@ export default function MentionSticker({
             data={users}
             keyExtractor={item => item.id.toString()}
             style={styles.userList}
+            scrollIndicatorInsets={{ bottom: insets.bottom }}
             renderItem={({ item }) => (
               <Pressable 
                 onPress={() => handleSelect(item)}

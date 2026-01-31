@@ -3,6 +3,7 @@ import { View, StyleSheet, Pressable, Text, TextInput, FlatList, Image, Dimensio
 import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface GifItem {
   id: string;
@@ -36,6 +37,7 @@ export default function GifSticker({
   onSelect,
   onPress,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [gifs, setGifs] = useState<GifItem[]>(MOCK_GIFS);
   const [isLoading, setIsLoading] = useState(false);
@@ -106,6 +108,7 @@ export default function GifSticker({
           numColumns={2}
           contentContainerStyle={styles.gifGrid}
           columnWrapperStyle={styles.gifRow}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           renderItem={({ item }) => (
             <Pressable 
               onPress={() => handleSelect(item)}

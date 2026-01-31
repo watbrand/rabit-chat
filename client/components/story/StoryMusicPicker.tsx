@@ -22,6 +22,7 @@ import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { useQuery } from '@tanstack/react-query';
 import { LoadingIndicator } from '@/components/animations';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface MusicTrack {
   id: number;
@@ -43,6 +44,7 @@ interface Props {
 const GENRES = ['Popular', 'Hip Hop', 'Pop', 'R&B', 'Electronic', 'Afrobeats', 'Jazz'];
 
 export default function StoryMusicPicker({ onSelect, onClose, maxClipDuration = 15 }: Props) {
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState('Popular');
   const [playingTrackId, setPlayingTrackId] = useState<number | null>(null);
@@ -220,6 +222,7 @@ export default function StoryMusicPicker({ onSelect, onClose, maxClipDuration = 
           data={GENRES}
           keyExtractor={item => item}
           contentContainerStyle={styles.genreList}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           renderItem={({ item }) => (
             <Pressable 
               onPress={() => setSelectedGenre(item)}
@@ -248,6 +251,7 @@ export default function StoryMusicPicker({ onSelect, onClose, maxClipDuration = 
             data={featuredTracks}
             keyExtractor={item => item.id.toString()}
             contentContainerStyle={styles.featuredList}
+            scrollIndicatorInsets={{ bottom: insets.bottom }}
             renderItem={({ item }) => (
               <Pressable 
                 onPress={() => handleTrackPress(item)}
@@ -281,6 +285,7 @@ export default function StoryMusicPicker({ onSelect, onClose, maxClipDuration = 
             renderItem={renderTrack}
             contentContainerStyle={styles.trackList}
             showsVerticalScrollIndicator={false}
+            scrollIndicatorInsets={{ bottom: insets.bottom }}
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <Feather name="music" size={48} color={Colors.dark.textSecondary} />

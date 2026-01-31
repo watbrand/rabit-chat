@@ -15,6 +15,7 @@ import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/query-client';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface StoryDraft {
   id: number;
@@ -36,6 +37,7 @@ const CARD_WIDTH = (SCREEN_WIDTH - Spacing.md * 3) / 2;
 const CARD_HEIGHT = CARD_WIDTH * 1.6;
 
 export default function StoryDraftsScreen({ onClose, onEditDraft }: Props) {
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
 
   const { data: drafts = [], isLoading } = useQuery<StoryDraft[]>({
@@ -176,6 +178,7 @@ export default function StoryDraftsScreen({ onClose, onEditDraft }: Props) {
           numColumns={2}
           contentContainerStyle={styles.draftGrid}
           columnWrapperStyle={styles.draftRow}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           renderItem={renderDraft}
         />
       )}

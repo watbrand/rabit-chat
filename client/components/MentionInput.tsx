@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { InlineLoader } from "@/components/animations";
 import { useQuery } from "@tanstack/react-query";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Avatar } from "@/components/Avatar";
 import { ThemedText } from "@/components/ThemedText";
@@ -38,6 +39,7 @@ export function MentionInput({
   ...props
 }: MentionInputProps) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
   const [mentionStartIndex, setMentionStartIndex] = useState(-1);
   const [cursorPosition, setCursorPosition] = useState(0);
@@ -116,6 +118,7 @@ export function MentionInput({
               keyExtractor={(item) => item.id}
               keyboardShouldPersistTaps="always"
               style={styles.suggestionsList}
+              scrollIndicatorInsets={{ bottom: insets.bottom }}
               renderItem={({ item }) => (
                 <Pressable
                   style={({ pressed }) => [

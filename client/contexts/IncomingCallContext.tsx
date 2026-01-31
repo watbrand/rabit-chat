@@ -38,7 +38,10 @@ export function IncomingCallProvider({ children }: { children: React.ReactNode }
       try {
         await ringtoneRef.current.stopAsync();
         await ringtoneRef.current.unloadAsync();
-      } catch (e) {}
+      } catch (e) {
+        // Cleanup - ignore errors: ringtone may already be stopped/unloaded
+        console.warn('Ringtone cleanup error:', e);
+      }
       ringtoneRef.current = null;
     }
   }, []);
@@ -167,7 +170,9 @@ export function IncomingCallProvider({ children }: { children: React.ReactNode }
           stopRingtone();
           setIncomingCall(null);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('WebSocket message parse error:', e);
+      }
     };
 
     return () => {

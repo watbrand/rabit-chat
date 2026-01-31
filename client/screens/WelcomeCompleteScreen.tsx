@@ -186,7 +186,9 @@ export default function WelcomeCompleteScreen() {
     setIsEntering(true);
     
     // Fire-and-forget API call - onboarding completion is best-effort, navigation proceeds regardless
-    apiRequest("POST", "/api/onboarding/first-session-complete", {}).catch(() => {});
+    apiRequest("POST", "/api/onboarding/first-session-complete", {}).catch((error) => {
+      console.warn('Failed to mark first session complete:', error);
+    });
     
     // Clear cache
     queryClient.invalidateQueries({ queryKey: ["/api/onboarding/status"] });

@@ -318,7 +318,9 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
         }
         
         // Fire-and-forget temp file cleanup - failure is non-critical
-        try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch (e) {}
+        try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch (e) {
+          // Cleanup - ignore errors: temp file may not exist or already deleted
+        }
       }
 
       // Start new recording immediately
@@ -368,7 +370,9 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
         await recordingRef.current.stopAndUnloadAsync();
         const uri = recordingRef.current.getURI();
         // Fire-and-forget temp file cleanup - failure is non-critical
-        if (uri) { try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch (e) {} }
+        if (uri) { try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch (e) {
+          // Cleanup - ignore errors: temp file may not exist or already deleted
+        } }
       } catch (error) {
         // Recording may already be stopped/unloaded - non-critical cleanup error
       }
@@ -428,7 +432,9 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
         if (status.isLoaded && status.didJustFinish) {
           isPlayingRef.current = false;
           // Fire-and-forget temp file cleanup - failure is non-critical
-          try { await FileSystem.deleteAsync(tempUri, { idempotent: true }); } catch (e) {}
+          try { await FileSystem.deleteAsync(tempUri, { idempotent: true }); } catch (e) {
+            // Cleanup - ignore errors: temp file may not exist or already deleted
+          }
           playNextAudio();
         }
       });
@@ -440,7 +446,9 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
         // Fire-and-forget background pre-caching - failure handled by main playback flow
         FileSystem.writeAsStringAsync(nextUri, nextData, {
           encoding: FileSystem.EncodingType.Base64,
-        }).catch(() => {});
+        }).catch(() => {
+          // Cleanup - ignore errors: pre-caching is optional, main flow handles failures
+        });
       }
     } catch (error) {
       isPlayingRef.current = false;

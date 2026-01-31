@@ -9,6 +9,7 @@ import Animated, {
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { useQuery } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface MallItem {
   id: number;
@@ -31,6 +32,7 @@ export default function ShoppingSticker({
   onSelect,
   onPress,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const scale = useSharedValue(1);
 
@@ -84,6 +86,7 @@ export default function ShoppingSticker({
           data={products}
           keyExtractor={item => item.id.toString()}
           style={styles.productList}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           renderItem={({ item }) => (
             <Pressable 
               onPress={() => handleSelect(item)}

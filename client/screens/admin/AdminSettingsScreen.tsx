@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
+import { EmptyState } from "@/components/EmptyState";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
@@ -391,6 +392,13 @@ export default function AdminSettingsScreen() {
           />
         }
         ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
+        ListEmptyComponent={
+          <EmptyState
+            icon="sliders"
+            title="No settings configured"
+            message="Settings will appear here when available"
+          />
+        }
         ListHeaderComponent={
           <Card elevation={1} style={styles.infoCard}>
             <Feather name="sliders" size={20} color={theme.primary} />

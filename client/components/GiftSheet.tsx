@@ -253,6 +253,7 @@ export function GiftSheet({
               renderItem={renderGiftItem}
               contentContainerStyle={styles.giftGrid}
               showsVerticalScrollIndicator={false}
+              scrollIndicatorInsets={{ bottom: insets.bottom }}
             />
           )}
 
