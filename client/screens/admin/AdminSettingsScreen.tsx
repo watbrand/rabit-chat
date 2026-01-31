@@ -11,6 +11,7 @@ import {
   Modal,
   ScrollView,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -369,8 +370,9 @@ export default function AdminSettingsScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
-      <FlatList
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
+        <FlatList
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingTop: Spacing.lg,
@@ -507,7 +509,8 @@ export default function AdminSettingsScreen() {
           </ScrollView>
         </View>
       </Modal>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

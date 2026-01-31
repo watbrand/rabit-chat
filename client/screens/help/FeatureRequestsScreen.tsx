@@ -10,6 +10,7 @@ import {
   Alert,
   Modal,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -378,8 +379,9 @@ export default function FeatureRequestsScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <FlatList
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+        <FlatList
         testID="feature-requests-list"
         data={sortedFeatures}
         keyExtractor={(item) => item.id}
@@ -490,7 +492,8 @@ export default function FeatureRequestsScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

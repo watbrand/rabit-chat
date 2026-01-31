@@ -8,6 +8,7 @@ import {
   Alert,
   RefreshControl,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
@@ -882,13 +883,14 @@ export default function AdminEconomyScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabsContainer}
-        contentContainerStyle={styles.tabsContent}
-      >
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabsContainer}
+          contentContainerStyle={styles.tabsContent}
+        >
         {tabs.map((tab) => (
           <Pressable
             key={tab.key}
@@ -924,13 +926,14 @@ export default function AdminEconomyScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
         }
       >
-        {statsLoading && activeTab === "overview" ? (
-          <LoadingIndicator size="medium" style={styles.loader} />
-        ) : (
-          renderContent()
-        )}
-      </ScrollView>
-    </View>
+          {statsLoading && activeTab === "overview" ? (
+            <LoadingIndicator size="medium" style={styles.loader} />
+          ) : (
+            renderContent()
+          )}
+        </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

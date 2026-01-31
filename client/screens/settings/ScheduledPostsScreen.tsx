@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { View, StyleSheet, FlatList, Pressable, Alert, Platform, Modal, TextInput } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -346,9 +347,10 @@ export default function ScheduledPostsScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <RescheduleModal />
-      <FlatList
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+        <RescheduleModal />
+        <FlatList
         data={scheduledPosts}
         keyExtractor={(item) => item.id}
         renderItem={renderScheduledPost}
@@ -369,8 +371,9 @@ export default function ScheduledPostsScreen() {
           </View>
         }
         scrollIndicatorInsets={{ bottom: insets.bottom }}
-      />
-    </View>
+        />
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

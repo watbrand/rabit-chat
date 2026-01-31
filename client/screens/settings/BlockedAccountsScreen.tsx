@@ -9,6 +9,7 @@ import {
   TextInput,
   ActivityIndicator,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -293,8 +294,9 @@ export default function BlockedAccountsScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
-      <FlatList
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
+        <FlatList
         data={filteredAndSortedUsers}
         keyExtractor={(item) => item.id}
         renderItem={renderBlockedUser}
@@ -310,8 +312,9 @@ export default function BlockedAccountsScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         scrollIndicatorInsets={{ bottom: insets.bottom }}
-      />
-    </View>
+        />
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

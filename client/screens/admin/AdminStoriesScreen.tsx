@@ -11,6 +11,7 @@ import {
   Image,
   Platform,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -206,8 +207,9 @@ export default function AdminStoriesScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
-      <View style={[styles.searchContainer, { borderBottomColor: theme.border }]}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
+        <View style={[styles.searchContainer, { borderBottomColor: theme.border }]}>
         <View style={[styles.searchInputWrapper, { backgroundColor: theme.backgroundDefault }]}>
           <Feather name="search" size={18} color={theme.textSecondary} />
           <TextInput
@@ -370,7 +372,8 @@ export default function AdminStoriesScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

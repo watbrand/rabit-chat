@@ -9,6 +9,7 @@ import {
   ScrollView,
   TextInput,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -340,8 +341,9 @@ export default function AdminAuditScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
-      <FlatList
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
+        <FlatList
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingTop: Spacing.lg,
@@ -403,8 +405,9 @@ export default function AdminAuditScreen() {
         scrollIndicatorInsets={{ bottom: insets.bottom }}
       />
 
-      {renderFilterModal()}
-    </View>
+        {renderFilterModal()}
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

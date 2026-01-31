@@ -11,6 +11,7 @@ import {
   ScrollView,
   Platform,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -347,8 +348,9 @@ export default function AdminPostsScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
-      <View style={[styles.searchContainer, { backgroundColor: theme.backgroundRoot }]}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <View style={{ flex: 1, backgroundColor: theme.backgroundRoot }}>
+        <View style={[styles.searchContainer, { backgroundColor: theme.backgroundRoot }]}>
         <View style={[styles.searchInputContainer, { backgroundColor: theme.backgroundDefault, borderColor: theme.border }]}>
           <Feather name="search" size={18} color={theme.textSecondary} />
           <TextInput
@@ -613,7 +615,8 @@ export default function AdminPostsScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

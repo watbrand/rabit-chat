@@ -11,6 +11,7 @@ import {
   ScrollView,
   Dimensions,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -383,8 +384,9 @@ export default function AdminVerificationScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <View style={styles.filtersContainer}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+        <View style={styles.filtersContainer}>
         <FlatList
           horizontal
           data={[
@@ -767,7 +769,8 @@ export default function AdminVerificationScreen() {
         onClose={() => setViewingDocumentUrl(null)}
         title="Verification Document"
       />
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

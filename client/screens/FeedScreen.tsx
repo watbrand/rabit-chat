@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { View, FlatList, StyleSheet, RefreshControl, Image, Platform, Pressable, ScrollView, TextInput, Text, Dimensions } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -454,7 +455,8 @@ export default function FeedScreen() {
   }
 
   return (
-    <GradientBackground variant={isDark ? "orbs" : "subtle"}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <GradientBackground variant={isDark ? "orbs" : "subtle"}>
       {renderHeader()}
       <FlatList
         style={{ flex: 1 }}
@@ -613,7 +615,8 @@ export default function FeedScreen() {
           onComplete={() => setShowCoachingMarks(false)}
         />
       ) : null}
-    </GradientBackground>
+      </GradientBackground>
+    </KeyboardAvoidingView>
   );
 }
 
