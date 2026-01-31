@@ -1790,7 +1790,7 @@ export class DatabaseStorage implements IStorage {
     ipAddress?: string,
     userAgent?: string
   ): Promise<AuditLog> {
-    let userId: string | null;
+    let userIdValue: string | undefined;
     let actionValue: AuditAction;
     let targetTypeValue: string | undefined;
     let targetIdValue: string | undefined;
@@ -1799,7 +1799,7 @@ export class DatabaseStorage implements IStorage {
     let userAgentValue: string | undefined;
 
     if (typeof userIdOrOptions === "object" && userIdOrOptions !== null && "actorId" in userIdOrOptions) {
-      userId = userIdOrOptions.actorId;
+      userIdValue = userIdOrOptions.actorId || undefined;
       actionValue = userIdOrOptions.action as AuditAction;
       targetTypeValue = userIdOrOptions.targetType;
       targetIdValue = userIdOrOptions.targetId;
@@ -1807,7 +1807,7 @@ export class DatabaseStorage implements IStorage {
       ipAddressValue = userIdOrOptions.ipAddress;
       userAgentValue = userIdOrOptions.userAgent;
     } else {
-      userId = userIdOrOptions as string | null;
+      userIdValue = (userIdOrOptions as string | null) || undefined;
       actionValue = action!;
       targetTypeValue = targetType;
       targetIdValue = targetId;
@@ -1818,7 +1818,7 @@ export class DatabaseStorage implements IStorage {
 
     const [log] = await db.insert(auditLogs)
       .values({
-        userId,
+        userId: userIdValue,
         action: actionValue,
         targetType: targetTypeValue,
         targetId: targetIdValue,

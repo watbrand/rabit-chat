@@ -176,7 +176,15 @@ export const users = pgTable("users", {
   // End-to-end encryption key pair
   encryptionPublicKey: text("encryption_public_key"), // RSA public key for E2E encryption
   encryptionKeyCreatedAt: timestamp("encryption_key_created_at"),
-});
+}, (table) => [
+  index("users_email_idx").on(table.email),
+  index("users_username_idx").on(table.username),
+  index("users_is_verified_idx").on(table.isVerified),
+  index("users_category_idx").on(table.category),
+  index("users_created_at_idx").on(table.createdAt),
+  index("users_last_active_at_idx").on(table.lastActiveAt),
+  index("users_is_admin_idx").on(table.isAdmin),
+]);
 
 export const usersRelations = relations(users, ({ many }) => ({
   posts: many(posts),
@@ -229,6 +237,10 @@ export const posts = pgTable("posts", {
   index("posts_type_created_at_idx").on(table.type, table.createdAt),
   index("posts_author_created_at_idx").on(table.authorId, table.createdAt),
   index("posts_is_pinned_idx").on(table.isPinned, table.authorId),
+  index("posts_visibility_idx").on(table.visibility),
+  index("posts_visibility_created_idx").on(table.visibility, table.createdAt),
+  index("posts_is_hidden_idx").on(table.isHidden),
+  index("posts_is_featured_idx").on(table.isFeatured),
 ]);
 
 export const postsRelations = relations(posts, ({ one, many }) => ({
@@ -256,7 +268,12 @@ export const comments = pgTable("comments", {
   hiddenAt: timestamp("hidden_at"),
   hiddenById: varchar("hidden_by_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index("comments_post_id_idx").on(table.postId),
+  index("comments_author_id_idx").on(table.authorId),
+  index("comments_created_at_idx").on(table.createdAt),
+  index("comments_post_created_idx").on(table.postId, table.createdAt),
+]);
 
 export const commentsRelations = relations(comments, ({ one }) => ({
   post: one(posts, {
@@ -283,6 +300,8 @@ export const likes = pgTable("likes", {
 }, (table) => [
   unique("likes_user_post_unique").on(table.userId, table.postId),
   index("likes_post_id_idx").on(table.postId),
+  index("likes_user_id_idx").on(table.userId),
+  index("likes_created_at_idx").on(table.createdAt),
 ]);
 
 export const likesRelations = relations(likes, ({ one }) => ({
@@ -435,6 +454,11 @@ export const conversations = pgTable("conversations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("conversations_participants_unique").on(table.participant1Id, table.participant2Id),
+  index("conversations_participant1_idx").on(table.participant1Id),
+  index("conversations_participant2_idx").on(table.participant2Id),
+  index("conversations_last_message_idx").on(table.lastMessageAt),
+  index("conversations_status_idx").on(table.status),
+  index("conversations_created_at_idx").on(table.createdAt),
 ]);
 
 export const conversationsRelations = relations(conversations, ({ one, many }) => ({
@@ -541,6 +565,11 @@ export const messages = pgTable("messages", {
   index("messages_conversation_created_idx").on(table.conversationId, table.createdAt),
   index("messages_reply_to_idx").on(table.replyToId),
   index("messages_status_idx").on(table.status),
+  index("messages_sender_id_idx").on(table.senderId),
+  index("messages_receiver_id_idx").on(table.receiverId),
+  index("messages_created_at_idx").on(table.createdAt),
+  index("messages_conversation_id_idx").on(table.conversationId),
+  index("messages_read_idx").on(table.read),
 ]);
 
 export const messageReactions = pgTable("message_reactions", {
@@ -2641,6 +2670,8 @@ export const gossipPosts = pgTable("gossip_posts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("gossip_posts_created_at_idx").on(table.createdAt),
+  index("gossip_posts_author_id_idx").on(table.authorUserId),
+  index("gossip_posts_is_deleted_idx").on(table.isDeleted),
 ]);
 
 // Gossip Likes
@@ -2658,6 +2689,7 @@ export const gossipLikes = pgTable("gossip_likes", {
 }, (table) => [
   unique("gossip_likes_user_post_unique").on(table.userId, table.gossipPostId),
   index("gossip_likes_post_id_idx").on(table.gossipPostId),
+  index("gossip_likes_user_id_idx").on(table.userId),
 ]);
 
 // Gossip Comments - commenter identity never exposed
@@ -2675,6 +2707,8 @@ export const gossipComments = pgTable("gossip_comments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("gossip_comments_post_id_idx").on(table.gossipPostId),
+  index("gossip_comments_user_id_idx").on(table.userId),
+  index("gossip_comments_created_at_idx").on(table.createdAt),
 ]);
 
 // Gossip Retweets
@@ -2692,6 +2726,7 @@ export const gossipRetweets = pgTable("gossip_retweets", {
 }, (table) => [
   unique("gossip_retweets_user_post_unique").on(table.userId, table.originalGossipPostId),
   index("gossip_retweets_post_id_idx").on(table.originalGossipPostId),
+  index("gossip_retweets_user_id_idx").on(table.userId),
 ]);
 
 // ===== ANONYMOUS GOSSIP SYSTEM (Zero-Identity Architecture) =====

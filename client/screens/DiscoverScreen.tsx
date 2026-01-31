@@ -1968,7 +1968,11 @@ function GossipTab() {
   };
 
   const handleComment = (postId: string) => {
-    Alert.alert("Comments", "Gossip comments feature coming soon!");
+    Alert.alert(
+      "Gossip Comments",
+      "Anonymous commenting on gossip posts will be available soon. Stay tuned for this exciting feature!",
+      [{ text: "Got it", style: "default" }]
+    );
   };
 
   const formatTimeAgo = (dateString: string): string => {

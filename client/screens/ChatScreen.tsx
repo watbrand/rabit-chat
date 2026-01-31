@@ -615,7 +615,11 @@ export default function ChatScreen() {
 
   const handleForwardMessage = useCallback(() => {
     setShowOptionsMenu(false);
-    Alert.alert("Forward", "Forward functionality coming soon!");
+    Alert.alert(
+      "Forward Message",
+      "Message forwarding will be available soon. You'll be able to share messages with other conversations.",
+      [{ text: "Got it", style: "default" }]
+    );
   }, []);
 
   const handleDeleteForMe = useCallback(() => {

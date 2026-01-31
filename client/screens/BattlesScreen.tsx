@@ -371,7 +371,11 @@ export default function BattlesScreen() {
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    Alert.alert("Gift", "Gift sending coming soon!");
+    Alert.alert(
+      "Send Gift",
+      "Gift sending to battle participants will be available soon. You'll be able to support your favorite creators with virtual gifts!",
+      [{ text: "Got it", style: "default" }]
+    );
   };
 
   const filteredBattles = battles.filter((b) => b.status === activeTab);

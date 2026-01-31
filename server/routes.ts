@@ -140,6 +140,91 @@ import {
   dataImportSchema,
 } from "./validation";
 
+/**
+ * Sanitize user input to prevent XSS attacks
+ * Escapes HTML special characters to their entity equivalents
+ */
+function sanitizeInput(input: string): string {
+  if (!input || typeof input !== 'string') return input;
+  return input
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Sanitize an object's string properties recursively
+ */
+function sanitizeObject<T>(obj: T, keys: string[]): T {
+  if (!obj || typeof obj !== 'object') return obj;
+  const result = { ...obj } as any;
+  for (const key of keys) {
+    if (key in result && typeof result[key] === 'string') {
+      result[key] = sanitizeInput(result[key]);
+    }
+  }
+  return result;
+}
+
+/**
+ * Middleware to validate origin/referer for API routes
+ * Provides CSRF-like protection for stateful requests
+ */
+function validateOrigin(req: Request, res: Response, next: NextFunction) {
+  // Skip validation for safe methods
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+
+  const origin = req.get('origin');
+  const referer = req.get('referer');
+  const host = req.get('host');
+
+  // Allow requests from known Replit domains
+  const allowedOrigins = new Set<string>();
+  
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    allowedOrigins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
+  }
+  
+  if (process.env.REPLIT_DOMAINS) {
+    process.env.REPLIT_DOMAINS.split(',').forEach((d: string) => {
+      allowedOrigins.add(`https://${d.trim()}`);
+    });
+  }
+
+  // Allow localhost for development
+  const isLocalhost = origin?.startsWith('http://localhost:') || 
+                      origin?.startsWith('http://127.0.0.1:') ||
+                      referer?.startsWith('http://localhost:') ||
+                      referer?.startsWith('http://127.0.0.1:');
+
+  // Mobile apps may not send origin header, but will have valid session
+  // Allow if origin matches allowed list or is localhost
+  const originValid = !origin || allowedOrigins.has(origin) || isLocalhost;
+  
+  // Check referer if origin is missing (for same-origin requests)
+  const refererValid = !referer || 
+                       Array.from(allowedOrigins).some(o => referer.startsWith(o)) ||
+                       isLocalhost;
+
+  // For mobile app API calls without origin/referer, rely on session authentication
+  const isMobileApiCall = !origin && !referer && req.session?.userId;
+
+  if (originValid || refererValid || isMobileApiCall) {
+    return next();
+  }
+
+  // Log suspicious requests for monitoring
+  console.warn(`[Security] Blocked request with invalid origin: ${origin || 'none'}, referer: ${referer || 'none'}, host: ${host}`);
+  
+  return res.status(403).json({ 
+    message: 'Request origin validation failed',
+    code: 'INVALID_ORIGIN'
+  });
+}
+
 const diskStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, UPLOAD_TEMP_DIR);
@@ -378,6 +463,7 @@ async function notifyMentionedUsers(
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Session configuration with security hardening
   app.use(
     session({
       store: new PgSession({
@@ -385,17 +471,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         tableName: "user_sessions",
         createTableIfMissing: true,
       }),
-      secret: process.env.SESSION_SECRET!,
+      secret: process.env.SESSION_SECRET || "fallback-secret-change-in-production",
       resave: false,
       saveUninitialized: false,
       cookie: {
-        secure: process.env.NODE_ENV === "production",
-        httpOnly: true,
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        secure: process.env.NODE_ENV === "production", // HTTPS only in production
+        httpOnly: true, // Prevents XSS attacks - cookies not accessible via JavaScript
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days - reduced from 30 days for security
+        sameSite: "lax", // CSRF protection - prevents cross-site request forgery
       },
     })
   );
+
+  // Apply origin validation middleware for all API routes
+  app.use("/api", validateOrigin);
 
   // Database health check endpoint (public, for debugging)
   app.get("/api/health/db", async (req, res) => {
@@ -2497,9 +2586,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { type, content, caption, mediaUrl, thumbnailUrl, durationMs, aspectRatio, visibility, commentsEnabled } = req.body;
       
-      if (content) {
+      // Sanitize user-provided text content to prevent XSS
+      const sanitizedContent = content ? sanitizeInput(content) : content;
+      const sanitizedCaption = caption ? sanitizeInput(caption) : caption;
+      
+      if (sanitizedContent) {
         const maxPostLength = await storage.getAppSettingValue("maxPostLength", 500);
-        if (content.length > maxPostLength) {
+        if (sanitizedContent.length > maxPostLength) {
           return res.status(400).json({ message: `Post content exceeds maximum length of ${maxPostLength} characters` });
         }
       }
@@ -2507,8 +2600,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const post = await storage.createPost({
         authorId: req.session.userId!,
         type: type || "TEXT",
-        content,
-        caption,
+        content: sanitizedContent,
+        caption: sanitizedCaption,
         mediaUrl,
         thumbnailUrl,
         durationMs,
@@ -2958,6 +3051,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { content } = req.body;
       
+      // Sanitize comment content to prevent XSS
+      const sanitizedContent = sanitizeInput(content);
+      
       const post = await storage.getPost(req.params.id);
       if (!post) {
         return res.status(404).json({ message: "Post not found" });
@@ -2970,7 +3066,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: commentAccess.reason });
       }
       
-      const comment = await storage.createComment(req.params.id, req.session.userId!, content);
+      const comment = await storage.createComment(req.params.id, req.session.userId!, sanitizedContent);
       const user = await storage.getUser(req.session.userId!);
       
       // Create and broadcast comment notification
@@ -5381,11 +5477,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid receiver for this conversation" });
       }
       
+      // Sanitize message content to prevent XSS
+      const sanitizedContent = sanitizeInput(content.trim());
+      
       const message = await storage.createMessage(
         req.params.id,
         userId,
         validReceiverId,
-        content.trim()
+        sanitizedContent
       );
       
       const sender = await storage.getUser(userId);
@@ -5455,11 +5554,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { content, messageType, mediaUrl, replyToId } = req.body;
       
+      // Sanitize message content to prevent XSS
+      const sanitizedContent = content ? sanitizeInput(content) : "";
+      
       const message = await storage.createMessageWithMedia(
         req.params.id,
         userId,
         validReceiverId,
-        content || "",
+        sanitizedContent,
         messageType,
         mediaUrl || null,
         replyToId || null
