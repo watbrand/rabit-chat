@@ -186,11 +186,14 @@ export default function VerificationScreen() {
         quality: 0.8,
       });
 
-      if (result.canceled || !result.assets[0]) return;
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      if (!asset) return;
 
       setDocumentPreview({
-        uri: result.assets[0].uri,
-        mimeType: result.assets[0].mimeType,
+        uri: asset.uri,
+        mimeType: asset.mimeType,
       });
 
       if (Platform.OS !== "web") {
@@ -219,11 +222,14 @@ export default function VerificationScreen() {
         quality: 0.8,
       });
 
-      if (result.canceled || !result.assets[0]) return;
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      if (!asset) return;
 
       setDocumentPreview({
-        uri: result.assets[0].uri,
-        mimeType: result.assets[0].mimeType,
+        uri: asset.uri,
+        mimeType: asset.mimeType,
       });
 
       if (Platform.OS !== "web") {

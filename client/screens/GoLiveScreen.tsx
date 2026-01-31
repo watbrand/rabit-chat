@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
@@ -28,6 +28,7 @@ export default function GoLiveScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -48,6 +49,7 @@ export default function GoLiveScreen() {
       return res.json();
     },
     onSuccess: async (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/live-streams"] });
       setStreamId(data.id);
       await startStreamMutation.mutateAsync(data.id);
     },
@@ -62,6 +64,7 @@ export default function GoLiveScreen() {
       return res.json();
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/live-streams"] });
       setIsStreaming(true);
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -79,6 +82,7 @@ export default function GoLiveScreen() {
       return res.json();
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/live-streams"] });
       setIsStreaming(false);
       setStreamId(null);
       navigation.goBack();

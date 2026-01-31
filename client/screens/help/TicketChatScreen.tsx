@@ -568,7 +568,7 @@ export default function TicketChatScreen() {
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets[0]) {
+    if (!result.canceled && result.assets?.[0]) {
       handleSelectMedia(result.assets[0].uri, 'photo');
     }
   }, [handleSelectMedia]);

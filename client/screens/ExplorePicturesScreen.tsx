@@ -269,8 +269,8 @@ export default function ExplorePicturesScreen() {
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      if (viewableItems.length > 0 && viewableItems[0].index !== null) {
-        setActiveIndex(viewableItems[0].index);
+      if (viewableItems.length > 0 && viewableItems[0]?.index !== null) {
+        setActiveIndex(viewableItems[0]?.index);
         setShowComments(false);
         setComment("");
       }

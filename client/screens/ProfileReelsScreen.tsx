@@ -306,8 +306,8 @@ export default function ProfileReelsScreen() {
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      if (viewableItems.length > 0 && viewableItems[0].index !== null) {
-        setActiveIndex(viewableItems[0].index);
+      if (viewableItems.length > 0 && viewableItems[0]?.index !== null) {
+        setActiveIndex(viewableItems[0]?.index);
       }
     },
     []
@@ -405,6 +405,12 @@ export default function ProfileReelsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.xl,
   },
   header: {
     position: "absolute",

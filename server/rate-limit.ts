@@ -360,6 +360,62 @@ export const dataExportRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Data import limiter: 5 requests per 15 minutes per IP (admin endpoint)
+export const dataImportLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { message: "Too many import requests. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+});
+
+// Profile view limiter: 100 requests per minute per user (keyed by IP+userId)
+export const profileViewLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: { message: "Too many profile view requests. Please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: getCompositeKey,
+  skip: (req) => !req.session?.userId,
+  validate: compositeKeyValidation,
+});
+
+// Watch event limiter: 100 requests per minute per user (keyed by IP+userId)
+export const watchEventLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: { message: "Too many watch event requests. Please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: getCompositeKey,
+  skip: (req) => !req.session?.userId,
+  validate: compositeKeyValidation,
+});
+
+// PayFast webhook limiter: 1000 per minute per IP (external webhook, IP-based only)
+export const payfastNotifyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 1000,
+  message: { message: "PayFast webhook rate limit exceeded." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+});
+
+// Coin purchase webhook limiter: 1000 per minute per IP (external webhook, IP-based only)
+export const coinPurchaseNotifyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 1000,
+  message: { message: "Payment notification rate limit exceeded." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+});
+
 interface RateLimitOptions {
   windowMs: number;
   max: number;

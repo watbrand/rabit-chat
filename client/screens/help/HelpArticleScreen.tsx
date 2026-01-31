@@ -127,6 +127,7 @@ export default function HelpArticleScreen() {
     onSuccess: (_, isHelpful) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setFeedbackGiven(isHelpful ? "helpful" : "not_helpful");
+      queryClient.invalidateQueries({ queryKey: [`/api/help/articles/${articleId}`] });
     },
   });
 

@@ -887,8 +887,8 @@ function ReelsTab() {
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      if (viewableItems.length > 0 && viewableItems[0].index !== null) {
-        setActiveIndex(viewableItems[0].index);
+      if (viewableItems.length > 0 && viewableItems[0]?.index !== null) {
+        setActiveIndex(viewableItems[0]?.index);
       }
     },
     []
@@ -984,6 +984,14 @@ function ReelsTab() {
             tintColor="#FFFFFF"
             progressBackgroundColor="#333"
           />
+        }
+        ListEmptyComponent={
+          <View style={{ flex: 1, height: reelHeight, alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xxl }}>
+            <Feather name="film" size={48} color="#888888" />
+            <ThemedText style={{ color: '#888888', marginTop: Spacing.md }}>
+              No reels yet
+            </ThemedText>
+          </View>
         }
       />
       <Pressable 
@@ -1686,12 +1694,16 @@ function GossipTab() {
     return () => {
       if (recordingRef.current) {
         // Cleanup - ignore errors: recording may already be stopped
-        recordingRef.current.stopAndUnloadAsync().catch(() => {});
+        recordingRef.current.stopAndUnloadAsync().catch((err) => {
+          console.warn("Error stopping gossip recording during cleanup:", err);
+        });
         recordingRef.current = null;
       }
       if (soundRef.current) {
         // Cleanup - ignore errors: sound may already be unloaded
-        soundRef.current.unloadAsync().catch(() => {});
+        soundRef.current.unloadAsync().catch((err) => {
+          console.warn("Error unloading gossip sound during cleanup:", err);
+        });
         soundRef.current = null;
       }
       if (recordingIntervalRef.current) {
@@ -1874,7 +1886,9 @@ function GossipTab() {
     setIsPlayingPreview(false);
     if (soundRef.current) {
       // Cleanup - ignore errors: sound may already be unloaded
-      soundRef.current.unloadAsync().catch(() => {});
+      soundRef.current.unloadAsync().catch((err) => {
+        console.warn("Error unloading preview sound in resetGossipRecording:", err);
+      });
       soundRef.current = null;
     }
   };

@@ -95,13 +95,17 @@ export default function CreatePostScreen() {
     return () => {
       if (recordingRef.current) {
         // Cleanup - ignore errors: recording may already be stopped
-        recordingRef.current.stopAndUnloadAsync().catch(() => {});
+        recordingRef.current.stopAndUnloadAsync().catch((err) => {
+          console.warn("Error stopping recording during cleanup:", err);
+        });
         recordingRef.current = null;
       }
       
       if (soundRef.current) {
         // Cleanup - ignore errors: sound may already be unloaded
-        soundRef.current.unloadAsync().catch(() => {});
+        soundRef.current.unloadAsync().catch((err) => {
+          console.warn("Error unloading sound during cleanup:", err);
+        });
         soundRef.current = null;
       }
       
@@ -457,7 +461,9 @@ export default function CreatePostScreen() {
   const handleRemoveMedia = () => {
     if (isRecording && recordingRef.current) {
       // Cleanup - ignore errors: recording may already be stopped
-      recordingRef.current.stopAndUnloadAsync().catch(() => {});
+      recordingRef.current.stopAndUnloadAsync().catch((err) => {
+        console.warn("Error stopping recording in handleRemoveMedia:", err);
+      });
       recordingRef.current = null;
       
       // Clear the duration timer

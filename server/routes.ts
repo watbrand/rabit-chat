@@ -74,6 +74,11 @@ import {
   storiesLimiter,
   reactionsLimiter,
   reportsLimiter,
+  dataImportLimiter,
+  profileViewLimiter,
+  watchEventLimiter,
+  payfastNotifyLimiter,
+  coinPurchaseNotifyLimiter,
 } from "./rate-limit";
 import {
   sendWelcomeEmail,
@@ -543,7 +548,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Data import endpoint - imports users and posts from exported data
-  app.post("/api/admin/data-import", validateBody(dataImportSchema), async (req, res) => {
+  app.post("/api/admin/data-import", dataImportLimiter, validateBody(dataImportSchema), async (req, res) => {
     try {
       const { data, overwrite } = req.body;
 
@@ -10552,7 +10557,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Record a profile view (called when visiting a user's profile)
-  app.post("/api/studio/profile-view", async (req, res) => {
+  app.post("/api/studio/profile-view", profileViewLimiter, async (req, res) => {
     try {
       const { profileUserId, source } = req.body;
       
@@ -10576,7 +10581,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Record a watch event for video/voice content
-  app.post("/api/studio/watch-event", async (req, res) => {
+  app.post("/api/studio/watch-event", watchEventLimiter, async (req, res) => {
     try {
       const { postId, watchTimeMs, completed, source } = req.body;
       
@@ -13148,7 +13153,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/payments/payfast/notify", async (req, res) => {
+  app.post("/api/payments/payfast/notify", payfastNotifyLimiter, async (req, res) => {
     try {
       console.log("[PayFast ITN] Received notification:", JSON.stringify(req.body));
 
@@ -15625,7 +15630,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/coins/purchase/notify - PayFast ITN webhook
-  app.post("/api/coins/purchase/notify", async (req, res) => {
+  app.post("/api/coins/purchase/notify", coinPurchaseNotifyLimiter, async (req, res) => {
     try {
       const { validateITNSignature } = await import("./services/payfast");
       const itnData = req.body as import("./services/payfast").PayFastITNData;
@@ -27853,7 +27858,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({
           status: "APPROVED",
           processedAt: new Date(),
-          processedById: req.session.userId,
+          processedBy: req.session.userId,
           transactionReference: transactionReference || null,
         })
         .where(eq(withdrawalRequests.id, id));
@@ -27896,7 +27901,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({
           status: "REJECTED",
           processedAt: new Date(),
-          processedById: req.session.userId,
+          processedBy: req.session.userId,
           rejectionReason: reason || "Rejected by admin",
         })
         .where(eq(withdrawalRequests.id, id));
@@ -28026,15 +28031,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "KYC submission not found" });
       }
 
-      if (kyc[0].status === "VERIFIED") {
+      if (kyc[0].status === "APPROVED") {
         return res.status(400).json({ message: "KYC already verified" });
       }
 
       await db.update(userKyc)
         .set({
-          status: "VERIFIED",
+          status: "APPROVED",
           verifiedAt: new Date(),
-          reviewedById: req.session.userId,
+          reviewedBy: req.session.userId,
         })
         .where(eq(userKyc.id, id));
 
@@ -28072,7 +28077,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .set({
           status: "REJECTED",
           rejectionReason: reason || "Rejected by admin",
-          reviewedById: req.session.userId,
+          reviewedBy: req.session.userId,
         })
         .where(eq(userKyc.id, id));
 

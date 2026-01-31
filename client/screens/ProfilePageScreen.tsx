@@ -6,6 +6,7 @@ import {
   RefreshControl,
   Alert,
   Platform,
+  Share,
 } from "react-native";
 import { LoadingIndicator } from "@/components/animations";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -243,16 +244,28 @@ export default function ProfilePageScreen() {
   };
 
   if (showSwipeViewer) {
+    const handleShare = async (postId: string) => {
+      try {
+        const postUrl = `https://rabitchat.app/posts/${postId}`;
+        await Share.share({
+          message: "Check out this post on RabitChat!",
+          url: postUrl,
+        });
+      } catch (error) {
+        // Share was cancelled or failed - no need to alert user
+      }
+    };
+
     return (
       <SwipeViewer
         posts={swipeData?.posts || []}
         isLoading={swipeLoading}
         hasMore={!!swipeData?.nextCursor}
-        onLoadMore={() => {}}
+        onLoadMore={handleLoadMore}
         onLike={(postId, hasLiked) => likeMutation.mutate({ postId, hasLiked })}
         onSave={(postId, hasSaved) => saveMutation.mutate({ postId, hasSaved })}
         onComment={(postId) => navigation.navigate("PostDetail", { postId })}
-        onShare={() => {}}
+        onShare={handleShare}
         onClose={handleCloseSwipe}
         onUserPress={handleUserPress}
         onDownload={handleDownload}

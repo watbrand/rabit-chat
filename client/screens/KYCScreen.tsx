@@ -110,13 +110,16 @@ export default function KYCScreen({ navigation }: any) {
         quality: 0.8,
       });
 
-      if (result.canceled || !result.assets[0]) return;
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      if (!asset) return;
 
       setUploading(type);
       const uploadResult = await uploadFileWithProgress(
-        result.assets[0].uri,
+        asset.uri,
         "general",
-        result.assets[0].mimeType
+        asset.mimeType
       );
 
       const urlKey = type === "idDocument" ? "idDocumentUrl" : type === "proofOfAddress" ? "proofOfAddressUrl" : "selfieUrl";
@@ -147,13 +150,16 @@ export default function KYCScreen({ navigation }: any) {
         cameraType: ImagePicker.CameraType.front,
       });
 
-      if (result.canceled || !result.assets[0]) return;
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      if (!asset) return;
 
       setUploading("selfie");
       const uploadResult = await uploadFileWithProgress(
-        result.assets[0].uri,
+        asset.uri,
         "general",
-        result.assets[0].mimeType
+        asset.mimeType
       );
 
       setFormData((prev) => ({ ...prev, selfieUrl: uploadResult.url }));
