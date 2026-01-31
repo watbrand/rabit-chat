@@ -43,7 +43,31 @@ export default function SavedPostsScreen() {
       }
       return { postId };
     },
-    onSuccess: () => {
+    onMutate: async ({ postId, hasLiked }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/bookmarks"] });
+      const previousPosts = queryClient.getQueryData(["/api/bookmarks"]);
+      
+      queryClient.setQueryData(["/api/bookmarks"], (old: any[] | undefined) => {
+        if (!old) return old;
+        return old.map((post) =>
+          post.id === postId
+            ? {
+                ...post,
+                hasLiked: !hasLiked,
+                likesCount: hasLiked ? Math.max(0, (post.likesCount || 0) - 1) : (post.likesCount || 0) + 1,
+              }
+            : post
+        );
+      });
+      
+      return { previousPosts };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousPosts) {
+        queryClient.setQueryData(["/api/bookmarks"], context.previousPosts);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bookmarks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
     },

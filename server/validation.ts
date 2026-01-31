@@ -396,3 +396,145 @@ export const verificationActionSchema = z.object({
   reason: z.string().max(500).optional(),
   notes: z.string().max(2000).optional(),
 });
+
+// ===== MESSAGE SCHEMAS =====
+
+const messageTypeEnum = z.enum(["TEXT", "PHOTO", "VIDEO", "VOICE", "FILE", "LINK"]);
+
+export const sendMediaMessageSchema = z.object({
+  content: z.string().max(2000, "Message content too long").optional().default(""),
+  messageType: messageTypeEnum.default("TEXT"),
+  mediaUrl: z.string().url("Invalid media URL").optional().nullable(),
+  replyToId: z.string().uuid("Invalid reply message ID").optional().nullable(),
+}).superRefine((data, ctx) => {
+  // For non-TEXT types, mediaUrl is required
+  if (data.messageType !== "TEXT" && !data.mediaUrl) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Media URL is required for ${data.messageType} messages`,
+      path: ["mediaUrl"],
+    });
+  }
+  // For TEXT type, content is required
+  if (data.messageType === "TEXT" && (!data.content || data.content.trim().length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Content is required for text messages",
+      path: ["content"],
+    });
+  }
+});
+
+export const messageReactionSchema = z.object({
+  emoji: z.string()
+    .min(1, "Emoji is required")
+    .max(10, "Invalid emoji"),
+});
+
+// ===== GROUP SCHEMAS =====
+
+const groupCategoryEnum = z.enum([
+  "SOCIAL", "BUSINESS", "ENTERTAINMENT", "EDUCATION", "GAMING", 
+  "SPORTS", "MUSIC", "ART", "TECHNOLOGY", "LIFESTYLE", "OTHER"
+]).optional();
+
+export const createGroupSchema = z.object({
+  name: z.string()
+    .min(3, "Group name must be at least 3 characters")
+    .max(50, "Group name cannot exceed 50 characters")
+    .transform(val => val.trim()),
+  description: z.string()
+    .max(500, "Description cannot exceed 500 characters")
+    .optional()
+    .nullable()
+    .transform(val => val?.trim() || null),
+  isPrivate: z.boolean().default(false),
+  category: groupCategoryEnum,
+});
+
+// ===== EVENT SCHEMAS =====
+
+const rsvpStatusEnum = z.enum(["GOING", "INTERESTED", "NOT_GOING"]);
+
+export const createEventSchema = z.object({
+  title: z.string()
+    .min(3, "Event title must be at least 3 characters")
+    .max(100, "Event title cannot exceed 100 characters")
+    .transform(val => val.trim()),
+  description: z.string()
+    .max(1000, "Description cannot exceed 1000 characters")
+    .optional()
+    .nullable()
+    .transform(val => val?.trim() || null),
+  startDate: z.string()
+    .min(1, "Start date is required")
+    .refine(val => !isNaN(new Date(val).getTime()), "Invalid start date format"),
+  endDate: z.string()
+    .optional()
+    .nullable()
+    .refine(val => !val || !isNaN(new Date(val).getTime()), "Invalid end date format"),
+  location: z.string().max(200, "Location too long").optional().nullable(),
+  isVirtual: z.boolean().default(false),
+  maxAttendees: z.union([z.number().int().positive(), z.string().transform(v => parseInt(v, 10))])
+    .optional()
+    .nullable()
+    .refine(val => !val || (val > 0 && val <= 100000), "Invalid attendee limit"),
+}).refine(data => {
+  if (data.endDate) {
+    const start = new Date(data.startDate);
+    const end = new Date(data.endDate);
+    return end > start;
+  }
+  return true;
+}, {
+  message: "End date must be after start date",
+  path: ["endDate"],
+});
+
+export const rsvpEventSchema = z.object({
+  status: rsvpStatusEnum,
+});
+
+// ===== WALLET/ECONOMY SCHEMAS =====
+
+const transactionTypeEnum = z.enum([
+  "PURCHASE", "GIFT_SENT", "GIFT_RECEIVED", "REWARD", "REFUND", 
+  "WITHDRAWAL", "DEPOSIT", "TRANSFER", "ADMIN_ADJUSTMENT"
+]);
+
+export const coinPurchaseSchema = z.object({
+  bundleId: z.string().uuid("Invalid bundle ID"),
+});
+
+export const customCoinPurchaseSchema = z.object({
+  coinAmount: z.number()
+    .int("Coin amount must be a whole number")
+    .min(10, "Minimum purchase is 10 coins")
+    .max(1000000, "Maximum single purchase is 1,000,000 coins"),
+});
+
+export const walletAdjustmentSchema = z.object({
+  amount: z.number()
+    .int("Amount must be a whole number")
+    .refine(val => val !== 0, "Amount cannot be zero"),
+  reason: z.string()
+    .min(5, "Reason must be at least 5 characters")
+    .max(500, "Reason too long"),
+  transactionType: transactionTypeEnum.optional().default("ADMIN_ADJUSTMENT"),
+});
+
+export const sendGiftSchema = z.object({
+  recipientId: z.string().uuid("Invalid recipient ID"),
+  giftTypeId: z.string().uuid("Invalid gift type ID"),
+  message: z.string().max(200, "Gift message too long").optional(),
+});
+
+export const withdrawalRequestSchema = z.object({
+  amount: z.number()
+    .int("Amount must be a whole number")
+    .positive("Amount must be positive")
+    .min(100, "Minimum withdrawal is 100 coins"),
+  bankName: z.string().min(2, "Bank name required").max(100, "Bank name too long"),
+  accountNumber: z.string().min(5, "Invalid account number").max(30, "Account number too long"),
+  accountHolder: z.string().min(2, "Account holder name required").max(100, "Name too long"),
+});

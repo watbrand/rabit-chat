@@ -107,6 +107,8 @@ import {
   createPostSchema,
   createCommentSchema,
   sendMessageSchema,
+  sendMediaMessageSchema,
+  messageReactionSchema,
   createConversationSchema,
   updateProfileSchema,
   reportSchema,
@@ -117,6 +119,12 @@ import {
   deleteAccountSchema,
   submitVerificationSchema,
   verificationActionSchema,
+  createGroupSchema,
+  createEventSchema,
+  rsvpEventSchema,
+  coinPurchaseSchema,
+  customCoinPurchaseSchema,
+  walletAdjustmentSchema,
 } from "./validation";
 
 const diskStorage = multer.diskStorage({
@@ -5422,7 +5430,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Send message with media type support
-  app.post("/api/conversations/:id/messages/media", requireAuth, messageLimiter, async (req, res) => {
+  app.post("/api/conversations/:id/messages/media", requireAuth, messageLimiter, validateBody(sendMediaMessageSchema), async (req, res) => {
     try {
       const conversation = await storage.getConversation(req.params.id);
       if (!conversation) {
@@ -5446,7 +5454,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
         validReceiverId,
         content || "",
-        messageType || "TEXT",
+        messageType,
         mediaUrl || null,
         replyToId || null
       );
@@ -5509,15 +5517,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Add reaction to message
-  app.post("/api/messages/:messageId/reactions", requireAuth, async (req, res) => {
+  app.post("/api/messages/:messageId/reactions", requireAuth, validateBody(messageReactionSchema), async (req, res) => {
     try {
       const userId = req.session.userId!;
       const messageId = req.params.messageId;
       const { emoji } = req.body;
-      
-      if (!emoji || typeof emoji !== "string") {
-        return res.status(400).json({ message: "Emoji is required" });
-      }
       
       const message = await storage.getMessage(messageId);
       if (!message) {
@@ -15305,14 +15309,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== PAYFAST COIN PURCHASE ENDPOINTS =====
 
   // POST /api/coins/purchase - Initiate coin bundle purchase
-  app.post("/api/coins/purchase", requireAuth, async (req, res) => {
+  app.post("/api/coins/purchase", requireAuth, validateBody(coinPurchaseSchema), async (req, res) => {
     try {
       const userId = req.session.userId!;
       const { bundleId } = req.body;
-
-      if (!bundleId) {
-        return res.status(400).json({ message: "bundleId is required" });
-      }
 
       const bundle = await storage.getCoinBundle(bundleId);
       if (!bundle) {
@@ -15392,7 +15392,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/coins/purchase-custom - Purchase custom amount of coins (1 coin = R1)
-  app.post("/api/coins/purchase-custom", requireAuth, async (req, res) => {
+  app.post("/api/coins/purchase-custom", requireAuth, validateBody(customCoinPurchaseSchema), async (req, res) => {
     console.log("[CoinPurchase] Custom purchase request received, body:", req.body, "userId:", req.session.userId);
     try {
       // Check if purchases are enabled (emergency control)
@@ -15403,14 +15403,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const userId = req.session.userId!;
       const { coinAmount } = req.body;
-
-      if (!coinAmount || typeof coinAmount !== "number" || coinAmount < 10) {
-        return res.status(400).json({ message: "Minimum purchase is 10 coins" });
-      }
-
-      if (coinAmount > 1000000) {
-        return res.status(400).json({ message: "Maximum single purchase is 1,000,000 coins" });
-      }
 
       const user = await storage.getUser(userId);
       if (!user) {
@@ -18237,18 +18229,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/admin/wallets/:userId/adjust - Adjust wallet balance
-  app.post("/api/admin/wallets/:userId/adjust", requireAdmin, async (req, res) => {
+  app.post("/api/admin/wallets/:userId/adjust", requireAdmin, validateBody(walletAdjustmentSchema), async (req, res) => {
     try {
       const { userId } = req.params;
       const { amount, reason } = req.body;
       const adminId = req.session.userId!;
-
-      if (typeof amount !== "number" || amount === 0) {
-        return res.status(400).json({ message: "Amount must be a non-zero number" });
-      }
-      if (!reason || typeof reason !== "string") {
-        return res.status(400).json({ message: "Reason is required" });
-      }
 
       const user = await storage.getUser(userId);
       if (!user) {
@@ -20953,18 +20938,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/groups - Create a group
-  app.post("/api/groups", requireAuth, async (req, res) => {
+  app.post("/api/groups", requireAuth, validateBody(createGroupSchema), async (req, res) => {
     try {
       const userId = req.session.userId!;
       const { name, description, isPrivate, category } = req.body;
-
-      if (!name || typeof name !== "string" || name.trim().length < 2) {
-        return res.status(400).json({ message: "Group name is required and must be at least 2 characters" });
-      }
-
-      if (name.trim().length > 100) {
-        return res.status(400).json({ message: "Group name cannot exceed 100 characters" });
-      }
 
       const privacy = isPrivate ? "PRIVATE" : "PUBLIC";
       const tags = category ? [category] : [];
@@ -21273,35 +21250,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/events - Create an event
-  app.post("/api/events", requireAuth, async (req, res) => {
+  app.post("/api/events", requireAuth, validateBody(createEventSchema), async (req, res) => {
     try {
       const userId = req.session.userId!;
       const { title, description, startDate, endDate, location, isVirtual, maxAttendees } = req.body;
 
-      if (!title || typeof title !== "string" || title.trim().length < 2) {
-        return res.status(400).json({ message: "Event title is required and must be at least 2 characters" });
-      }
-
-      if (!startDate) {
-        return res.status(400).json({ message: "Start date is required" });
-      }
-
       const startsAt = new Date(startDate);
-      if (isNaN(startsAt.getTime())) {
-        return res.status(400).json({ message: "Invalid start date" });
-      }
-
-      let endsAt: Date | null = null;
-      if (endDate) {
-        endsAt = new Date(endDate);
-        if (isNaN(endsAt.getTime())) {
-          return res.status(400).json({ message: "Invalid end date" });
-        }
-        if (endsAt <= startsAt) {
-          return res.status(400).json({ message: "End date must be after start date" });
-        }
-      }
-
+      const endsAt = endDate ? new Date(endDate) : null;
       const eventType = isVirtual ? "VIRTUAL" : "IN_PERSON";
 
       const [newEvent] = await db.insert(events)
@@ -21373,15 +21328,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/events/:id/rsvp - RSVP to event
-  app.post("/api/events/:id/rsvp", requireAuth, async (req, res) => {
+  app.post("/api/events/:id/rsvp", requireAuth, validateBody(rsvpEventSchema), async (req, res) => {
     try {
       const { id } = req.params;
       const userId = req.session.userId!;
       const { status } = req.body;
-
-      if (!status || !["GOING", "INTERESTED", "NOT_GOING"].includes(status)) {
-        return res.status(400).json({ message: "Invalid RSVP status. Must be GOING, INTERESTED, or NOT_GOING" });
-      }
 
       const [event] = await db.select()
         .from(events)
@@ -23584,7 +23535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         const detectedLang = await detectLanguage(sourceText);
-        sourceLanguage = detectedLang || "auto";
+        sourceLanguage = detectedLang?.language || "auto";
       } catch {
         sourceLanguage = "auto";
       }

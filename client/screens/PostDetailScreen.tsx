@@ -115,7 +115,27 @@ export default function PostDetailScreen() {
       }
       return { postId };
     },
-    onSuccess: (_, variables) => {
+    onMutate: async ({ postId, hasLiked }) => {
+      await queryClient.cancelQueries({ queryKey: [`/api/posts/${postId}`] });
+      const previousPost = queryClient.getQueryData([`/api/posts/${postId}`]);
+      
+      queryClient.setQueryData([`/api/posts/${postId}`], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          hasLiked: !hasLiked,
+          likesCount: hasLiked ? Math.max(0, (old.likesCount || 0) - 1) : (old.likesCount || 0) + 1,
+        };
+      });
+      
+      return { previousPost };
+    },
+    onError: (_err, variables, context) => {
+      if (context?.previousPost) {
+        queryClient.setQueryData([`/api/posts/${variables.postId}`], context.previousPost);
+      }
+    },
+    onSettled: (_, __, variables) => {
       queryClient.invalidateQueries({ queryKey: [`/api/posts/${variables.postId}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts/feed"] });
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });

@@ -297,8 +297,22 @@ export default function SuggestedUsersScreen() {
         return apiRequest("DELETE", `/api/users/${userId}/follow`);
       }
     },
-    onError: (error: any) => {
+    onError: (error: any, variables) => {
+      setFollowedIds((prev) => {
+        const newSet = new Set(prev);
+        if (variables.action === "follow") {
+          newSet.delete(variables.userId);
+        } else {
+          newSet.add(variables.userId);
+        }
+        return newSet;
+      });
       Alert.alert("Error", error.message || "Failed to update follow status");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leaderboard/elite"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/me/profile"] });
     },
   });
 

@@ -280,7 +280,31 @@ export default function ReelsScreen() {
         await apiRequest("POST", `/api/posts/${postId}/like`);
       }
     },
-    onSuccess: () => {
+    onMutate: async ({ postId, hasLiked }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/posts/videos"] });
+      const previousPosts = queryClient.getQueryData(["/api/posts/videos"]);
+      
+      queryClient.setQueryData(["/api/posts/videos"], (old: VideoPost[] | undefined) => {
+        if (!old) return old;
+        return old.map((post) =>
+          post.id === postId
+            ? {
+                ...post,
+                hasLiked: !hasLiked,
+                likesCount: hasLiked ? Math.max(0, post.likesCount - 1) : post.likesCount + 1,
+              }
+            : post
+        );
+      });
+      
+      return { previousPosts };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousPosts) {
+        queryClient.setQueryData(["/api/posts/videos"], context.previousPosts);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts/videos"] });
     },
   });
@@ -293,8 +317,29 @@ export default function ReelsScreen() {
         await apiRequest("POST", `/api/bookmarks/${postId}`);
       }
     },
-    onSuccess: () => {
+    onMutate: async ({ postId, hasBookmarked }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/posts/videos"] });
+      const previousPosts = queryClient.getQueryData(["/api/posts/videos"]);
+      
+      queryClient.setQueryData(["/api/posts/videos"], (old: VideoPost[] | undefined) => {
+        if (!old) return old;
+        return old.map((post) =>
+          post.id === postId
+            ? { ...post, hasBookmarked: !hasBookmarked }
+            : post
+        );
+      });
+      
+      return { previousPosts };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousPosts) {
+        queryClient.setQueryData(["/api/posts/videos"], context.previousPosts);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts/videos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookmarks"] });
     },
   });
 
