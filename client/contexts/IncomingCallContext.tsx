@@ -1,11 +1,19 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { Platform } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { Audio } from "expo-av";
-import * as Haptics from "expo-haptics";
 import { useAuth } from "@/hooks/useAuth";
 import { getApiUrl } from "@/lib/query-client";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
+
+// Only import native-only modules on native platforms
+let Audio: typeof import("expo-av").Audio | null = null;
+let Haptics: typeof import("expo-haptics") | null = null;
+
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+  Haptics = require("expo-haptics");
+}
 
 interface IncomingCall {
   callId: string;
@@ -30,16 +38,15 @@ export function IncomingCallProvider({ children }: { children: React.ReactNode }
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const ringtoneRef = useRef<Audio.Sound | null>(null);
+  const ringtoneRef = useRef<any>(null);
   const navigationRef = useRef<NativeStackNavigationProp<RootStackParamList> | null>(null);
 
   const stopRingtone = useCallback(async () => {
-    if (ringtoneRef.current) {
+    if (ringtoneRef.current && Audio) {
       try {
         await ringtoneRef.current.stopAsync();
         await ringtoneRef.current.unloadAsync();
       } catch (e) {
-        // Cleanup - ignore errors: ringtone may already be stopped/unloaded
         console.warn('Ringtone cleanup error:', e);
       }
       ringtoneRef.current = null;
@@ -47,6 +54,8 @@ export function IncomingCallProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const playRingtone = useCallback(async () => {
+    if (Platform.OS === "web" || !Audio) return;
+    
     try {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
@@ -66,40 +75,51 @@ export function IncomingCallProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
+  const triggerHaptic = useCallback((type: 'impact' | 'notification') => {
+    if (Platform.OS === "web" || !Haptics) return;
+    
+    try {
+      if (type === 'impact') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (e) {
+      // Ignore haptics errors
+    }
+  }, []);
+
   const acceptCall = useCallback(async () => {
     if (!incomingCall) return;
     
-    // Stop ringtone first and wait for it to fully stop
     await stopRingtone();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerHaptic('impact');
 
-    // Request microphone permission BEFORE navigating on iOS
-    // This prevents the permission dialog from being dismissed by navigation
-    console.log("[IncomingCall] Requesting audio permission before navigation...");
-    try {
-      const { status } = await Audio.requestPermissionsAsync();
-      console.log("[IncomingCall] Audio permission status:", status);
-      
-      if (status !== "granted") {
-        console.log("[IncomingCall] Audio permission denied, declining call");
-        // If permission denied, decline the call
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: "call_decline",
-            targetUserId: incomingCall.callerId,
-            callId: incomingCall.callId,
-          }));
+    if (Platform.OS !== "web" && Audio) {
+      console.log("[IncomingCall] Requesting audio permission before navigation...");
+      try {
+        const { status } = await Audio.requestPermissionsAsync();
+        console.log("[IncomingCall] Audio permission status:", status);
+        
+        if (status !== "granted") {
+          console.log("[IncomingCall] Audio permission denied, declining call");
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+              type: "call_decline",
+              targetUserId: incomingCall.callerId,
+              callId: incomingCall.callId,
+            }));
+          }
+          setIncomingCall(null);
+          return;
         }
+      } catch (error) {
+        console.error("[IncomingCall] Permission request error:", error);
         setIncomingCall(null);
         return;
       }
-    } catch (error) {
-      console.error("[IncomingCall] Permission request error:", error);
-      setIncomingCall(null);
-      return;
     }
 
-    // Now that we have permission, send the answer and navigate
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: "call_answer",
@@ -118,13 +138,13 @@ export function IncomingCallProvider({ children }: { children: React.ReactNode }
     }
 
     setIncomingCall(null);
-  }, [incomingCall, stopRingtone]);
+  }, [incomingCall, stopRingtone, triggerHaptic]);
 
   const declineCall = useCallback(() => {
     if (!incomingCall) return;
     
     stopRingtone();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerHaptic('impact');
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
@@ -135,51 +155,63 @@ export function IncomingCallProvider({ children }: { children: React.ReactNode }
     }
 
     setIncomingCall(null);
-  }, [incomingCall, stopRingtone]);
+  }, [incomingCall, stopRingtone, triggerHaptic]);
 
   useEffect(() => {
+    // Skip WebSocket connection on web - calls not supported on web
+    if (Platform.OS === "web") return;
     if (!user?.id) return;
 
     const wsUrl = new URL("/ws", getApiUrl());
     wsUrl.protocol = wsUrl.protocol.replace("http", "ws");
     wsUrl.searchParams.set("userId", user.id);
 
-    const ws = new WebSocket(wsUrl.toString());
-    wsRef.current = ws;
+    let ws: WebSocket | null = null;
+    
+    try {
+      ws = new WebSocket(wsUrl.toString());
+      wsRef.current = ws;
 
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
 
-        if (data.type === "incoming_call") {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          playRingtone();
-          setIncomingCall({
-            callId: data.callId,
-            callerId: data.callerId,
-            caller: data.caller || {
-              id: data.callerId,
-              username: "Unknown",
-              displayName: "Unknown Caller",
-              avatarUrl: null,
-            },
-          });
+          if (data.type === "incoming_call") {
+            triggerHaptic('notification');
+            playRingtone();
+            setIncomingCall({
+              callId: data.callId,
+              callerId: data.callerId,
+              caller: data.caller || {
+                id: data.callerId,
+                username: "Unknown",
+                displayName: "Unknown Caller",
+                avatarUrl: null,
+              },
+            });
+          }
+
+          if (data.type === "call_ended" || data.type === "call_declined") {
+            stopRingtone();
+            setIncomingCall(null);
+          }
+        } catch (e) {
+          console.warn('WebSocket message parse error:', e);
         }
+      };
 
-        if (data.type === "call_ended" || data.type === "call_declined") {
-          stopRingtone();
-          setIncomingCall(null);
-        }
-      } catch (e) {
-        console.warn('WebSocket message parse error:', e);
-      }
-    };
+      ws.onerror = (e) => {
+        console.warn('IncomingCall WebSocket error:', e);
+      };
+    } catch (e) {
+      console.warn('Failed to create WebSocket:', e);
+    }
 
     return () => {
-      ws.close();
+      ws?.close();
       stopRingtone();
     };
-  }, [user?.id, playRingtone, stopRingtone]);
+  }, [user?.id, playRingtone, stopRingtone, triggerHaptic]);
 
   return (
     <IncomingCallContext.Provider value={{ incomingCall, acceptCall, declineCall }}>

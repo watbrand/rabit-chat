@@ -264,6 +264,9 @@ export default function ChatScreen() {
   }, [messages, conversationId, user?.id]);
 
   useEffect(() => {
+    // Skip WebSocket on web - use polling only
+    if (Platform.OS === "web") return;
+    
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let isUnmounted = false;
@@ -273,97 +276,102 @@ export default function ChatScreen() {
     const connect = () => {
       if (isUnmounted) return;
       
-      const wsUrl = getApiUrl().replace("https://", "wss://").replace("http://", "ws://");
-      ws = new WebSocket(`${wsUrl}ws`);
-      wsRef.current = ws;
+      try {
+        const wsUrl = getApiUrl().replace("https://", "wss://").replace("http://", "ws://");
+        ws = new WebSocket(`${wsUrl}ws`);
+        wsRef.current = ws;
 
-      ws.onopen = () => {
-        reconnectAttempts = 0;
-        setIsConnected(true);
-      };
+        ws.onopen = () => {
+          reconnectAttempts = 0;
+          setIsConnected(true);
+        };
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          if (data.type === "auth_success") {
-            ws?.send(JSON.stringify({ type: "join_conversation", conversationId }));
-          }
-          
-          if (data.type === "auth_error") {
-            Alert.alert("Connection Error", "Failed to connect to chat. Please try again.");
-            ws?.close();
-            return;
-          }
-          
-          if (data.type === "new_message" && data.data.conversationId === conversationId) {
-            queryClient.invalidateQueries({
-              queryKey: [`/api/conversations/${conversationId}/messages`],
-            });
-          }
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === "auth_success") {
+              ws?.send(JSON.stringify({ type: "join_conversation", conversationId }));
+            }
+            
+            if (data.type === "auth_error") {
+              Alert.alert("Connection Error", "Failed to connect to chat. Please try again.");
+              ws?.close();
+              return;
+            }
+            
+            if (data.type === "new_message" && data.data.conversationId === conversationId) {
+              queryClient.invalidateQueries({
+                queryKey: [`/api/conversations/${conversationId}/messages`],
+              });
+            }
 
-          if (data.type === "message_deleted" && data.data.conversationId === conversationId) {
-            queryClient.invalidateQueries({
-              queryKey: [`/api/conversations/${conversationId}/messages`],
-            });
-          }
+            if (data.type === "message_deleted" && data.data.conversationId === conversationId) {
+              queryClient.invalidateQueries({
+                queryKey: [`/api/conversations/${conversationId}/messages`],
+              });
+            }
 
-          if (data.type === "message_reaction" && data.data.conversationId === conversationId) {
-            queryClient.invalidateQueries({
-              queryKey: [`/api/conversations/${conversationId}/messages`],
-            });
-          }
+            if (data.type === "message_reaction" && data.data.conversationId === conversationId) {
+              queryClient.invalidateQueries({
+                queryKey: [`/api/conversations/${conversationId}/messages`],
+              });
+            }
 
-          if (data.type === "reaction_update" && data.data.conversationId === conversationId) {
-            queryClient.invalidateQueries({
-              queryKey: [`/api/conversations/${conversationId}/messages`],
-            });
-          }
+            if (data.type === "reaction_update" && data.data.conversationId === conversationId) {
+              queryClient.invalidateQueries({
+                queryKey: [`/api/conversations/${conversationId}/messages`],
+              });
+            }
 
-          if (data.type === "status_update" && data.data.conversationId === conversationId) {
-            queryClient.setQueryData<Message[]>(
-              [`/api/conversations/${conversationId}/messages`],
-              (oldMessages) => {
-                if (!oldMessages) return oldMessages;
-                return oldMessages.map(msg => 
-                  msg.id === data.data.messageId 
-                    ? { ...msg, status: data.data.status }
-                    : msg
-                );
-              }
-            );
-          }
+            if (data.type === "status_update" && data.data.conversationId === conversationId) {
+              queryClient.setQueryData<Message[]>(
+                [`/api/conversations/${conversationId}/messages`],
+                (oldMessages: Message[] | undefined) => {
+                  if (!oldMessages) return oldMessages;
+                  return oldMessages.map((msg: Message) => 
+                    msg.id === data.data.messageId 
+                      ? { ...msg, status: data.data.status }
+                      : msg
+                  );
+                }
+              );
+            }
 
-          if (data.type === "typing_indicator" && data.data.conversationId === conversationId) {
-            setOtherUserTyping(data.data.isTyping);
-          }
+            if (data.type === "typing_indicator" && data.data.conversationId === conversationId) {
+              setOtherUserTyping(data.data.isTyping);
+            }
 
-          if (data.type === "messages_read" && data.data.conversationId === conversationId) {
-            queryClient.invalidateQueries({
-              queryKey: [`/api/conversations/${conversationId}/messages`],
-            });
+            if (data.type === "messages_read" && data.data.conversationId === conversationId) {
+              queryClient.invalidateQueries({
+                queryKey: [`/api/conversations/${conversationId}/messages`],
+              });
+            }
+          } catch (error) {
+            // Parse error - ignore
           }
-        } catch (error) {
-        }
-      };
-      
-      ws.onclose = () => {
-        setIsConnected(false);
-        if (!isUnmounted && reconnectAttempts < maxReconnectAttempts) {
-          reconnectAttempts++;
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
-          reconnectTimeout = setTimeout(() => {
-            queryClient.invalidateQueries({
-              queryKey: [`/api/conversations/${conversationId}/messages`],
-            });
-            connect();
-          }, delay);
-        }
-      };
-      
-      ws.onerror = () => {
-        ws?.close();
-      };
+        };
+        
+        ws.onclose = () => {
+          setIsConnected(false);
+          if (!isUnmounted && reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+            reconnectTimeout = setTimeout(() => {
+              queryClient.invalidateQueries({
+                queryKey: [`/api/conversations/${conversationId}/messages`],
+              });
+              connect();
+            }, delay);
+          }
+        };
+        
+        ws.onerror = () => {
+          ws?.close();
+        };
+      } catch (e) {
+        console.warn('WebSocket connection failed:', e);
+      }
     };
     
     connect();

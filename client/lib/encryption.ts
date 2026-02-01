@@ -1,8 +1,10 @@
-import * as Crypto from 'expo-crypto';
-import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 const KEY_STORE_KEY = 'encryption_private_key';
 const ALGORITHM = 'AES-256-GCM';
+
+// In-memory storage fallback for web
+let webKeyStore: Record<string, string> = {};
 
 /**
  * Converts bytes to base64 string
@@ -25,6 +27,102 @@ function base64ToBytes(base64: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes;
+}
+
+/**
+ * Generate random bytes - works on both web and native
+ */
+async function getRandomBytes(size: number): Promise<Uint8Array> {
+  if (Platform.OS === 'web') {
+    // Use Web Crypto API
+    try {
+      const array = new Uint8Array(size);
+      if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+        window.crypto.getRandomValues(array);
+        return array;
+      }
+    } catch (e) {
+      console.warn('[Encryption] Web crypto not available');
+    }
+    // Fallback to Math.random (less secure, but works)
+    const array = new Uint8Array(size);
+    for (let i = 0; i < size; i++) {
+      array[i] = Math.floor(Math.random() * 256);
+    }
+    return array;
+  }
+  
+  // Native - use expo-crypto
+  const Crypto = require('expo-crypto');
+  return await Crypto.getRandomBytes(size);
+}
+
+/**
+ * Calculate SHA-256 hash - works on both web and native
+ */
+async function sha256(data: ArrayBuffer): Promise<ArrayBuffer> {
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof window !== 'undefined' && window.crypto?.subtle) {
+        return await window.crypto.subtle.digest('SHA-256', data);
+      }
+    } catch (e) {
+      console.warn('[Encryption] Web crypto subtle not available');
+    }
+    // Simple fallback hash (not secure, but prevents crashes)
+    const bytes = new Uint8Array(data);
+    const hash = new Uint8Array(32);
+    for (let i = 0; i < bytes.length; i++) {
+      hash[i % 32] ^= bytes[i];
+    }
+    return hash.buffer;
+  }
+  
+  // Native - use expo-crypto
+  const Crypto = require('expo-crypto');
+  return await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, data);
+}
+
+/**
+ * Store key securely - works on both web and native
+ */
+async function secureStoreSet(key: string, value: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    // Use in-memory storage on web (sessionStorage can throw SecurityError on mobile)
+    webKeyStore[key] = value;
+    return;
+  }
+  
+  // Native - use expo-secure-store
+  const SecureStore = require('expo-secure-store');
+  await SecureStore.setItemAsync(key, value);
+}
+
+/**
+ * Get key from secure storage - works on both web and native
+ */
+async function secureStoreGet(key: string): Promise<string | null> {
+  if (Platform.OS === 'web') {
+    return webKeyStore[key] ?? null;
+  }
+  
+  // Native - use expo-secure-store
+  const SecureStore = require('expo-secure-store');
+  return await SecureStore.getItemAsync(key);
+}
+
+/**
+ * Delete key from secure storage - works on both web and native
+ */
+async function secureStoreDelete(key: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    delete webKeyStore[key];
+    return;
+  }
+  
+  // Native - use expo-secure-store
+  const SecureStore = require('expo-secure-store');
+  await SecureStore.deleteItemAsync(key);
 }
 
 /**
@@ -95,18 +193,15 @@ async function aesDecrypt(
 export async function generateKeyPair(): Promise<{ publicKey: string }> {
   try {
     // Generate 32-byte private key
-    const privateKeyBytes = await Crypto.getRandomBytes(32);
+    const privateKeyBytes = await getRandomBytes(32);
     const privateKeyBase64 = bytesToBase64(privateKeyBytes);
     
     // Store private key securely
-    await SecureStore.setItemAsync(KEY_STORE_KEY, privateKeyBase64);
+    await secureStoreSet(KEY_STORE_KEY, privateKeyBase64);
     
     // Derive public key from private key (deterministic hash-based derivation)
     const publicKeyBytes = new Uint8Array(32);
-    const hashBuffer = await Crypto.digest(
-      Crypto.CryptoDigestAlgorithm.SHA256,
-      privateKeyBytes.buffer as ArrayBuffer
-    );
+    const hashBuffer = await sha256(privateKeyBytes.buffer as ArrayBuffer);
     const hashBytes = new Uint8Array(hashBuffer);
     for (let i = 0; i < 32; i++) {
       publicKeyBytes[i] = hashBytes[i];
@@ -126,7 +221,7 @@ export async function generateKeyPair(): Promise<{ publicKey: string }> {
  */
 export async function getPublicKey(): Promise<string | null> {
   try {
-    const privateKeyBase64 = await SecureStore.getItemAsync(KEY_STORE_KEY);
+    const privateKeyBase64 = await secureStoreGet(KEY_STORE_KEY);
     
     if (!privateKeyBase64) {
       return null;
@@ -134,10 +229,7 @@ export async function getPublicKey(): Promise<string | null> {
     
     // Derive public key from stored private key
     const pkBytes = base64ToBytes(privateKeyBase64);
-    const hashBuffer = await Crypto.digest(
-      Crypto.CryptoDigestAlgorithm.SHA256,
-      pkBytes.buffer as ArrayBuffer
-    );
+    const hashBuffer = await sha256(pkBytes.buffer as ArrayBuffer);
     const hashBytes = new Uint8Array(hashBuffer);
     const publicKeyBytes = new Uint8Array(32);
     for (let i = 0; i < 32; i++) {
@@ -156,7 +248,7 @@ export async function getPublicKey(): Promise<string | null> {
  */
 export async function hasKeyPair(): Promise<boolean> {
   try {
-    const privateKey = await SecureStore.getItemAsync(KEY_STORE_KEY);
+    const privateKey = await secureStoreGet(KEY_STORE_KEY);
     return !!privateKey;
   } catch (error) {
     console.error('[Encryption] Error checking key pair:', error);
@@ -174,10 +266,10 @@ export async function encryptMessage(
 ): Promise<{ encryptedContent: string; encryptedKey: string; iv: string }> {
   try {
     // Generate random AES key (32 bytes for AES-256)
-    const aesKey = await Crypto.getRandomBytes(32);
+    const aesKey = await getRandomBytes(32);
     
     // Generate random IV (16 bytes)
-    const iv = await Crypto.getRandomBytes(16);
+    const iv = await getRandomBytes(16);
     
     // Encrypt message content with AES key and IV
     const encryptedContent = await aesEncrypt(content, aesKey, iv);
@@ -208,7 +300,7 @@ export async function decryptMessage(
 ): Promise<string> {
   try {
     // Get stored private key
-    const privateKeyBase64 = await SecureStore.getItemAsync(KEY_STORE_KEY);
+    const privateKeyBase64 = await secureStoreGet(KEY_STORE_KEY);
     
     if (!privateKeyBase64) {
       throw new Error('No encryption key found. Please set up encryption first.');
@@ -241,10 +333,10 @@ export async function encryptFile(
 ): Promise<{ encryptedContent: string; encryptedKey: string; iv: string }> {
   try {
     // Generate random AES key (32 bytes for AES-256)
-    const aesKey = await Crypto.getRandomBytes(32);
+    const aesKey = await getRandomBytes(32);
     
     // Generate random IV (16 bytes)
-    const iv = await Crypto.getRandomBytes(16);
+    const iv = await getRandomBytes(16);
     
     // Encrypt file content with AES key and IV
     const encryptedContent = await aesEncrypt(fileData, aesKey, iv);
@@ -275,7 +367,7 @@ export async function decryptFile(
 ): Promise<string> {
   try {
     // Get stored private key
-    const privateKeyBase64 = await SecureStore.getItemAsync(KEY_STORE_KEY);
+    const privateKeyBase64 = await secureStoreGet(KEY_STORE_KEY);
     
     if (!privateKeyBase64) {
       throw new Error('No encryption key found. Please set up encryption first.');
@@ -303,7 +395,7 @@ export async function decryptFile(
  */
 export async function deleteKeyPair(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(KEY_STORE_KEY);
+    await secureStoreDelete(KEY_STORE_KEY);
   } catch (error) {
     console.error('[Encryption] Error deleting key pair:', error);
     throw new Error('Failed to delete encryption key pair');

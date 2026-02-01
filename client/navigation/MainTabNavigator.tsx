@@ -50,6 +50,8 @@ function NotificationIcon({ color, size }: { color: string; size: number }) {
   });
 
   useEffect(() => {
+    // Skip WebSocket on web - use polling only
+    if (Platform.OS === "web") return;
     if (!user?.id) return;
     
     let ws: WebSocket | null = null;
@@ -61,38 +63,42 @@ function NotificationIcon({ color, size }: { color: string; size: number }) {
     const connect = () => {
       if (isUnmounted) return;
       
-      const wsUrl = getApiUrl().replace("https://", "wss://").replace("http://", "ws://");
-      ws = new WebSocket(`${wsUrl}ws`);
-      wsRef.current = ws;
+      try {
+        const wsUrl = getApiUrl().replace("https://", "wss://").replace("http://", "ws://");
+        ws = new WebSocket(`${wsUrl}ws`);
+        wsRef.current = ws;
 
-      ws.onopen = () => {
-        reconnectAttempts = 0;
-      };
+        ws.onopen = () => {
+          reconnectAttempts = 0;
+        };
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          if (data.type === "notification:new") {
-            queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
-            queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === "notification:new") {
+              queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+            }
+          } catch (error) {
+            // WebSocket message parse error - ignore malformed messages
           }
-        } catch (error) {
-          // WebSocket message parse error - ignore malformed messages
-        }
-      };
-      
-      ws.onclose = () => {
-        if (!isUnmounted && reconnectAttempts < maxReconnectAttempts) {
-          reconnectAttempts++;
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
-          reconnectTimeout = setTimeout(connect, delay);
-        }
-      };
-      
-      ws.onerror = () => {
-        ws?.close();
-      };
+        };
+        
+        ws.onclose = () => {
+          if (!isUnmounted && reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+            reconnectTimeout = setTimeout(connect, delay);
+          }
+        };
+        
+        ws.onerror = () => {
+          ws?.close();
+        };
+      } catch (e) {
+        console.warn('WebSocket connection failed:', e);
+      }
     };
     
     connect();

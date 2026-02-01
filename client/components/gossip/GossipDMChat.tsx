@@ -11,8 +11,27 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
-import * as Haptics from "expo-haptics";
+
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+// Safe Haptics helper - only runs on native
+const triggerHaptic = (type: 'light' | 'medium' | 'error' | 'success') => {
+  if (Platform.OS === "web") return;
+  try {
+    const Haptics = require("expo-haptics");
+    if (type === 'light') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } else if (type === 'medium') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } else if (type === 'error') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } else if (type === 'success') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  } catch (e) {
+    // Ignore haptics errors
+  }
+};
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import Animated, { FadeIn } from "react-native-reanimated";
 
@@ -161,6 +180,9 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
   }, [messagesData?.messages?.length]);
 
   useEffect(() => {
+    // Skip WebSocket on web - use polling only
+    if (Platform.OS === "web") return;
+    
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let isUnmounted = false;
@@ -170,47 +192,51 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
     const connect = () => {
       if (isUnmounted || !deviceId) return;
 
-      const wsUrl = getApiUrl().replace("https://", "wss://").replace("http://", "ws://");
-      ws = new WebSocket(`${wsUrl}ws`);
-      wsRef.current = ws;
+      try {
+        const wsUrl = getApiUrl().replace("https://", "wss://").replace("http://", "ws://");
+        ws = new WebSocket(`${wsUrl}ws`);
+        wsRef.current = ws;
 
-      ws.onopen = () => {
-        reconnectAttempts = 0;
-        setIsConnected(true);
-        onConnectionChange?.(true);
-      };
+        ws.onopen = () => {
+          reconnectAttempts = 0;
+          setIsConnected(true);
+          onConnectionChange?.(true);
+        };
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === "gossip_dm_message" && data.data.conversationId === conversationId) {
-            queryClient.invalidateQueries({
-              queryKey: ["/api/gossip/v2/dm/conversations", conversationId, "messages"],
-            });
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "gossip_dm_message" && data.data.conversationId === conversationId) {
+              queryClient.invalidateQueries({
+                queryKey: ["/api/gossip/v2/dm/conversations", conversationId, "messages"],
+              });
+            }
+          } catch (error) {
+            // Parse error - ignore
           }
-        } catch (error) {
-          console.error("WebSocket message parse error:", error);
-        }
-      };
+        };
 
-      ws.onclose = () => {
-        setIsConnected(false);
-        onConnectionChange?.(false);
-        if (!isUnmounted && reconnectAttempts < maxReconnectAttempts) {
-          reconnectAttempts++;
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
-          reconnectTimeout = setTimeout(() => {
-            queryClient.invalidateQueries({
-              queryKey: ["/api/gossip/v2/dm/conversations", conversationId, "messages"],
-            });
-            connect();
-          }, delay);
-        }
-      };
+        ws.onclose = () => {
+          setIsConnected(false);
+          onConnectionChange?.(false);
+          if (!isUnmounted && reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+            reconnectTimeout = setTimeout(() => {
+              queryClient.invalidateQueries({
+                queryKey: ["/api/gossip/v2/dm/conversations", conversationId, "messages"],
+              });
+              connect();
+            }, delay);
+          }
+        };
 
-      ws.onerror = () => {
-        ws?.close();
-      };
+        ws.onerror = () => {
+          ws?.close();
+        };
+      } catch (e) {
+        console.warn('WebSocket connection failed:', e);
+      }
     };
 
     connect();
@@ -246,14 +272,14 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
       return response.json();
     },
     onSuccess: () => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      triggerHaptic('light');
       queryClient.invalidateQueries({
         queryKey: ["/api/gossip/v2/dm/conversations", conversationId, "messages"],
       });
       setMessageText("");
     },
     onError: (error: Error) => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerHaptic('error');
       Alert.alert("Error", error.message || "Failed to send message. Please try again.");
     },
   });
@@ -275,13 +301,13 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
       return response.json();
     },
     onSuccess: () => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      triggerHaptic('medium');
       queryClient.invalidateQueries({
         queryKey: ["/api/gossip/v2/dm/conversations", conversationId, "messages"],
       });
     },
     onError: (error: Error) => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerHaptic('error');
       Alert.alert("Error", error.message || "Failed to delete message. Please try again.");
     },
   });
@@ -303,12 +329,12 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
       return response.json();
     },
     onSuccess: () => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      triggerHaptic('success');
       setIsBlocked(true);
       Alert.alert("Blocked", "You have blocked this anonymous user.");
     },
     onError: (error: Error) => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerHaptic('error');
       Alert.alert("Error", error.message || "Failed to block user. Please try again.");
     },
   });
@@ -334,11 +360,11 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
       return response.json();
     },
     onSuccess: () => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      triggerHaptic('success');
       Alert.alert("Reported", "Thank you for your report. We will review it shortly.");
     },
     onError: (error: Error) => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerHaptic('error');
       Alert.alert("Error", error.message || "Failed to report. Please try again.");
     },
   });
