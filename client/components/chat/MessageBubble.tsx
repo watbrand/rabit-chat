@@ -25,7 +25,7 @@ import Animated, {
 
 import { Avatar } from "@/components/Avatar";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, BorderRadius, Fonts, Gradients, Shadows } from "@/constants/theme";
+import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const MAX_BUBBLE_WIDTH = SCREEN_WIDTH * 0.8;
@@ -746,11 +746,10 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: BorderRadius.xs,
   },
   messageText: {
-    fontSize: 17,
-    lineHeight: 24,
-    fontFamily: Fonts?.medium,
-    fontWeight: "500",
-    letterSpacing: 0.2,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "600",
+    textAlign: "left",
   },
   encryptedText: {
     fontStyle: "italic",
@@ -764,7 +763,7 @@ const styles = StyleSheet.create({
   },
   timestamp: {
     fontSize: 11,
-    fontFamily: Fonts?.regular,
+    fontWeight: "500",
   },
   encryptionBadge: {
     marginRight: 2,
@@ -787,12 +786,11 @@ const styles = StyleSheet.create({
   replyName: {
     fontSize: 12,
     fontWeight: "600",
-    fontFamily: Fonts?.semiBold,
   },
   replyContent: {
     fontSize: 12,
     marginTop: 2,
-    fontFamily: Fonts?.regular,
+    fontWeight: "400",
   },
   voiceContainer: {
     flexDirection: "row",
@@ -825,7 +823,7 @@ const styles = StyleSheet.create({
   },
   voiceDuration: {
     fontSize: 11,
-    fontFamily: Fonts?.regular,
+    fontWeight: "400",
   },
   speedButton: {
     paddingHorizontal: Spacing.sm,
@@ -835,7 +833,6 @@ const styles = StyleSheet.create({
   speedText: {
     fontSize: 10,
     fontWeight: "600",
-    fontFamily: Fonts?.semiBold,
   },
   fileContainer: {
     flexDirection: "row",
@@ -856,12 +853,11 @@ const styles = StyleSheet.create({
   fileName: {
     fontSize: 14,
     fontWeight: "500",
-    fontFamily: Fonts?.medium,
   },
   fileSize: {
     fontSize: 12,
     marginTop: 2,
-    fontFamily: Fonts?.regular,
+    fontWeight: "400",
   },
   downloadButton: {
     width: 36,
@@ -890,17 +886,16 @@ const styles = StyleSheet.create({
   },
   linkDomain: {
     fontSize: 11,
-    fontFamily: Fonts?.regular,
+    fontWeight: "400",
   },
   linkTitle: {
     fontSize: 14,
     fontWeight: "600",
-    fontFamily: Fonts?.semiBold,
     lineHeight: 18,
   },
   linkDescription: {
     fontSize: 12,
-    fontFamily: Fonts?.regular,
+    fontWeight: "400",
     lineHeight: 16,
   },
   mediaImage: {
