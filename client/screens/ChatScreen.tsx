@@ -37,6 +37,7 @@ import { Spacing, BorderRadius, Typography, Fonts } from "@/constants/theme";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { uploadFileWithProgress } from "@/lib/upload";
+import { decryptMessage } from "@/lib/encryption";
 
 type ChatScreenRouteProp = RouteProp<RootStackParamList, "Chat">;
 
@@ -65,6 +66,9 @@ interface Message {
   linkDescription?: string;
   linkImage?: string;
   linkDomain?: string;
+  encryptedContent?: string | null;
+  encryptedKey?: string | null;
+  encryptionIv?: string | null;
   sender: {
     id: string;
     username: string;
@@ -219,7 +223,30 @@ export default function ChatScreen() {
         { credentials: "include" }
       );
       if (!res.ok) throw new Error("Failed to fetch messages");
-      return res.json();
+      const rawMessages: Message[] = await res.json();
+      
+      // Decrypt any encrypted messages
+      const decryptedMessages = await Promise.all(
+        rawMessages.map(async (msg) => {
+          // If message has encryptedContent but no content, try to decrypt
+          if (msg.encryptedContent && !msg.content && msg.encryptedKey && msg.encryptionIv) {
+            try {
+              const decryptedContent = await decryptMessage(
+                msg.encryptedContent,
+                msg.encryptedKey,
+                msg.encryptionIv
+              );
+              return { ...msg, content: decryptedContent };
+            } catch {
+              // Decryption failed, return message as-is (will show encrypted placeholder)
+              return msg;
+            }
+          }
+          return msg;
+        })
+      );
+      
+      return decryptedMessages;
     },
     refetchInterval: 5000,
   });
