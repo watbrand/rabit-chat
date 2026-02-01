@@ -179,9 +179,9 @@ function VoiceMessagePlayer({
   const barCount = 24;
   const defaultWaveform = waveform || Array.from({ length: barCount }, () => Math.random());
 
-  const barColor = isSent ? "rgba(255,255,255,0.7)" : theme.primary;
-  const textColor = isSent ? "rgba(255,255,255,0.8)" : theme.textSecondary;
-  const buttonBg = isSent ? "rgba(255,255,255,0.2)" : theme.primary + "20";
+  const barColor = isSent ? "#FFFFFF" : theme.primary;
+  const textColor = isSent ? "#FFFFFF" : theme.textSecondary;
+  const buttonBg = isSent ? "#FFFFFF33" : theme.primary + "33";
   const buttonIconColor = isSent ? "#FFFFFF" : theme.primary;
 
   return (
@@ -245,10 +245,10 @@ function FileMessageCard({
   const { theme } = useTheme();
   const iconName = getFileIcon(mimeType);
 
-  const iconBg = isSent ? "rgba(255,255,255,0.2)" : theme.primary + "15";
+  const iconBg = isSent ? "#FFFFFF33" : theme.primary + "33";
   const iconColor = isSent ? "#FFFFFF" : theme.primary;
   const textColor = isSent ? "#FFFFFF" : theme.text;
-  const secondaryColor = isSent ? "rgba(255,255,255,0.7)" : theme.textSecondary;
+  const secondaryColor = isSent ? "#FFFFFF" : theme.textSecondary;
 
   return (
     <View style={styles.fileContainer}>
@@ -301,14 +301,14 @@ function LinkPreviewCard({
   const { theme, isDark } = useTheme();
 
   const cardBg = isSent
-    ? "rgba(255,255,255,0.15)"
+    ? "#FFFFFF26"
     : isDark
     ? theme.backgroundSecondary
     : theme.backgroundFloating;
-  const borderColor = isSent ? "rgba(255,255,255,0.2)" : theme.border;
+  const borderColor = isSent ? "#FFFFFF40" : theme.border;
   const textColor = isSent ? "#FFFFFF" : theme.text;
-  const secondaryColor = isSent ? "rgba(255,255,255,0.7)" : theme.textSecondary;
-  const domainColor = isSent ? "rgba(255,255,255,0.6)" : theme.primary;
+  const secondaryColor = isSent ? "#FFFFFF" : theme.textSecondary;
+  const domainColor = isSent ? "#FFFFFF" : theme.primary;
 
   return (
     <Pressable
@@ -359,7 +359,7 @@ function LinkPreviewCard({
 function StatusIcon({ status, isSent }: { status?: MessageStatus; isSent: boolean }) {
   if (!isSent) return null;
 
-  const color = "rgba(255,255,255,0.7)";
+  const color = "#FFFFFF";
   const size = 14;
 
   switch (status) {
@@ -389,7 +389,7 @@ function StatusIcon({ status, isSent }: { status?: MessageStatus; isSent: boolea
 }
 
 function EncryptionBadge({ isSent }: { isSent: boolean }) {
-  const color = isSent ? "rgba(255,255,255,0.6)" : "rgba(139, 92, 246, 0.7)";
+  const color = isSent ? "#FFFFFF" : "#8B5CF6";
 
   return (
     <View style={styles.encryptionBadge}>
@@ -478,7 +478,7 @@ export function MessageBubble({
           {
             borderLeftColor: theme.primary,
             backgroundColor: isSent
-              ? "rgba(255,255,255,0.1)"
+              ? "#FFFFFF1A"
               : theme.backgroundSecondary,
           },
         ]}
@@ -486,7 +486,7 @@ export function MessageBubble({
         <Text
           style={[
             styles.replyName,
-            { color: isSent ? "rgba(255,255,255,0.9)" : theme.primary },
+            { color: isSent ? "#FFFFFF" : theme.primary },
           ]}
           numberOfLines={1}
         >
@@ -495,7 +495,7 @@ export function MessageBubble({
         <Text
           style={[
             styles.replyContent,
-            { color: isSent ? "rgba(255,255,255,0.7)" : theme.textSecondary },
+            { color: isSent ? "#FFFFFF" : theme.textSecondary },
           ]}
           numberOfLines={1}
         >
@@ -638,7 +638,7 @@ export function MessageBubble({
           <Text
             style={[
               styles.timestamp,
-              { color: isSent ? "rgba(255,255,255,0.7)" : theme.textSecondary },
+              { color: isSent ? "#FFFFFF" : theme.textSecondary },
             ]}
           >
             {formatTime(message.createdAt)}
@@ -668,9 +668,9 @@ export function MessageBubble({
           styles.bubbleReceived,
           {
             backgroundColor: isDark
-              ? theme.glassBackground
-              : theme.backgroundDefault,
-            borderColor: theme.glassBorder,
+              ? "#2A2A3A"
+              : "#F5F5F5",
+            borderColor: isDark ? "#3A3A4A" : "#E0E0E0",
           },
         ]}
       >
@@ -737,15 +737,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    ...Platform.select({
-      ios: {
-        ...Shadows.md,
-      },
-      android: {
-        elevation: 3,
-      },
-      default: {},
-    }),
   },
   bubbleSent: {
     borderBottomRightRadius: BorderRadius.xs,
@@ -755,13 +746,14 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: BorderRadius.xs,
   },
   messageText: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontFamily: Fonts?.regular,
+    fontSize: 17,
+    lineHeight: 24,
+    fontFamily: Fonts?.medium,
+    fontWeight: "500",
+    letterSpacing: 0.2,
   },
   encryptedText: {
     fontStyle: "italic",
-    opacity: 0.7,
   },
   metaRow: {
     flexDirection: "row",

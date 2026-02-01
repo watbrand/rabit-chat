@@ -91,7 +91,7 @@ interface OnlineStatus {
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { user } = useAuth();
   const route = useRoute<ChatScreenRouteProp>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -829,8 +829,8 @@ export default function ChatScreen() {
                 style={[
                   styles.input,
                   {
-                    backgroundColor: theme.glassBackground,
-                    borderColor: theme.glassBorder,
+                    backgroundColor: isDark ? "#2A2A3A" : "#F5F5F5",
+                    borderColor: isDark ? "#3A3A4A" : "#E0E0E0",
                     color: theme.text,
                   },
                 ]}
