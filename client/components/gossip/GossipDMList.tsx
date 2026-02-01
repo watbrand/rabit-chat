@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -126,14 +126,14 @@ export function GossipDMList() {
 
   React.useEffect(() => {
     const loadOrCreateDeviceId = async () => {
-      let id = await AsyncStorage.getItem(DEVICE_ID_KEY);
+      let id = await safeGetItem(DEVICE_ID_KEY);
       if (!id) {
         id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
           const r = Math.random() * 16 | 0;
           const v = c === 'x' ? r : (r & 0x3 | 0x8);
           return v.toString(16);
         });
-        await AsyncStorage.setItem(DEVICE_ID_KEY, id);
+        await safeSetItem(DEVICE_ID_KEY, id);
       }
       setDeviceId(id);
     };

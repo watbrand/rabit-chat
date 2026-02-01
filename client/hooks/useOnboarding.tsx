@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
 
 const ONBOARDING_KEY = "@rabitchat_has_seen_onboarding";
 
@@ -21,7 +21,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
   const checkOnboardingStatus = async () => {
     try {
-      const value = await AsyncStorage.getItem(ONBOARDING_KEY);
+      const value = await safeGetItem(ONBOARDING_KEY);
       setHasSeenOnboarding(value === "true");
     } catch (error) {
       console.error("Error checking onboarding status:", error);
@@ -33,7 +33,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
   const completeOnboarding = useCallback(async () => {
     try {
-      await AsyncStorage.setItem(ONBOARDING_KEY, "true");
+      await safeSetItem(ONBOARDING_KEY, "true");
       setHasSeenOnboarding(true);
     } catch (error) {
       console.error("Error saving onboarding status:", error);

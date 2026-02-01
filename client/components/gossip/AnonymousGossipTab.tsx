@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
 
 import { ThemedText } from "../ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -32,15 +32,14 @@ type FeedTab = "community" | "trending";
 const DEVICE_ID_KEY = "@gossip_device_id";
 
 async function getOrCreateDeviceId(): Promise<string> {
-  let deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
+  let deviceId = await safeGetItem(DEVICE_ID_KEY);
   if (!deviceId) {
-    // Generate UUID format (36 chars) to meet backend's min 32 char requirement
     deviceId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
       const r = Math.random() * 16 | 0;
       const v = c === 'x' ? r : (r & 0x3 | 0x8);
       return v.toString(16);
     });
-    await AsyncStorage.setItem(DEVICE_ID_KEY, deviceId);
+    await safeSetItem(DEVICE_ID_KEY, deviceId);
   }
   return deviceId;
 }

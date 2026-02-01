@@ -6,7 +6,7 @@ import { Feather } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { Audio } from "expo-av";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -46,15 +46,14 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
 
   useEffect(() => {
     const loadOrCreateDeviceId = async () => {
-      let id = await AsyncStorage.getItem("@gossip_device_id");
+      let id = await safeGetItem("@gossip_device_id");
       if (!id) {
-        // Create device ID if not exists (fallback for edge cases)
         id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
           const r = Math.random() * 16 | 0;
           const v = c === 'x' ? r : (r & 0x3 | 0x8);
           return v.toString(16);
         });
-        await AsyncStorage.setItem("@gossip_device_id", id);
+        await safeSetItem("@gossip_device_id", id);
       }
       setDeviceId(id);
     };

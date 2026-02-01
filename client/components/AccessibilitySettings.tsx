@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { StyleSheet, View, Text, Switch, Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
 import * as Haptics from "expo-haptics";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
@@ -48,7 +48,7 @@ export function AccessibilityProvider({ children }: { children: React.ReactNode 
 
   const loadSettings = async () => {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      const stored = await safeGetItem(STORAGE_KEY);
       if (stored) {
         const settings = JSON.parse(stored);
         setReducedMotionState(settings.reducedMotion ?? false);
@@ -70,7 +70,7 @@ export function AccessibilityProvider({ children }: { children: React.ReactNode 
         highContrast,
         ...settings,
       };
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+      await safeSetItem(STORAGE_KEY, JSON.stringify(current));
     } catch (error) {
       console.error("Failed to save accessibility settings:", error);
     }

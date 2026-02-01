@@ -19,7 +19,7 @@ import Animated, {
   withTiming,
   withSpring,
 } from "react-native-reanimated";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { safeGetItem, safeSetItem, safeRemoveItem } from "@/lib/safeStorage";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -55,7 +55,7 @@ export function useCoachingMarks(markIds: string[]) {
 
   const loadSeenMarks = async () => {
     try {
-      const stored = await AsyncStorage.getItem(COACHING_MARKS_SEEN_KEY);
+      const stored = await safeGetItem(COACHING_MARKS_SEEN_KEY);
       if (stored) {
         setSeenMarks(new Set(JSON.parse(stored)));
       }
@@ -70,7 +70,7 @@ export function useCoachingMarks(markIds: string[]) {
     const newSeenMarks = new Set([...seenMarks, markId]);
     setSeenMarks(newSeenMarks);
     try {
-      await AsyncStorage.setItem(
+      await safeSetItem(
         COACHING_MARKS_SEEN_KEY,
         JSON.stringify([...newSeenMarks])
       );
@@ -82,7 +82,7 @@ export function useCoachingMarks(markIds: string[]) {
   const resetAllMarks = async () => {
     setSeenMarks(new Set());
     try {
-      await AsyncStorage.removeItem(COACHING_MARKS_SEEN_KEY);
+      await safeRemoveItem(COACHING_MARKS_SEEN_KEY);
     } catch (error) {
       console.error("Failed to reset coaching marks:", error);
     }
