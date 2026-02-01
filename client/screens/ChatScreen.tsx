@@ -98,6 +98,7 @@ export default function ChatScreen() {
   const queryClient = useQueryClient();
   const wsRef = useRef<WebSocket | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flatListRef = useRef<FlatList>(null);
 
   const { conversationId, otherUserId } = route.params;
   const [message, setMessage] = useState("");
@@ -683,9 +684,17 @@ export default function ChatScreen() {
   const sortedMessages = React.useMemo(() => {
     if (!messages) return [];
     return [...messages].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
   }, [messages]);
+
+  React.useEffect(() => {
+    if (sortedMessages.length > 0) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+    }
+  }, [sortedMessages.length]);
 
   const convertMessageForBubble = (msg: Message) => {
     return {
@@ -726,16 +735,17 @@ export default function ChatScreen() {
         </View>
       ) : (
         <FlatList
-          inverted={sortedMessages.length > 0}
+          ref={flatListRef}
           style={{ flex: 1 }}
           contentContainerStyle={{
-            paddingTop: Spacing.lg,
-            paddingBottom: headerHeight + Spacing.lg,
+            paddingTop: headerHeight + Spacing.lg,
+            paddingBottom: Spacing.lg,
             paddingHorizontal: Spacing.sm,
             flexGrow: 1,
           }}
-          scrollIndicatorInsets={{ top: insets.bottom }}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
           data={sortedMessages}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
             const isSent = item.senderId === user?.id;
@@ -752,7 +762,7 @@ export default function ChatScreen() {
           }}
           ListEmptyComponent={renderEmpty}
           ItemSeparatorComponent={() => <View style={{ height: Spacing.xs }} />}
-          ListHeaderComponent={
+          ListFooterComponent={
             <TypingIndicator
               isVisible={otherUserTyping}
               userName={otherUser?.displayName}
