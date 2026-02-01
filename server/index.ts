@@ -288,7 +288,6 @@ function configureExpoAndLanding(app: express.Application) {
       // Serve web app index.html for all other routes (SPA routing)
       // Inject loading fallback and error handling for mobile browser compatibility
       const indexPath = path.join(webBuildPath, "index.html");
-      const fs = require("fs");
       try {
         let html = fs.readFileSync(indexPath, "utf-8");
         
