@@ -14,7 +14,6 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import { LoadingIndicator, EmptyState } from "@/components/animations";
 import { ThemedView } from "@/components/ThemedView";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing } from "@/constants/theme";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -96,7 +95,6 @@ interface PendingPurchase {
 export default function WalletScreen({ navigation }: any) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const tabBarHeight = useBottomTabBarHeight();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
   const [showPackages, setShowPackages] = useState(false);
@@ -406,11 +404,11 @@ export default function WalletScreen({ navigation }: any) {
   return (
     <KeyboardAwareScrollViewCompat
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      contentContainerStyle={{ paddingBottom: tabBarHeight + Spacing.lg }}
+      contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.lg }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
       }
-      scrollIndicatorInsets={{ bottom: tabBarHeight }}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Text style={[styles.title, { color: theme.text }]}>Wallet</Text>
