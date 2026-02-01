@@ -683,18 +683,13 @@ export default function ChatScreen() {
 
   const sortedMessages = React.useMemo(() => {
     if (!messages) return [];
+    // Sort newest first for inverted FlatList (newest at bottom)
     return [...messages].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   }, [messages]);
 
-  React.useEffect(() => {
-    if (sortedMessages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: false });
-      }, 100);
-    }
-  }, [sortedMessages.length]);
+  // No need for scrollToEnd with inverted FlatList - newest messages automatically appear at bottom
 
   const convertMessageForBubble = (msg: Message) => {
     return {
@@ -737,6 +732,7 @@ export default function ChatScreen() {
         <FlatList
           ref={flatListRef}
           style={{ flex: 1 }}
+          inverted={sortedMessages.length > 0}
           contentContainerStyle={{
             paddingTop: Spacing.lg,
             paddingBottom: Spacing.lg,
@@ -745,7 +741,6 @@ export default function ChatScreen() {
           }}
           scrollIndicatorInsets={{ bottom: insets.bottom }}
           data={sortedMessages}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           keyExtractor={(item) => item.id}
           removeClippedSubviews={false}
           windowSize={21}
@@ -765,7 +760,7 @@ export default function ChatScreen() {
           }}
           ListEmptyComponent={renderEmpty}
           ItemSeparatorComponent={() => <View style={{ height: Spacing.xs }} />}
-          ListFooterComponent={
+          ListHeaderComponent={
             <TypingIndicator
               isVisible={otherUserTyping}
               userName={otherUser?.displayName}
