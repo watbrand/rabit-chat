@@ -27,15 +27,7 @@ import { IncomingCallModal } from "@/components/IncomingCallModal";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { Colors } from "@/constants/theme";
-
-// Only import KeyboardProvider on native platforms - it can cause issues on web
-let KeyboardProvider: React.ComponentType<{ children: React.ReactNode }>;
-if (Platform.OS !== "web") {
-  KeyboardProvider = require("react-native-keyboard-controller").KeyboardProvider;
-} else {
-  // On web, use a simple passthrough component
-  KeyboardProvider = ({ children }: { children: React.ReactNode }) => <>{children}</>;
-}
+import KeyboardProviderWrapper from "@/components/KeyboardProviderWrapper";
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Ignore errors on web where SplashScreen may not be available
@@ -145,10 +137,10 @@ export default function App() {
                 <AudioManagerProvider>
                   <SafeAreaProvider>
                     <GestureHandlerRootView style={styles.root}>
-                      <KeyboardProvider>
+                      <KeyboardProviderWrapper>
                         <NavigationWrapper />
                         <StatusBar style="auto" />
-                      </KeyboardProvider>
+                      </KeyboardProviderWrapper>
                     </GestureHandlerRootView>
                   </SafeAreaProvider>
                 </AudioManagerProvider>

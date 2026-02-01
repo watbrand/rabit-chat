@@ -286,7 +286,58 @@ function configureExpoAndLanding(app: express.Application) {
         return next();
       }
       // Serve web app index.html for all other routes (SPA routing)
-      res.sendFile(path.join(webBuildPath, "index.html"));
+      // Inject loading fallback and error handling for mobile browser compatibility
+      const indexPath = path.join(webBuildPath, "index.html");
+      const fs = require("fs");
+      try {
+        let html = fs.readFileSync(indexPath, "utf-8");
+        
+        // Inject loading fallback and error handling before the closing </body> tag
+        const loadingFallback = `
+    <div id="loading-fallback" style="position:fixed;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0f0f0f;color:white;font-family:system-ui,-apple-system,sans-serif;z-index:9999;">
+      <div style="width:40px;height:40px;border:3px solid rgba(139,92,246,0.3);border-top-color:#8B5CF6;border-radius:50%;animation:spin 1s linear infinite;"></div>
+      <p style="margin-top:16px;font-size:16px;opacity:0.7;">Loading RabitChat...</p>
+      <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+    </div>
+    <script>
+      window.onerror = function(msg, url, line, col, error) {
+        console.error('RabitChat Error:', msg, url, line, col, error);
+        var fallback = document.getElementById('loading-fallback');
+        if (fallback) {
+          fallback.innerHTML = '<div style="padding:20px;text-align:center;"><h2 style="color:#ef4444;margin-bottom:16px;">Something went wrong</h2><p style="color:#888;margin-bottom:16px;">Please refresh the page to try again.</p><button onclick="location.reload()" style="background:#8B5CF6;color:white;border:none;padding:12px 24px;border-radius:8px;font-size:16px;cursor:pointer;">Refresh</button><p style="color:#666;font-size:12px;margin-top:20px;">' + (msg || 'Unknown error') + '</p></div>';
+        }
+        return false;
+      };
+      // Hide loading fallback when React mounts
+      var checkInterval = setInterval(function() {
+        var root = document.getElementById('root');
+        if (root && root.children.length > 0) {
+          var fallback = document.getElementById('loading-fallback');
+          if (fallback) fallback.style.display = 'none';
+          clearInterval(checkInterval);
+        }
+      }, 100);
+      // Timeout fallback
+      setTimeout(function() {
+        clearInterval(checkInterval);
+        var root = document.getElementById('root');
+        if (root && root.children.length === 0) {
+          var fallback = document.getElementById('loading-fallback');
+          if (fallback) {
+            fallback.innerHTML = '<div style="padding:20px;text-align:center;"><h2 style="color:#f59e0b;margin-bottom:16px;">Loading is taking longer than expected</h2><p style="color:#888;margin-bottom:16px;">Please wait or try refreshing.</p><button onclick="location.reload()" style="background:#8B5CF6;color:white;border:none;padding:12px 24px;border-radius:8px;font-size:16px;cursor:pointer;">Refresh</button></div>';
+          }
+        }
+      }, 20000);
+    </script>`;
+        
+        // Insert before the script tag that loads the bundle
+        html = html.replace(/<script src="\/_expo/, loadingFallback + '\n  <script src="/_expo');
+        
+        res.setHeader("Content-Type", "text/html");
+        res.send(html);
+      } catch (err) {
+        res.sendFile(indexPath);
+      }
     });
   }
 
