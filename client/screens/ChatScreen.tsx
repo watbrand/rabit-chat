@@ -14,7 +14,7 @@ import { LoadingIndicator } from "@/components/animations";
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView as RNKeyboardAvoidingView } from "react-native";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { HeaderButton } from "@react-navigation/elements";
@@ -724,9 +724,9 @@ export default function ChatScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
+    <RNKeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      behavior="padding"
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
     >
       {isLoading ? (
@@ -921,7 +921,7 @@ export default function ChatScreen() {
           onReact={handleShowOptionsMenu}
         />
       ) : null}
-    </KeyboardAvoidingView>
+    </RNKeyboardAvoidingView>
   );
 }
 

@@ -19,7 +19,7 @@ export function useScreenOptions({
   return {
     headerTitleAlign: Platform.OS === "android" ? "left" : "center",
     headerTransparent: isHeaderTransparent,
-    headerBlurEffect: Platform.OS === "ios" ? "light" : undefined,
+    headerBlurEffect: undefined,
     headerTintColor: theme.text,
     headerBackVisible: true,
     headerStyle: {

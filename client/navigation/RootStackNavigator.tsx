@@ -400,10 +400,12 @@ export default function RootStackNavigator() {
             component={ChatScreen}
             options={({ route }) => ({
               title: route.params.otherUserName,
-              animation: "slide_from_right",
-              animationDuration: 200,
+              animation: "none",
               headerTransparent: false,
               headerBlurEffect: undefined,
+              headerStyle: {
+                backgroundColor: "#FFFFFF",
+              },
             })}
           />
           <Stack.Screen
