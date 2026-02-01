@@ -9,7 +9,6 @@ import {
   Platform,
   Dimensions,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import Animated, {
@@ -25,7 +24,7 @@ import Animated, {
 
 import { Avatar } from "@/components/Avatar";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, BorderRadius, Gradients } from "@/constants/theme";
+import { Spacing, BorderRadius } from "@/constants/theme";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const MAX_BUBBLE_WIDTH = SCREEN_WIDTH * 0.8;
@@ -650,14 +649,15 @@ export function MessageBubble({
 
     if (isSent) {
       return (
-        <LinearGradient
-          colors={Gradients.primary as unknown as [string, string]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.bubble, styles.bubbleSent]}
+        <View
+          style={[
+            styles.bubble,
+            styles.bubbleSent,
+            { backgroundColor: "#8B5CF6" },
+          ]}
         >
           {content}
-        </LinearGradient>
+        </View>
       );
     }
 
