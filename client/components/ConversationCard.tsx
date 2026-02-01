@@ -89,7 +89,7 @@ export const ConversationCard = memo(function ConversationCard({
       testID={`conversation-card-${conversation.id}`}
     >
       <Pressable onPress={handleAvatarPress} testID={`conversation-avatar-${conversation.id}`}>
-        <Avatar uri={otherUser.avatarUrl} size={50} />
+        <Avatar uri={otherUser.avatarUrl} size={44} />
       </Pressable>
       
       <View style={styles.content}>
@@ -119,10 +119,10 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.sm,
     borderWidth: 1,
-    padding: Spacing.lg,
-    gap: Spacing.md,
+    padding: Spacing.md,
+    gap: Spacing.sm,
   },
   content: {
     flex: 1,
@@ -140,22 +140,23 @@ const styles = StyleSheet.create({
   },
   name: {
     flex: 1,
+    fontSize: 14,
     letterSpacing: 0,
     ...Platform.select({
       ios: {
-        fontFamily: Fonts?.semiBold || "System",
+        fontFamily: Fonts?.medium || "System",
       },
       android: {
-        fontFamily: Fonts?.semiBold,
-        fontWeight: "600" as const,
+        fontFamily: Fonts?.medium,
+        fontWeight: "500" as const,
       },
       default: {
-        fontWeight: "600" as const,
+        fontWeight: "500" as const,
       },
     }),
   },
   time: {
-    fontSize: Typography.small.fontSize,
+    fontSize: 11,
     marginLeft: Spacing.sm,
     letterSpacing: 0,
     ...Platform.select({
@@ -169,8 +170,8 @@ const styles = StyleSheet.create({
     }),
   },
   preview: {
-    fontSize: Typography.small.fontSize,
-    marginTop: Spacing.xs,
+    fontSize: 13,
+    marginTop: 2,
     letterSpacing: 0,
     ...Platform.select({
       ios: {

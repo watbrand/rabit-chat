@@ -734,9 +734,9 @@ const styles = StyleSheet.create({
     maxWidth: MAX_BUBBLE_WIDTH,
   },
   bubble: {
-    borderRadius: BorderRadius.lg,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
   bubbleSent: {
     borderBottomRightRadius: BorderRadius.xs,
@@ -746,9 +746,9 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: BorderRadius.xs,
   },
   messageText: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: "600",
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "400",
     textAlign: "left",
   },
   encryptedText: {
