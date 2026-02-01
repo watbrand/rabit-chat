@@ -51,13 +51,16 @@ function setupCors(app: express.Application) {
       origin?.startsWith("http://localhost:") ||
       origin?.startsWith("http://127.0.0.1:");
 
-    if (origin && (origins.has(origin) || isLocalhost)) {
-      res.header("Access-Control-Allow-Origin", origin);
+    // Allow if origin matches or if no origin (same-origin request)
+    if (!origin || origins.has(origin) || isLocalhost) {
+      if (origin) {
+        res.header("Access-Control-Allow-Origin", origin);
+      }
       res.header(
         "Access-Control-Allow-Methods",
-        "GET, POST, PUT, DELETE, OPTIONS",
+        "GET, POST, PUT, DELETE, OPTIONS, PATCH",
       );
-      res.header("Access-Control-Allow-Headers", "Content-Type, Content-Length, X-Requested-With, x-device-id, X-Device-Id");
+      res.header("Access-Control-Allow-Headers", "Content-Type, Content-Length, X-Requested-With, x-device-id, X-Device-Id, Authorization");
       res.header("Access-Control-Allow-Credentials", "true");
       res.header("Access-Control-Expose-Headers", "Content-Length");
     }
