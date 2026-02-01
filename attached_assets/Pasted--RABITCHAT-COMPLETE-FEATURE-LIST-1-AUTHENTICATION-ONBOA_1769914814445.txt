@@ -1,0 +1,983 @@
+📱 RABITCHAT - COMPLETE FEATURE LIST 
+
+🔐 1. AUTHENTICATION & ONBOARDING 
+
+Feature 
+
+Description 
+
+Sign Up/Login 
+
+Email, phone, username authentication with OTP verification 
+
+Account Types 
+
+Personal, Creator, Business account selection 
+
+Interest Selection 
+
+15+ luxury lifestyle categories (Fashion, Travel, Investments, etc.) 
+
+Industry Selection 
+
+Professional industry picker for networking 
+
+Net Worth Tier Selection 
+
+Wealth tier categorization for matching 
+
+Privacy Setup 
+
+Initial privacy preferences configuration 
+
+Suggested Users 
+
+AI-powered follow recommendations 
+
+Legal Agreement 
+
+Terms, privacy policy acceptance 
+
+Welcome Complete 
+
+Onboarding completion with coaching marks 
+
+ 
+
+👤 2. USER PROFILES 
+
+Feature 
+
+Description 
+
+Profile Display 
+
+Avatar, bio, stats, verified badges, net worth display 
+
+Edit Profile 
+
+Full profile editing (name, bio, avatar, cover photo) 
+
+Profile Links 
+
+Custom links section (website, social, etc.) 
+
+User Notes 
+
+Personal notes visible on profile 
+
+Profile Highlights 
+
+Curated story highlights 
+
+Profile Reels 
+
+Dedicated reels grid 
+
+Profile Views Tracking 
+
+See who viewed your profile 
+
+Followers/Following Lists 
+
+Full follower management 
+
+Elite Circle 
+
+Inner circle/close friends indicator 
+
+Influence Score 
+
+Engagement-based influence calculation 
+
+Verification Badges 
+
+Blue tick verification system 
+
+ 
+
+📰 3. FEED & POSTS 
+
+Feature 
+
+Description 
+
+Home Feed 
+
+Personalized algorithmic feed 
+
+Elite Feed Algorithm 
+
+AI-powered content ranking based on net worth, interests, engagement 
+
+Create Post 
+
+TEXT, PHOTO, VIDEO, VOICE post types 
+
+Post Visibility 
+
+Public, Followers, Close Friends, Private 
+
+Post Collaborators 
+
+Tag and invite collaborators 
+
+Likes/Comments/Shares 
+
+Full engagement system 
+
+Save Posts 
+
+Bookmark for later 
+
+Hide/Not Interested 
+
+Content preferences training 
+
+Post Boosting 
+
+Paid promotion for posts 
+
+Scheduled Posts 
+
+Schedule posts for later 
+
+Drafts 
+
+Save post drafts 
+
+Post Threads 
+
+Twitter-style thread creation 
+
+Duets/Stitches 
+
+TikTok-style video responses 
+
+ 
+
+🎬 4. STORIES 
+
+Feature 
+
+Description 
+
+Story Composer 
+
+Photo/video stories with effects 
+
+Story Viewer 
+
+Swipe-through story viewing 
+
+Story Stickers 
+
+Polls, questions, quizzes, countdowns, mentions 
+
+Story Reactions 
+
+React with emojis 
+
+Story Replies 
+
+Direct message replies 
+
+Story Highlights 
+
+Save stories permanently 
+
+Story Drafts 
+
+Save story drafts 
+
+Story Templates 
+
+Pre-made story templates 
+
+Story Music 
+
+Background music library 
+
+Story Streaks 
+
+Track story engagement streaks 
+
+Story Tips 
+
+Receive tips on stories 
+
+Story Insights 
+
+Analytics for story performance 
+
+ 
+
+🎥 5. REELS 
+
+Feature 
+
+Description 
+
+Reels Feed 
+
+Vertical swipe video feed 
+
+Explore Reels 
+
+Discover trending reels 
+
+Profile Reels 
+
+User's reel collection 
+
+Voice Reels 
+
+Audio-focused reel format 
+
+ 
+
+📷 6. CAMERA & MEDIA 
+
+Feature 
+
+Description 
+
+Camera 
+
+Photo/video capture 
+
+Photo Filters 
+
+Instagram-style filters 
+
+Video Speed Controls 
+
+Slow-mo, time-lapse 
+
+Stickers 
+
+Decorative stickers 
+
+Text Overlays 
+
+Add text to media 
+
+Drawing Tools 
+
+Draw on photos/videos 
+
+AR Filters 
+
+Augmented reality face filters 
+
+ 
+
+💬 7. MESSAGING 
+
+Feature 
+
+Description 
+
+Direct Messages 
+
+One-on-one chat 
+
+Group Chats 
+
+Multi-person conversations 
+
+Message Types 
+
+TEXT, PHOTO, VIDEO, FILE, VOICE, LINK 
+
+Voice Notes 
+
+Audio message recording 
+
+Link Previews 
+
+Automatic URL previews 
+
+Message Reactions 
+
+React with emojis 
+
+Message Replies 
+
+Quote replies 
+
+Message Deletion 
+
+Delete sent messages 
+
+Typing Indicators 
+
+Real-time typing status 
+
+Delivery Status 
+
+Sent, delivered, read receipts 
+
+Message Search 
+
+Search message history 
+
+Conversation Settings 
+
+Mute, block, nickname per chat 
+
+Chat Folders 
+
+Organize chats into folders 
+
+Scheduled Messages 
+
+Send later 
+
+Pinned Messages 
+
+Pin important messages 
+
+Video Calls 
+
+Video calling 
+
+Voice Calls 
+
+Audio calling 
+
+E2E Encryption 
+
+End-to-end encryption option 
+
+Broadcast Channels 
+
+One-to-many messaging 
+
+ 
+
+🔍 8. DISCOVER & SEARCH 
+
+Feature 
+
+Description 
+
+Discover Screen 
+
+Multi-tab discovery (People, Reels, Voices, Gossip, Pictures) 
+
+Search 
+
+Universal search (users, posts, hashtags) 
+
+New People 
+
+User recommendations based on interests 
+
+Explore Pictures 
+
+Visual content discovery 
+
+Explore Reels 
+
+Video content discovery 
+
+Trending 
+
+Trending content and hashtags 
+
+ 
+
+☕ 9. GOSSIP V2 (Anonymous Platform) 
+
+Feature 
+
+Description 
+
+237 SA Locations 
+
+9 Provinces → Cities → Hoods hierarchical structure 
+
+Anonymous Posts 
+
+TRUE anonymity (no user tracking) 
+
+Dynamic Aliases 
+
+Random alias per location 
+
+Post Types 
+
+Text, Confession, Whisper (self-destruct), Poll, Alert 
+
+Tea Reactions 
+
+🍵 PIPING, MILD, COLD reaction system 
+
+Tea Meter 
+
+Engagement scoring algorithm 
+
+Accuracy Voting 
+
+Community fact-checking (Legit/Cap/Neutral) 
+
+Nested Comments 
+
+Threaded reply system 
+
+Anonymous DMs 
+
+Private messaging between anonymous users 
+
+Gossip Saves 
+
+Save gossip posts 
+
+Gossip Reposts 
+
+Repost gossip to other hoods 
+
+Trending Algorithm 
+
+Location-specific trending 
+
+Tea Spiller Levels 
+
+Gamified progression (Rookie → Legend) 
+
+Hood Rivalries 
+
+Location vs location competitions 
+
+Gossip Awards 
+
+Weekly/monthly awards 
+
+Spill Sessions 
+
+Weekly gossip events 
+
+Local Legends 
+
+Top spillers per location 
+
+Hashtags 
+
+Topic organization 
+
+Moderation 
+
+Reports, auto-moderation, word filters 
+
+ 
+
+💰 10. RABIT COINS (Virtual Currency) 
+
+Feature 
+
+Description 
+
+Wallet 
+
+Coin balance and transaction history 
+
+Coin Bundles 
+
+Purchasable coin packages (PayFast integration) 
+
+Daily Rewards 
+
+Daily login coin rewards 
+
+Gift Types 
+
+Virtual gifts to send (Rose, Heart, Crown, Diamond, etc.) 
+
+Gift Transactions 
+
+Send/receive gift history 
+
+Net Worth System 
+
+Wealth display based on coins 
+
+Net Worth Portfolio 
+
+Investment-style coin tracking 
+
+Creator Monetization 
+
+Earn from received gifts 
+
+Staking 
+
+Stake coins for rewards 
+
+Withdrawal 
+
+Cash out earnings (with KYC) 
+
+Bank Accounts 
+
+Link bank for withdrawals 
+
+KYC Verification 
+
+Identity verification for finance features 
+
+ 
+
+🏪 11. LUXURY MALL 
+
+Feature 
+
+Description 
+
+Mall Categories 
+
+Luxury item categories 
+
+Mall Items 
+
+Virtual luxury items (Watches, Cars, Yachts, Jets) 
+
+Mall Purchases 
+
+Buy items with Rabit Coins 
+
+Mall Reviews 
+
+Rate purchased items 
+
+Mall Wishlist 
+
+Save items for later 
+
+Net Worth Display 
+
+Show owned luxury items on profile 
+
+ 
+
+👑 12. WEALTH & STATUS 
+
+Feature 
+
+Description 
+
+Wealth Clubs 
+
+Exclusive clubs by net worth tier 
+
+Battles 
+
+Net worth competitions 
+
+Achievements 
+
+Gamified achievement system 
+
+Creator Dashboard 
+
+Creator earnings and analytics 
+
+Elite Circle 
+
+VIP user features 
+
+ 
+
+📊 13. SUBSCRIPTIONS & MONETIZATION 
+
+Feature 
+
+Description 
+
+Super Follows 
+
+Paid subscriptions to creators 
+
+Subscription Tiers 
+
+Multiple tier options 
+
+Subscriber Management 
+
+Manage your subscribers 
+
+Ad Wallet 
+
+Advertising credits 
+
+Boost Posts 
+
+Paid post promotion 
+
+My Boosts 
+
+Track boosted content performance 
+
+ 
+
+👥 14. GROUPS & EVENTS 
+
+Feature 
+
+Description 
+
+Groups 
+
+Create/join interest groups 
+
+Group Chat 
+
+Group messaging 
+
+Events 
+
+Create/RSVP to events 
+
+Check-In 
+
+Location check-ins 
+
+ 
+
+🔴 15. LIVE STREAMING 
+
+Feature 
+
+Description 
+
+Go Live 
+
+Start live stream 
+
+Live Stream Viewer 
+
+Watch live streams 
+
+Live Comments 
+
+Real-time chat 
+
+Live Gifts 
+
+Send gifts during streams 
+
+ 
+
+⚙️ 16. SETTINGS 
+
+Feature 
+
+Description 
+
+Privacy Settings 
+
+Account privacy, who can see/message 
+
+Notification Settings 
+
+Granular notification controls 
+
+Security Settings 
+
+Password, 2FA, login history 
+
+Algorithm Settings 
+
+Feed preferences (Net Worth Priority, Verified Priority, Diversify) 
+
+Media Settings 
+
+Auto-play, data saver 
+
+Blocked Accounts 
+
+Manage blocked users 
+
+Contact Info 
+
+Email/phone management 
+
+Data & Account 
+
+Download data, delete account 
+
+Drafts 
+
+View saved drafts 
+
+Scheduled Posts 
+
+Manage scheduled content 
+
+Verification 
+
+Apply for verified badge 
+
+Login History 
+
+View login sessions 
+
+ 
+
+🔒 17. SECURITY & PRIVACY 
+
+Feature 
+
+Description 
+
+Two-Factor Authentication 
+
+2FA setup and management 
+
+Login Sessions 
+
+Active session management 
+
+Trusted Devices 
+
+Device authorization 
+
+Privacy Controls 
+
+Keyword filters, muted/restricted accounts 
+
+Digital Wellness 
+
+Focus mode, screen time limits, usage stats 
+
+ 
+
+🤝 18. SOCIAL FEATURES 
+
+Feature 
+
+Description 
+
+Pokes 
+
+Facebook-style pokes 
+
+BFF Status 
+
+Best friend tracking with streaks 
+
+Close Friends 
+
+Inner circle management 
+
+ 
+
+🤖 19. AI FEATURES 
+
+Feature 
+
+Description 
+
+AI Avatars 
+
+AI-generated profile avatars 
+
+AI Translations 
+
+Auto-translate content 
+
+AI Content Analysis 
+
+Gemini-powered content categorization 
+
+Content Moderation 
+
+AI-assisted content review 
+
+ 
+
+🛠️ 20. DEVELOPER TOOLS 
+
+Feature 
+
+Description 
+
+Webhooks 
+
+Developer webhook management 
+
+API Access Tokens 
+
+API key management 
+
+Platform Imports 
+
+Import from other platforms 
+
+ 
+
+❓ 21. HELP CENTER 
+
+Feature 
+
+Description 
+
+Help Categories 
+
+Organized help topics 
+
+Help Articles 
+
+Step-by-step guides 
+
+FAQs 
+
+Frequently asked questions 
+
+New Ticket 
+
+Submit support requests 
+
+Support Inbox 
+
+Track tickets 
+
+Ticket Chat 
+
+Communicate with support 
+
+Feature Requests 
+
+Submit and vote on features 
+
+Safety Center 
+
+Safety resources and reporting 
+
+ 
+
+🔧 22. ADMIN PANEL (399 Endpoints) 
+
+Feature 
+
+Description 
+
+Dashboard Overview 
+
+Platform stats, user growth, engagement 
+
+User Management 
+
+View/edit/suspend/ban users 
+
+User Settings Control 
+
+Override user privacy settings 
+
+Content Moderation 
+
+Posts, comments, stories review 
+
+Reports Management 
+
+Handle user reports 
+
+Verification Workflow 
+
+Approve/reject verification 
+
+Economy Controls 
+
+Coin bundles, gifts, withdrawals 
+
+RBAC Management 
+
+Roles and permissions 
+
+Feature Flags 
+
+Enable/disable features 
+
+Audit Logs 
+
+Track admin actions 
+
+Help Center Admin 
+
+Manage articles, tickets 
+
+Stories Admin 
+
+Templates, music, tips 
+
+Groups/Events Admin 
+
+Manage community features 
+
+Live Streams Admin 
+
+End streams, view viewers 
+
+Subscriptions Admin 
+
+Manage creator subscriptions 
+
+Broadcasts Admin 
+
+Verify/delete channels 
+
+Webhooks Admin 
+
+Monitor developer webhooks 
+
+Security Admin 
+
+2FA, sessions, devices 
+
+Social Features Admin 
+
+Pokes, BFF, Close Friends 
+
+Wellness Admin 
+
+Focus mode, usage stats 
+
+Chat Folders Admin 
+
+Monitor messaging organization 
+
+ 
+
+📈 SUMMARY STATS 
+
+Metric 
+
+Count 
+
+Frontend Screens 
+
+120 
+
+Database Tables 
+
+238 
+
+Total API Endpoints 
+
+779 
+
+Admin Endpoints 
+
+399 
+
+SA Gossip Locations 
+
+237 
+
+Interest Categories 
+
+15+ 
+
+This is a production-ready Forbes-style luxury social platform with complete functionality across all features - no placeholders. 
+
+ 
