@@ -170,7 +170,7 @@ export default function ChatScreen() {
         headerTitle: () => (
           <View style={styles.headerTitle}>
             <View style={styles.avatarWithStatus}>
-              <Avatar uri={otherUser.avatarUrl} size={32} />
+              <Avatar uri={otherUser.avatarUrl} size={28} />
               {onlineStatus?.isOnline ? (
                 <View style={[styles.onlineIndicator, { backgroundColor: "#22C55E" }]} />
               ) : null}
@@ -936,33 +936,33 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 0,
     right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1.5,
     borderColor: "#FFFFFF",
   },
   headerInfo: {
     flexDirection: "column",
   },
   headerName: {
-    fontSize: Typography.body.fontSize,
+    fontSize: 14,
     letterSpacing: 0,
     ...Platform.select({
       ios: {
-        fontFamily: Fonts?.semiBold || "System",
+        fontFamily: Fonts?.medium || "System",
       },
       android: {
-        fontFamily: Fonts?.semiBold,
-        fontWeight: "600" as const,
+        fontFamily: Fonts?.medium,
+        fontWeight: "500" as const,
       },
       default: {
-        fontWeight: "600" as const,
+        fontWeight: "500" as const,
       },
     }),
   },
   headerStatus: {
-    fontSize: 11,
+    fontSize: 10,
   },
   headerRightContainer: {
     flexDirection: "row",
