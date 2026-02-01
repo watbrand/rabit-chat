@@ -1,9 +1,13 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import { View, StyleSheet, Pressable, Platform } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { Audio } from "expo-av";
 import { ThemedText } from "@/components/ThemedText";
+
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useAudioManager } from "@/contexts/AudioManagerContext";
@@ -25,9 +29,9 @@ export function VoiceBioPlayer({ voiceBioUrl, durationMs, label = "Voice Bio" }:
   const { theme } = useTheme();
   const audioManager = useAudioManager();
   const [isPlaying, setIsPlaying] = useState(false);
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [sound, setSound] = useState<import("expo-av").Audio.Sound | null>(null);
   const [progress, setProgress] = useState(0);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<import("expo-av").Audio.Sound | null>(null);
   const playerId = useMemo(() => `voice-bio-${voiceBioUrl}`, [voiceBioUrl]);
 
   const stopPlayback = useCallback(async () => {
@@ -61,6 +65,11 @@ export function VoiceBioPlayer({ voiceBioUrl, durationMs, label = "Voice Bio" }:
   }, [sound]);
 
   const handlePlayPause = useCallback(async () => {
+    if (Platform.OS === "web" || !Audio) {
+      console.warn("Audio playback is not available on web");
+      return;
+    }
+
     if (isPlaying && sound) {
       await sound.pauseAsync();
       setIsPlaying(false);

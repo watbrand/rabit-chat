@@ -6,8 +6,12 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
-import { Audio } from 'expo-av';
 import Haptics from "@/lib/safeHaptics";
+
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -102,7 +106,7 @@ export default function VoiceNoteRecorder({
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [isCancelling, setIsCancelling] = useState(false);
 
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingRef = useRef<import("expo-av").Audio.Recording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const waveformDataRef = useRef<number[]>([]);
   const waveformIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -120,6 +124,10 @@ export default function VoiceNoteRecorder({
   }, []);
 
   const checkPermissions = async () => {
+    if (Platform.OS === "web" || !Audio) {
+      setHasPermission(false);
+      return;
+    }
     try {
       const { status } = await Audio.requestPermissionsAsync();
       setHasPermission(status === 'granted');
@@ -185,7 +193,7 @@ export default function VoiceNoteRecorder({
   };
 
   const startRecording = async () => {
-    if (disabled || hasPermission === false) return;
+    if (disabled || hasPermission === false || Platform.OS === "web" || !Audio) return;
 
     try {
       await Audio.setAudioModeAsync({

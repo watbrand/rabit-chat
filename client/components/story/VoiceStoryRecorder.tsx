@@ -5,8 +5,15 @@ import {
   Pressable, 
   Text, 
   SafeAreaView,
+  Platform,
 } from 'react-native';
-import { Audio } from 'expo-av';
+
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
+type AudioSound = import("expo-av").Audio.Sound;
+type AudioRecording = import("expo-av").Audio.Recording;
 import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useSharedValue,
@@ -86,8 +93,8 @@ export default function VoiceStoryRecorder({ onSave, onCancel, maxDuration = 600
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackPosition, setPlaybackPosition] = useState(0);
   
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const recordingRef = useRef<AudioRecording | null>(null);
+  const soundRef = useRef<AudioSound | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
   const recordButtonScale = useSharedValue(1);
@@ -102,6 +109,10 @@ export default function VoiceStoryRecorder({ onSave, onCancel, maxDuration = 600
   }, []);
 
   const checkPermissions = async () => {
+    if (Platform.OS === "web" || !Audio) {
+      setHasPermission(false);
+      return;
+    }
     try {
       const { status } = await Audio.requestPermissionsAsync();
       setHasPermission(status === 'granted');
@@ -143,6 +154,8 @@ export default function VoiceStoryRecorder({ onSave, onCancel, maxDuration = 600
   };
 
   const startRecording = async () => {
+    if (Platform.OS === "web" || !Audio) return;
+    
     try {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
@@ -191,6 +204,7 @@ export default function VoiceStoryRecorder({ onSave, onCancel, maxDuration = 600
   };
 
   const playRecording = async () => {
+    if (Platform.OS === "web" || !Audio) return;
     if (!recordingUri) return;
     
     try {

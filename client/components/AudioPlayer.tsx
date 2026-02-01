@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import { View, StyleSheet, Pressable, Platform } from "react-native";
 import { InlineLoader } from "@/components/animations";
-import { Audio } from "expo-av";
 import { Feather } from "@expo/vector-icons";
+
+// Conditional import for expo-av to avoid SecurityError on mobile web
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -29,14 +34,14 @@ function formatDuration(ms: number): string {
 export function AudioPlayer({ uri, durationMs, compact = false, postId, source = "FEED" }: AudioPlayerProps) {
   const { theme } = useTheme();
   const audioManager = useAudioManager();
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [sound, setSound] = useState<InstanceType<typeof import("expo-av").Audio.Sound> | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(durationMs || 0);
   const [error, setError] = useState<string | null>(null);
   const positionRef = useRef(0);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<InstanceType<typeof import("expo-av").Audio.Sound> | null>(null);
   const playerId = useMemo(() => postId || `audio-${uri}-${Date.now()}`, [postId, uri]);
   
   const watchTracker = useMemo(() => {
@@ -92,6 +97,12 @@ export function AudioPlayer({ uri, durationMs, compact = false, postId, source =
   const handlePlayPause = async () => {
     try {
       setError(null);
+      
+      // Audio not available on web
+      if (Platform.OS === "web" || !Audio) {
+        setError("Audio playback not available on web");
+        return;
+      }
       
       if (!sound) {
         audioManager.requestPlayback(playerId);

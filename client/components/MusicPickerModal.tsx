@@ -9,11 +9,18 @@ import {
   SafeAreaView,
   Image,
   Modal,
+  Platform,
 } from 'react-native';
 import { LoadingIndicator } from '@/components/animations';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { Audio, AVPlaybackStatus } from 'expo-av';
+import type { AVPlaybackStatus } from 'expo-av';
 import Haptics from "@/lib/safeHaptics";
+
+// Conditional import for expo-av to avoid SecurityError on mobile web
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -59,7 +66,7 @@ export default function MusicPickerModal({ visible, onSelect, onClose }: Props) 
   const [clipStartTime, setClipStartTime] = useState(0);
   const [clipEndTime, setClipEndTime] = useState(MAX_CLIP_DURATION);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<InstanceType<typeof import("expo-av").Audio.Sound> | null>(null);
   const playbackRotation = useSharedValue(0);
 
   useEffect(() => {
@@ -131,6 +138,12 @@ export default function MusicPickerModal({ visible, onSelect, onClose }: Props) 
   };
 
   const playPreview = async (track: MusicTrackData, startAtClip: boolean = false) => {
+    // Audio not available on web
+    if (Platform.OS === "web" || !Audio) {
+      console.warn("Music preview not available on web");
+      return;
+    }
+    
     try {
       await stopPlayback();
 

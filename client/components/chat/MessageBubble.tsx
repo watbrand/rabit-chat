@@ -10,7 +10,12 @@ import {
   Dimensions,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { Audio } from "expo-av";
+
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
+
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -412,11 +417,16 @@ export function MessageBubble({
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<import("expo-av").Audio.Sound | null>(null);
 
   const handlePlayVoice = async () => {
     if (!message.mediaUrl) {
       onPlayVoice?.();
+      return;
+    }
+
+    if (Platform.OS === "web" || !Audio) {
+      console.warn("Audio playback is not available on web");
       return;
     }
 

@@ -5,8 +5,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Haptics from "@/lib/safeHaptics";
-import { Audio } from "expo-av";
 import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
+
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -41,7 +45,7 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   const [isUploading, setIsUploading] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingRef = useRef<InstanceType<typeof import("expo-av").Audio.Recording> | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -115,6 +119,11 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
   });
   
   const startRecording = async () => {
+    if (Platform.OS === "web" || !Audio) {
+      Alert.alert("Not Supported", "Voice recording is not available on web. Please use the mobile app.");
+      return;
+    }
+    
     try {
       const permission = await Audio.requestPermissionsAsync();
       if (permission.status !== "granted") {

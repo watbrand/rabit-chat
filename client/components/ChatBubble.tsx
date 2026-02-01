@@ -2,7 +2,12 @@ import React, { useState, useRef } from "react";
 import { View, StyleSheet, Platform, Text, Pressable, Image, Modal } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
-import { Audio } from "expo-av";
+
+// Conditional import for expo-av to avoid SecurityError on mobile web
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
 
 import { Avatar } from "@/components/Avatar";
 import { useTheme } from "@/hooks/useTheme";
@@ -79,7 +84,7 @@ export function ChatBubble({
   const [playbackPosition, setPlaybackPosition] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
   const [imageModalVisible, setImageModalVisible] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<InstanceType<typeof import("expo-av").Audio.Sound> | null>(null);
 
   // Handle deleted messages
   if (message.deletedAt) {
@@ -124,6 +129,12 @@ export function ChatBubble({
 
   const handlePlayVoice = async () => {
     if (!message.mediaUrl) return;
+    
+    // Audio not available on web
+    if (Platform.OS === "web" || !Audio) {
+      console.warn("Voice playback not available on web");
+      return;
+    }
     
     try {
       if (isPlaying) {

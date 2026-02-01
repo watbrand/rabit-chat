@@ -35,7 +35,14 @@ import Animated, {
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Haptics from "@/lib/safeHaptics";
-import { Audio, AVPlaybackStatus } from "expo-av";
+import { AVPlaybackStatus } from "expo-av";
+import type { Audio as AudioType } from "expo-av";
+
+// Conditionally load Audio to avoid SecurityError on mobile web browsers
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
 
 import { Avatar } from "@/components/Avatar";
 import { ThemedText } from "@/components/ThemedText";
@@ -986,7 +993,7 @@ function ReelsTab() {
           />
         }
         ListEmptyComponent={
-          <View style={{ flex: 1, height: reelHeight, alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xxl }}>
+          <View style={{ flex: 1, height: reelHeight, alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xl }}>
             <Feather name="film" size={48} color="#888888" />
             <ThemedText style={{ color: '#888888', marginTop: Spacing.md }}>
               No reels yet
@@ -1660,9 +1667,9 @@ function GossipTab() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingRef = useRef<AudioType.Recording | null>(null);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioType.Sound | null>(null);
   const playerId = useMemo(() => `gossip-preview-${Date.now()}`, []);
 
   const { data: gossipPosts, isLoading, refetch, isRefetching } = useQuery<GossipPost[]>({
@@ -1715,6 +1722,12 @@ function GossipTab() {
 
   const startRecording = async () => {
     if (isRecording || recordingRef.current) return;
+    
+    // Audio recording not available on web
+    if (Platform.OS === "web" || !Audio) {
+      Alert.alert("Not Available", "Voice recording is not available in your browser. Please use the mobile app.");
+      return;
+    }
 
     try {
       const permission = await Audio.requestPermissionsAsync();
@@ -1746,9 +1759,8 @@ function GossipTab() {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
 
-      if (Platform.OS !== "web") {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      }
+      // Already confirmed not web in the guard above
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch (error: any) {
       recordingRef.current = null;
       setIsRecording(false);
@@ -1848,6 +1860,11 @@ function GossipTab() {
       }
       
       audioManager.requestPlayback(playerId);
+      
+      // Audio playback not available on web
+      if (Platform.OS === "web" || !Audio) {
+        return;
+      }
       
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,

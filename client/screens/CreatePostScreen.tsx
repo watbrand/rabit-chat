@@ -17,8 +17,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Haptics from "@/lib/safeHaptics";
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { Audio } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
+import type { Audio as AudioType } from "expo-av";
+
+// Conditionally load Audio to avoid SecurityError on mobile web browsers
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
 import { LinearGradient } from "expo-linear-gradient";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
@@ -65,9 +71,9 @@ export default function CreatePostScreen() {
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const [showMusicPicker, setShowMusicPicker] = useState(false);
   const [selectedMusic, setSelectedMusic] = useState<MusicTrackData | null>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingRef = useRef<AudioType.Recording | null>(null);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioType.Sound | null>(null);
   const hasInitiatedMediaPickerRef = useRef(false);
   const playerId = useMemo(() => `create-post-preview-${Date.now()}`, []);
 
@@ -176,6 +182,11 @@ export default function CreatePostScreen() {
       }
       
       audioManager.requestPlayback(playerId);
+      
+      // Audio playback not available on web
+      if (Platform.OS === "web" || !Audio) {
+        return;
+      }
       
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
@@ -304,6 +315,12 @@ export default function CreatePostScreen() {
   const startRecording = async () => {
     // Prevent starting multiple recordings
     if (isRecording || recordingRef.current) {
+      return;
+    }
+
+    // Audio recording not available on web
+    if (Platform.OS === "web" || !Audio) {
+      Alert.alert("Not Available", "Voice recording is not available in your browser. Please use the mobile app.");
       return;
     }
 

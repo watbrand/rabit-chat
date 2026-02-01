@@ -20,7 +20,15 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { Video, ResizeMode, AVPlaybackStatus, Audio } from "expo-av";
+import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
+import type { Audio as AudioType } from "expo-av";
+
+// Conditionally load Audio to avoid SecurityError on mobile web browsers
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
+
 import {
   GestureDetector,
   Gesture,
@@ -126,7 +134,7 @@ export default function StoryViewerScreen() {
   const inputRef = useRef<TextInput>(null);
 
   const videoRef = useRef<Video>(null);
-  const musicSoundRef = useRef<Audio.Sound | null>(null);
+  const musicSoundRef = useRef<AudioType.Sound | null>(null);
   const musicDurationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressAnim = useRef(new RNAnimated.Value(0)).current;
   const progressAnimation = useRef<RNAnimated.CompositeAnimation | null>(null);
@@ -294,6 +302,11 @@ export default function StoryViewerScreen() {
       }
 
       try {
+        // Audio playback not available on web
+        if (Platform.OS === "web" || !Audio) {
+          return;
+        }
+        
         await Audio.setAudioModeAsync({
           playsInSilentModeIOS: true,
           staysActiveInBackground: false,

@@ -16,8 +16,14 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { Audio } from "expo-av";
+import type { Audio as AudioType } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
+
+// Conditionally load Audio to avoid SecurityError on mobile web browsers
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
 import { Image } from "expo-image";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
@@ -85,7 +91,7 @@ function ReelItem({ post, isActive, onLike, onUserPress, onComment, onShare }: R
   const pulseScale = useSharedValue(1);
 
   // Audio player for VOICE posts
-  const [audioSound, setAudioSound] = useState<Audio.Sound | null>(null);
+  const [audioSound, setAudioSound] = useState<AudioType.Sound | null>(null);
   
   // Video player for VIDEO posts
   const videoPlayer = useVideoPlayer(post.type === "VIDEO" ? post.mediaUrl : "", (player) => {
@@ -96,9 +102,9 @@ function ReelItem({ post, isActive, onLike, onUserPress, onComment, onShare }: R
   // Load and manage audio for VOICE posts
   useEffect(() => {
     let isMounted = true;
-    let sound: Audio.Sound | null = null;
+    let sound: AudioType.Sound | null = null;
     
-    if (post.type === "VOICE" && post.mediaUrl) {
+    if (post.type === "VOICE" && post.mediaUrl && Audio) {
       Audio.Sound.createAsync(
         { uri: post.mediaUrl },
         { shouldPlay: false, isLooping: true }

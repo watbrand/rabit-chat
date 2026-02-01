@@ -8,9 +8,15 @@ import {
   Image,
   SafeAreaView,
   Alert,
+  Platform,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { Video, ResizeMode, Audio } from 'expo-av';
+import { Video, ResizeMode } from 'expo-av';
+
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
 import Haptics from "@/lib/safeHaptics";
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius } from '@/constants/theme';
@@ -108,7 +114,7 @@ export default function UniversalStoryEditor({
   const [voiceDuration, setVoiceDuration] = useState(0);
   
   const videoRef = useRef<Video>(null);
-  const voiceSoundRef = useRef<Audio.Sound | null>(null);
+  const voiceSoundRef = useRef<InstanceType<typeof import("expo-av").Audio.Sound> | null>(null);
 
   useEffect(() => {
     return () => {
@@ -134,6 +140,8 @@ export default function UniversalStoryEditor({
         return;
       }
 
+      if (Platform.OS === "web" || !Audio) return;
+      
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
       const { sound } = await Audio.Sound.createAsync(
         { uri: mediaUri },

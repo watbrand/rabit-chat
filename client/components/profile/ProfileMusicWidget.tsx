@@ -1,8 +1,13 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import { View, StyleSheet, Pressable, Platform } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { Audio } from "expo-av";
+
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
+type AudioSound = import("expo-av").Audio.Sound;
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -18,8 +23,8 @@ export function ProfileMusicWidget({ songUrl, title, artist }: ProfileMusicWidge
   const { theme } = useTheme();
   const audioManager = useAudioManager();
   const [isPlaying, setIsPlaying] = useState(false);
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const [sound, setSound] = useState<AudioSound | null>(null);
+  const soundRef = useRef<AudioSound | null>(null);
   const playerId = useMemo(() => `music-${songUrl}`, [songUrl]);
 
   const stopPlayback = useCallback(async () => {
@@ -60,6 +65,8 @@ export function ProfileMusicWidget({ songUrl, title, artist }: ProfileMusicWidge
     }
 
     try {
+      if (Platform.OS === "web" || !Audio) return;
+      
       audioManager.requestPlayback(playerId);
       if (sound) {
         await sound.playAsync();

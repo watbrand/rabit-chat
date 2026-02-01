@@ -14,8 +14,14 @@ import { useNavigation, useFocusEffect, useRoute, RouteProp } from "@react-navig
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
-import { Audio } from "expo-av";
 import { Feather } from "@expo/vector-icons";
+import type { Audio as AudioType } from "expo-av";
+
+// Conditionally load Audio to avoid SecurityError on mobile web browsers
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   useAnimatedStyle,
@@ -91,14 +97,14 @@ function VoiceReelItem({
 }: VoiceReelItemProps) {
   const { theme } = useTheme();
   const audioManager = useAudioManager();
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [sound, setSound] = useState<AudioType.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(post.duration || 0);
   const heartScale = useSharedValue(0);
   const lastTapTime = useRef(0);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioType.Sound | null>(null);
   const playerId = useMemo(() => `voice-reel-${post.id}`, [post.id]);
   
   const pulseScale = useSharedValue(1);
@@ -161,6 +167,12 @@ function VoiceReelItem({
       }
 
       try {
+        // Audio not available on web
+        if (Platform.OS === "web" || !Audio) {
+          setIsPlaying(false);
+          return;
+        }
+        
         audioManager.requestPlayback(playerId);
         
         await Audio.setAudioModeAsync({

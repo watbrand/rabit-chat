@@ -8,8 +8,15 @@ import {
   FlatList,
   SafeAreaView,
   Image,
+  Platform,
 } from 'react-native';
-import { Audio, AVPlaybackStatus } from 'expo-av';
+
+let Audio: typeof import("expo-av").Audio | null = null;
+if (Platform.OS !== "web") {
+  Audio = require("expo-av").Audio;
+}
+type AVPlaybackStatus = import("expo-av").AVPlaybackStatus;
+type AudioSound = import("expo-av").Audio.Sound;
 import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useSharedValue,
@@ -51,7 +58,7 @@ export default function StoryMusicPicker({ onSelect, onClose, maxClipDuration = 
   const [selectedTrack, setSelectedTrack] = useState<MusicTrack | null>(null);
   const [clipStart, setClipStart] = useState(0);
   
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioSound | null>(null);
   const playbackRotation = useSharedValue(0);
 
   const { data: tracks = [], isLoading } = useQuery<MusicTrack[]>({
@@ -89,6 +96,8 @@ export default function StoryMusicPicker({ onSelect, onClose, maxClipDuration = 
   };
 
   const playPreview = async (track: MusicTrack) => {
+    if (Platform.OS === "web" || !Audio) return;
+    
     try {
       await stopPlayback();
       
