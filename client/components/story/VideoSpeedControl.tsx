@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, StyleSheet, Pressable, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,

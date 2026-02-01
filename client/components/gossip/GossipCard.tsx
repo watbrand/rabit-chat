@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Pressable, StyleSheet, Platform } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,

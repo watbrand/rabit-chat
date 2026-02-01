@@ -15,7 +15,7 @@ import Animated, {
   interpolate,
   Easing,
 } from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { getApiUrl } from "@/lib/query-client";
 import { useAuth } from "@/hooks/useAuth";

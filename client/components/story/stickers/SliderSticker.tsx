@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, Text, TextInput } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,

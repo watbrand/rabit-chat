@@ -12,7 +12,7 @@ import {
 import { LoadingIndicator } from "@/components/animations";
 import { BlurView } from "expo-blur";
 import { Image } from "expo-image";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";

@@ -12,7 +12,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { Avatar } from "@/components/Avatar";
 import { UserBadge } from "@/components/UserBadge";

@@ -17,7 +17,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";

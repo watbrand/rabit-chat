@@ -12,7 +12,7 @@ import { BlurView } from "expo-blur";
 import { Picker } from "@react-native-picker/picker";
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,

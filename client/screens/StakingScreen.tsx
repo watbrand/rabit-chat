@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import Animated, {
   FadeInUp,
   useAnimatedStyle,

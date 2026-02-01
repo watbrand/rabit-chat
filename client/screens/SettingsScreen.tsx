@@ -5,7 +5,7 @@ import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import * as Linking from "expo-linking";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";

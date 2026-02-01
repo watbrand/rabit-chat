@@ -9,7 +9,7 @@ import {
   GestureResponderEvent,
 } from 'react-native';
 import Svg, { Path, G } from 'react-native-svg';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,

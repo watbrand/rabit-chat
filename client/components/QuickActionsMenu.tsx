@@ -9,7 +9,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { Animation, BorderRadius, Spacing } from "@/constants/theme";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");

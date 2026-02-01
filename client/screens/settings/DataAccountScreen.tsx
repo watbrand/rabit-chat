@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
 

@@ -29,7 +29,7 @@ import Animated, {
   interpolate,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { Avatar } from "@/components/Avatar";
 import { VideoOverlayActions, VideoOverlayInfo } from "@/components/VideoOverlayActions";

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, Pressable, Text, TextInput, FlatList, Image, Dimensions } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

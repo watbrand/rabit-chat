@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Pressable, Text } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 

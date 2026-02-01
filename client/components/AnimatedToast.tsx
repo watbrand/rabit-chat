@@ -13,7 +13,7 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { Gradients, BorderRadius, Spacing } from "@/constants/theme";
 

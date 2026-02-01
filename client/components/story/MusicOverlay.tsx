@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { View, StyleSheet, Pressable, Platform } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,

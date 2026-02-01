@@ -18,7 +18,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';

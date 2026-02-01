@@ -13,7 +13,7 @@ import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
 import { HeaderButton } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";

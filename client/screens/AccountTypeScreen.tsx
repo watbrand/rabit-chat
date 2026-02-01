@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import * as AppleAuthentication from "expo-apple-authentication";
 import Animated, {
   useSharedValue,

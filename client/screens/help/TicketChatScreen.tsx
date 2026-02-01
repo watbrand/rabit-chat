@@ -21,7 +21,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { HeaderButton } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 

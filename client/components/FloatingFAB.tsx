@@ -11,7 +11,7 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { Gradients, BorderRadius, Animation } from "@/constants/theme";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");

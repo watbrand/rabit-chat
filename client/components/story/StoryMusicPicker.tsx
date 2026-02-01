@@ -10,7 +10,7 @@ import {
   Image,
 } from 'react-native';
 import { Audio, AVPlaybackStatus } from 'expo-av';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,

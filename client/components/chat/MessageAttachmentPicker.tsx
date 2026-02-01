@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as VideoThumbnails from 'expo-video-thumbnails';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { Feather } from '@expo/vector-icons';
 import Animated, {
   useAnimatedStyle,

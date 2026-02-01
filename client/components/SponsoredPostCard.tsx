@@ -3,7 +3,7 @@ import { View, StyleSheet, Pressable, Image, Platform, Linking } from "react-nat
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import * as WebBrowser from "expo-web-browser";
 import { useMutation } from "@tanstack/react-query";
 

@@ -20,7 +20,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Slider from '@react-native-community/slider';
 import { Feather } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { BlurView } from 'expo-blur';
 import { useTheme } from '@/hooks/useTheme';
 import { Colors, Spacing, BorderRadius } from '@/constants/theme';

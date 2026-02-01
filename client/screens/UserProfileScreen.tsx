@@ -15,7 +15,7 @@ import { useHeaderHeight } from "@react-navigation/elements";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { Image } from "expo-image";

@@ -12,7 +12,7 @@ import { useHeaderHeight } from "@react-navigation/elements";
 import { useRoute, RouteProp, useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { Avatar } from "@/components/Avatar";
 import { ThemedText } from "@/components/ThemedText";

@@ -8,7 +8,7 @@ import Animated, {
   withTiming,
   runOnJS,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { Colors, Spacing } from '@/constants/theme';
 
 export type ReactionType = 'FIRE' | 'HEART' | 'LAUGH' | 'WOW' | 'SAD' | 'CLAP';

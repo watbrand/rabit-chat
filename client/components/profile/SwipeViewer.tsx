@@ -11,7 +11,7 @@ import {
 import { LoadingIndicator } from "@/components/animations";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { Avatar } from "@/components/Avatar";
 import { ThemedText } from "@/components/ThemedText";

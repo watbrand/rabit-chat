@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { StyleSheet, View, Text, Switch, Platform } from "react-native";
 import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
 interface AccessibilityContextType {

@@ -15,7 +15,7 @@ import Animated, {
   interpolate,
 } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Animation } from "@/constants/theme";

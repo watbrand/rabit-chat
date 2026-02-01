@@ -7,7 +7,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { Audio } from 'expo-av';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,

@@ -34,7 +34,7 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { Audio, AVPlaybackStatus } from "expo-av";
 
 import { Avatar } from "@/components/Avatar";

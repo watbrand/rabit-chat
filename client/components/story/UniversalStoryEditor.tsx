@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Video, ResizeMode, Audio } from 'expo-av';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';

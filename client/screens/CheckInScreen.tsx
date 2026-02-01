@@ -15,7 +15,7 @@ import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";

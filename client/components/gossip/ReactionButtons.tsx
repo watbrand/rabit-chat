@@ -6,7 +6,7 @@ import Animated, {
   useSharedValue,
   runOnJS,
 } from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";

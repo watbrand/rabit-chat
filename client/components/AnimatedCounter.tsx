@@ -8,7 +8,7 @@ import Animated, {
   Easing,
   runOnJS,
 } from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 interface AnimatedCounterProps {
   value: number;

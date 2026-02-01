@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,

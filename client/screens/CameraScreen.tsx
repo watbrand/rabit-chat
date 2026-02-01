@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { CameraView, useCameraPermissions, FlashMode } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Video, ResizeMode } from "expo-av";

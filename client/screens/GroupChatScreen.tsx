@@ -20,7 +20,7 @@ import { Avatar } from "@/components/Avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { LoadingIndicator } from "@/components/animations";
 import { Spacing } from "@/constants/theme";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 const MAX_MESSAGE_LENGTH = 2000;
 

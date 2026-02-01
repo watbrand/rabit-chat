@@ -15,9 +15,28 @@ import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Feather } from "@expo/vector-icons";
 import { Avatar } from "@/components/Avatar";
 import { ThemedText } from "@/components/ThemedText";
-import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from "expo-av";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
+import { Spacing } from "@/constants/theme";
+
+// Only import native modules on native platforms
+let Audio: any = null;
+let InterruptionModeIOS: any = null;
+let InterruptionModeAndroid: any = null;
+let FileSystem: any = null;
+let Haptics: any = null;
+
+if (Platform.OS !== "web") {
+  try {
+    const av = require("expo-av");
+    Audio = av.Audio;
+    InterruptionModeIOS = av.InterruptionModeIOS;
+    InterruptionModeAndroid = av.InterruptionModeAndroid;
+    FileSystem = require("expo-file-system/legacy");
+    Haptics = require("expo-haptics");
+  } catch (e) {
+    // Native modules not available
+  }
+}
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -25,8 +44,6 @@ import Animated, {
   withTiming,
   withSequence,
 } from "react-native-reanimated";
-import { LinearGradient } from "expo-linear-gradient";
-import { Spacing } from "@/constants/theme";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -44,6 +61,24 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
 
+  // Voice calls are not supported on web
+  if (Platform.OS === "web") {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a1a2e' }}>
+        <Feather name="phone-off" size={48} color="#8B5CF6" />
+        <ThemedText style={{ marginTop: 16, color: '#fff', fontSize: 18 }}>
+          Voice calls are only available in the mobile app
+        </ThemedText>
+        <Pressable 
+          onPress={() => navigation.goBack()} 
+          style={{ marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: '#8B5CF6', borderRadius: 24 }}
+        >
+          <ThemedText style={{ color: '#fff' }}>Go Back</ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
+
   const [callStatus, setCallStatus] = useState<CallStatus>(isIncoming ? "ongoing" : "connecting");
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
@@ -56,8 +91,8 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
   const [audioStats, setAudioStats] = useState({ sent: 0, received: 0 });
 
   const wsRef = useRef<WebSocket | null>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const recordingRef = useRef<any>(null);
+  const soundRef = useRef<any>(null);
   const callStartTimeRef = useRef<number | null>(null);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioQueueRef = useRef<string[]>([]);

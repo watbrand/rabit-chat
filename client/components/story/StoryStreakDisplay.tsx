@@ -8,7 +8,7 @@ import Animated, {
   withTiming,
   Easing,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 

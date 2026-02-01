@@ -4,7 +4,7 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { Audio } from "expo-av";
 import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
 import { ThemedText } from "@/components/ThemedText";

@@ -19,7 +19,7 @@ import { Spacing } from "@/constants/theme";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { apiRequest } from "@/lib/query-client";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 interface Wallet {
   id: string;

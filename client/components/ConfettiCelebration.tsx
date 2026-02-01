@@ -9,7 +9,7 @@ import Animated, {
   runOnJS,
   Easing,
 } from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 

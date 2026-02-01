@@ -14,7 +14,7 @@ import {
   Text,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";

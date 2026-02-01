@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, Pressable, ScrollView, Text } from 'react-native';
 import Slider from '@react-native-community/slider';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 

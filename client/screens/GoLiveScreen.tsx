@@ -12,7 +12,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 import { ThemedText } from "@/components/ThemedText";

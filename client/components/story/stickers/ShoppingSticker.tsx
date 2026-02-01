@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, Pressable, Text, Image, FlatList, TextInput } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,

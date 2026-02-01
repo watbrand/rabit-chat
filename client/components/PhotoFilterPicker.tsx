@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, Pressable, ScrollView, Image, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Feather } from '@expo/vector-icons';
 

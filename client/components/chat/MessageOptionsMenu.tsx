@@ -20,7 +20,7 @@ import Animated, {
 import { BlurView } from "expo-blur";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import * as Clipboard from "expo-clipboard";
 
 import { useTheme } from "@/hooks/useTheme";

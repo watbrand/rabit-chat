@@ -9,7 +9,7 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Avatar } from "@/components/Avatar";

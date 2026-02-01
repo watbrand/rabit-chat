@@ -15,7 +15,7 @@ import { useSafeBottomTabBarHeight } from "@/hooks/useSafeBottomTabBarHeight";
 import { useRoute, RouteProp } from "@react-navigation/native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { PostCard } from "@/components/PostCard";
 import { ReportModal } from "@/components/ReportModal";

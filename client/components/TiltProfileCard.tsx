@@ -17,7 +17,7 @@ import {
   Gesture,
   GestureDetector,
 } from "react-native-gesture-handler";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";

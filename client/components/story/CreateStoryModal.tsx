@@ -10,7 +10,7 @@ import {
   Image,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { LoadingIndicator } from '@/components/animations';

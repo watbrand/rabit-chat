@@ -20,7 +20,7 @@ import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Avatar } from "@/components/Avatar";

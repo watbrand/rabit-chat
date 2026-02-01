@@ -6,7 +6,7 @@ import Animated, {
   withSpring,
   withSequence,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { InlineLoader } from '@/components/animations';

@@ -11,7 +11,7 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { Gradients } from "@/constants/theme";
 
 interface BouncyRefreshProps {

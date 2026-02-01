@@ -9,7 +9,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, CommonActions } from "@react-navigation/native";
 import WebView, { WebViewNavigation } from "react-native-webview";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { useQueryClient } from "@tanstack/react-query";
 import { ThemedText } from "@/components/ThemedText";

@@ -24,7 +24,7 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 
 import { VideoOverlayActions, VideoOverlayInfo } from "@/components/VideoOverlayActions";
 import { ThemedText } from "@/components/ThemedText";

@@ -10,7 +10,7 @@ import {
   Alert,
   Dimensions,
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import Haptics from "@/lib/safeHaptics";
 import { Feather } from '@expo/vector-icons';
 import { Colors, Spacing } from '@/constants/theme';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';

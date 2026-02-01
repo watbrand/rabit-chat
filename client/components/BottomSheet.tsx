@@ -12,7 +12,7 @@ import Animated, {
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { Animation, BorderRadius, Spacing } from "@/constants/theme";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");

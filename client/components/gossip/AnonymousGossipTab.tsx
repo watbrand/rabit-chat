@@ -13,7 +13,7 @@ import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { safeGetItem, safeSetItem } from "@/lib/safeStorage";
 
 import { ThemedText } from "../ThemedText";

@@ -11,7 +11,7 @@ import Animated, {
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import * as Haptics from "expo-haptics";
+import Haptics from "@/lib/safeHaptics";
 import { Animation, Gradients } from "@/constants/theme";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
