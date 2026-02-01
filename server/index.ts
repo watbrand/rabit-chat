@@ -210,8 +210,11 @@ function configureExpoAndLanding(app: express.Application) {
   );
   const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
   const appName = getAppName();
+  const webBuildPath = path.resolve(process.cwd(), "dist");
+  const webBuildExists = fs.existsSync(path.join(webBuildPath, "index.html"));
 
   log("Serving static Expo files with dynamic manifest routing");
+  log(`Web build available: ${webBuildExists}`);
 
   // Serve admin panel
   const adminPanelPath = path.resolve(process.cwd(), "server", "admin", "index.html");
@@ -222,27 +225,42 @@ function configureExpoAndLanding(app: express.Application) {
     res.sendFile(adminPanelPath);
   });
 
+  // Serve Expo Go landing page at /expo-go
+  app.get("/expo-go", (req: Request, res: Response) => {
+    return serveLandingPage({
+      req,
+      res,
+      landingPageTemplate,
+      appName,
+    });
+  });
+
+  // Serve web build static files
+  if (webBuildExists) {
+    app.use("/_expo", express.static(path.join(webBuildPath, "_expo")));
+    app.use("/assets", express.static(path.join(webBuildPath, "assets")));
+    app.get("/favicon.ico", (req: Request, res: Response) => {
+      res.sendFile(path.join(webBuildPath, "favicon.ico"));
+    });
+  }
+
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith("/api")) {
       return next();
     }
 
-    if (req.path !== "/" && req.path !== "/manifest") {
-      return next();
+    // Handle Expo Go manifest requests
+    if (req.path === "/manifest") {
+      const platform = req.header("expo-platform");
+      if (platform && (platform === "ios" || platform === "android")) {
+        return serveExpoManifest(platform, res);
+      }
     }
 
+    // Serve Expo manifest for native app requests at root
     const platform = req.header("expo-platform");
     if (platform && (platform === "ios" || platform === "android")) {
       return serveExpoManifest(platform, res);
-    }
-
-    if (req.path === "/") {
-      return serveLandingPage({
-        req,
-        res,
-        landingPageTemplate,
-        appName,
-      });
     }
 
     next();
@@ -251,7 +269,30 @@ function configureExpoAndLanding(app: express.Application) {
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
+  // Fallback: Serve web app for all non-API routes (SPA routing)
+  if (webBuildExists) {
+    app.get("*", (req: Request, res: Response, next: NextFunction) => {
+      // Skip API routes
+      if (req.path.startsWith("/api")) {
+        return next();
+      }
+      // Skip admin routes (handled separately)
+      if (req.path.startsWith("/admin")) {
+        return next();
+      }
+      // Skip Expo Go manifest requests
+      const platform = req.header("expo-platform");
+      if (platform && (platform === "ios" || platform === "android")) {
+        return next();
+      }
+      // Serve web app index.html for all other routes (SPA routing)
+      res.sendFile(path.join(webBuildPath, "index.html"));
+    });
+  }
+
   log("Expo routing: Checking expo-platform header on / and /manifest");
+  log(`Web app available at: / (SPA mode)`);
+  log(`Expo Go landing page available at: /expo-go`);
 }
 
 function setupSecurityHeaders(app: express.Application) {
