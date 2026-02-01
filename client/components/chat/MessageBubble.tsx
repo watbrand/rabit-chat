@@ -613,14 +613,16 @@ export function MessageBubble({
 
       case "TEXT":
       default:
+        const isEncryptedOnly = !message.content && message.encryptedContent;
         return (
           <Text
             style={[
               styles.messageText,
               { color: isSent ? "#FFFFFF" : theme.text },
+              isEncryptedOnly && styles.encryptedText,
             ]}
           >
-            {message.content || message.encryptedContent}
+            {message.content || (isEncryptedOnly ? "🔒 Encrypted message" : "")}
           </Text>
         );
     }
@@ -632,7 +634,7 @@ export function MessageBubble({
         {renderReplyPreview()}
         {renderMessageContent()}
         <View style={styles.metaRow}>
-          <EncryptionBadge isSent={isSent} />
+          {message.encryptedContent && !message.content ? <EncryptionBadge isSent={isSent} /> : null}
           <Text
             style={[
               styles.timestamp,
@@ -756,6 +758,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
     fontFamily: Fonts?.regular,
+  },
+  encryptedText: {
+    fontStyle: "italic",
+    opacity: 0.7,
   },
   metaRow: {
     flexDirection: "row",
