@@ -738,7 +738,7 @@ export default function ChatScreen() {
           ref={flatListRef}
           style={{ flex: 1 }}
           contentContainerStyle={{
-            paddingTop: headerHeight + Spacing.lg,
+            paddingTop: Spacing.lg,
             paddingBottom: Spacing.lg,
             paddingHorizontal: Spacing.sm,
             flexGrow: 1,

@@ -402,6 +402,8 @@ export default function RootStackNavigator() {
               title: route.params.otherUserName,
               animation: "slide_from_right",
               animationDuration: 200,
+              headerTransparent: false,
+              headerBlurEffect: undefined,
             })}
           />
           <Stack.Screen
