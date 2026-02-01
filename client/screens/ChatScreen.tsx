@@ -747,6 +747,9 @@ export default function ChatScreen() {
           data={sortedMessages}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           keyExtractor={(item) => item.id}
+          removeClippedSubviews={false}
+          windowSize={21}
+          maxToRenderPerBatch={10}
           renderItem={({ item }) => {
             const isSent = item.senderId === user?.id;
             
