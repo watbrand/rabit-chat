@@ -26,10 +26,24 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
 
   const handleRestart = async () => {
     try {
-      await reloadAppAsync();
+      // On web, use window.location.reload() instead of reloadAppAsync
+      if (Platform.OS === "web") {
+        window.location.reload();
+      } else {
+        await reloadAppAsync();
+      }
     } catch (restartError) {
       console.error("Failed to restart app:", restartError);
-      resetError();
+      // Fallback: try window.location.reload on web, or resetError on native
+      if (Platform.OS === "web") {
+        try {
+          window.location.reload();
+        } catch {
+          resetError();
+        }
+      } else {
+        resetError();
+      }
     }
   };
 

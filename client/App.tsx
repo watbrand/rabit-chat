@@ -1,8 +1,7 @@
 import React, { useEffect, useCallback } from "react";
-import { StyleSheet, View, Platform } from "react-native";
+import { StyleSheet, View, Platform, Text, ActivityIndicator } from "react-native";
 import { NavigationContainer, LinkingOptions } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
@@ -29,7 +28,18 @@ import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { Colors } from "@/constants/theme";
 
-SplashScreen.preventAutoHideAsync();
+// Only import KeyboardProvider on native platforms - it can cause issues on web
+let KeyboardProvider: React.ComponentType<{ children: React.ReactNode }>;
+if (Platform.OS !== "web") {
+  KeyboardProvider = require("react-native-keyboard-controller").KeyboardProvider;
+} else {
+  // On web, use a simple passthrough component
+  KeyboardProvider = ({ children }: { children: React.ReactNode }) => <>{children}</>;
+}
+
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // Ignore errors on web where SplashScreen may not be available
+});
 
 const prefix = Linking.createURL("/");
 
@@ -109,13 +119,19 @@ export default function App() {
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {
+        // Ignore errors on web
+      });
     }
   }, [fontsLoaded, fontError]);
 
+  // Show a visible loading state on web, not just an empty view
   if (!fontsLoaded && !fontError) {
     return (
-      <View style={[styles.loading, { backgroundColor: Colors.dark.backgroundRoot }]} />
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.dark.primary} />
+        <Text style={styles.loadingText}>Loading RabitChat...</Text>
+      </View>
     );
   }
 
@@ -152,5 +168,17 @@ const styles = StyleSheet.create({
   },
   loading: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: Colors.dark.backgroundRoot,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.dark.textSecondary,
+    fontFamily: Platform.OS === "web" ? "system-ui, -apple-system, sans-serif" : undefined,
   },
 });
