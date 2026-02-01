@@ -195,7 +195,7 @@ export default function ChatScreen() {
           <View style={styles.headerRightContainer}>
             {canCallData?.canCall ? (
               <HeaderButton onPress={handleStartCall}>
-                <Feather name="phone" size={22} color={theme.primary} />
+                <Feather name="phone" size={20} color={theme.primary} />
               </HeaderButton>
             ) : null}
             <HeaderButton
@@ -208,7 +208,7 @@ export default function ChatScreen() {
                 });
               }}
             >
-              <Feather name="settings" size={22} color={theme.primary} />
+              <Feather name="settings" size={20} color={theme.primary} />
             </HeaderButton>
           </View>
         ),
@@ -831,7 +831,7 @@ export default function ChatScreen() {
                 onPress={() => setAttachmentPickerVisible(true)} 
                 style={styles.mediaButton}
               >
-                <Feather name="plus" size={22} color={theme.primary} />
+                <Feather name="plus" size={20} color={theme.primary} />
               </Pressable>
               <TextInput
                 style={[
