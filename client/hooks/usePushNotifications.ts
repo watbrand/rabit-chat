@@ -1,23 +1,28 @@
 import { useEffect, useState, useRef } from "react";
 import { Platform } from "react-native";
-import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { useAuth } from "./useAuth";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// Only import and configure notifications on native platforms
+let Notifications: typeof import("expo-notifications") | null = null;
+
+if (Platform.OS !== "web") {
+  Notifications = require("expo-notifications");
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 async function registerForPushNotificationsAsync(): Promise<string | null> {
-  if (Platform.OS === "web") {
+  if (Platform.OS === "web" || !Notifications) {
     return null;
   }
 
@@ -71,6 +76,10 @@ export function usePushNotifications() {
   const hasRegistered = useRef(false);
 
   useEffect(() => {
+    if (Platform.OS === "web" || !Notifications) {
+      return;
+    }
+    
     if (isLoading || !user || hasRegistered.current) {
       return;
     }
@@ -104,6 +113,10 @@ export function usePushNotifications() {
   }, [user, isLoading]);
 
   useEffect(() => {
+    if (Platform.OS === "web" || !Notifications) {
+      return;
+    }
+    
     const checkPermission = async () => {
       const { status } = await Notifications.getPermissionsAsync();
       setPermissionStatus(status);
@@ -111,15 +124,19 @@ export function usePushNotifications() {
     checkPermission();
   }, []);
 
-  const notificationListener = useRef<Notifications.EventSubscription | null>(null);
-  const responseListener = useRef<Notifications.EventSubscription | null>(null);
+  const notificationListener = useRef<any>(null);
+  const responseListener = useRef<any>(null);
 
   useEffect(() => {
-    notificationListener.current = Notifications.addNotificationReceivedListener((notification: Notifications.Notification) => {
+    if (Platform.OS === "web" || !Notifications) {
+      return;
+    }
+    
+    notificationListener.current = Notifications.addNotificationReceivedListener((notification: any) => {
       console.log("[Push] Notification received:", notification);
     });
 
-    responseListener.current = Notifications.addNotificationResponseReceivedListener((response: Notifications.NotificationResponse) => {
+    responseListener.current = Notifications.addNotificationResponseReceivedListener((response: any) => {
       const data = response.notification.request.content.data;
       console.log("[Push] Notification tapped:", data);
     });
