@@ -7,7 +7,9 @@ import {
   Pressable,
   Alert,
   ScrollView,
+  Linking,
 } from "react-native";
+import Checkbox from "expo-checkbox";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import Haptics from "@/lib/safeHaptics";
@@ -53,6 +55,7 @@ export default function AuthScreen() {
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [usernameSuggestions, setUsernameSuggestions] = useState<string[]>([]);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
 
   const checkUsernameAvailability = useCallback(async (usernameToCheck: string) => {
     if (usernameToCheck.length < 3) {
@@ -127,6 +130,11 @@ export default function AuthScreen() {
       return;
     }
 
+    if (!isLogin && !ageConfirmed) {
+      Alert.alert("Age Verification Required", "You must confirm that you are 18 years or older to create an account.");
+      return;
+    }
+
     setIsLoading(true);
     try {
       if (isLogin) {
@@ -177,6 +185,7 @@ export default function AuthScreen() {
     setUsernameAvailable(null);
     setUsernameSuggestions([]);
     setUsername("");
+    setAgeConfirmed(false);
   };
 
   const renderUsernameStatus = () => {
@@ -363,6 +372,47 @@ export default function AuthScreen() {
               />
             </View>
 
+            {!isLogin && (
+              <View style={styles.ageVerificationContainer}>
+                <Pressable
+                  style={styles.ageVerificationRow}
+                  onPress={() => {
+                    setAgeConfirmed(!ageConfirmed);
+                    Haptics.selectionAsync();
+                  }}
+                  testID="checkbox-age-verification"
+                >
+                  <Checkbox
+                    value={ageConfirmed}
+                    onValueChange={setAgeConfirmed}
+                    color={ageConfirmed ? theme.primary : undefined}
+                    style={styles.checkbox}
+                  />
+                  <View style={styles.ageVerificationTextContainer}>
+                    <ThemedText style={[styles.ageVerificationText, { color: theme.text }]}>
+                      I confirm that I am 18 years or older
+                    </ThemedText>
+                    <ThemedText style={[styles.legalLinks, { color: theme.textSecondary }]}>
+                      By creating an account, you agree to our{" "}
+                      <ThemedText
+                        style={{ color: theme.primary }}
+                        onPress={() => Linking.openURL("https://rabitchat.replit.app/terms")}
+                      >
+                        Terms of Service
+                      </ThemedText>
+                      {" "}and{" "}
+                      <ThemedText
+                        style={{ color: theme.primary }}
+                        onPress={() => Linking.openURL("https://rabitchat.replit.app/privacy")}
+                      >
+                        Privacy Policy
+                      </ThemedText>
+                    </ThemedText>
+                  </View>
+                </Pressable>
+              </View>
+            )}
+
             <Pressable
               style={[
                 styles.button,
@@ -508,5 +558,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: Spacing.xl,
     paddingVertical: Spacing.sm,
+  },
+  ageVerificationContainer: {
+    marginBottom: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  ageVerificationRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.md,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    marginTop: 2,
+  },
+  ageVerificationTextContainer: {
+    flex: 1,
+  },
+  ageVerificationText: {
+    fontSize: Typography.body.fontSize,
+    fontWeight: "500",
+    marginBottom: 4,
+  },
+  legalLinks: {
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

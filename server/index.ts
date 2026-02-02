@@ -261,6 +261,7 @@ function serveLegalPage(
     .replace(/NAV_TERMS_CLASS/g, activeNav === "terms" ? "active" : "")
     .replace(/NAV_PRIVACY_CLASS/g, activeNav === "privacy" ? "active" : "")
     .replace(/NAV_GUIDELINES_CLASS/g, activeNav === "guidelines" ? "active" : "")
+    .replace(/NAV_EULA_CLASS/g, activeNav === "eula" ? "active" : "")
     .replace(/NAV_SUPPORT_CLASS/g, activeNav === "support" ? "active" : "");
   
   res.setHeader("Content-Type", "text/html; charset=utf-8");
