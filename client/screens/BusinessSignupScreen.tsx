@@ -146,6 +146,7 @@ export default function BusinessSignupScreen() {
         setUsernameSuggestions(result.suggestions || []);
       }
     } catch (error) {
+      console.error("Username availability check failed:", error);
     } finally {
       setIsCheckingUsername(false);
     }

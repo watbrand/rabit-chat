@@ -106,7 +106,7 @@ function ReelItem({
         player.pause();
       }
     } catch (error) {
-      // Player native module may not be ready yet, ignore
+      console.error("Video playback control failed:", error);
     }
   }, [isActive, isPaused, player]);
 
@@ -119,7 +119,7 @@ function ReelItem({
           playerRef.current.seekTo(0);
         }
       } catch (error) {
-        // Player native module may not be ready, ignore
+        console.error("Video cleanup failed:", error);
       }
     };
   }, []);
@@ -374,6 +374,7 @@ export default function ReelsScreen() {
       await apiRequest("POST", `/api/posts/${postId}/share`, { platform: "other" });
       queryClient.invalidateQueries({ queryKey: ["/api/posts/videos"] });
     } catch (error) {
+      console.error("Post share failed:", error);
     }
   };
 

@@ -152,6 +152,7 @@ export default function CreatorSignupScreen() {
         setUsernameSuggestions(result.suggestions || []);
       }
     } catch (error) {
+      console.error("Username availability check failed:", error);
     } finally {
       setIsCheckingUsername(false);
     }

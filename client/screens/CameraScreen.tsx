@@ -7,6 +7,7 @@ import {
   Platform,
   StatusBar,
   Linking,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -167,6 +168,7 @@ export default function CameraScreen() {
     try {
       await cameraRef.current.stopRecording();
     } catch (error) {
+      console.error("Stop recording failed:", error);
     } finally {
       setIsRecording(false);
       recordingProgress.value = 0;
@@ -194,6 +196,8 @@ export default function CameraScreen() {
         setCapturedMedia({ uri: photo.uri, type: "photo" });
       }
     } catch (error) {
+      console.error("Take picture failed:", error);
+      Alert.alert("Error", "Failed to capture photo. Please try again.");
     }
   };
 
@@ -256,6 +260,7 @@ export default function CameraScreen() {
         });
       }
     } catch (error) {
+      console.error("Gallery pick failed:", error);
     }
   };
 
@@ -357,6 +362,7 @@ export default function CameraScreen() {
                     try {
                       await Linking.openSettings();
                     } catch (error) {
+                      console.error("Open settings failed:", error);
                     }
                   }}
                   style={styles.permissionButton}

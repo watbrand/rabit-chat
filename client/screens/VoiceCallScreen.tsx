@@ -269,6 +269,7 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
           setCallId(data.callId);
         }
       } catch (error) {
+        console.error("WebSocket message parse error:", error);
       }
     };
 
@@ -277,6 +278,7 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
     };
 
     ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
     };
 
     return () => {
@@ -326,6 +328,7 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
       }, 300);
       
     } catch (error) {
+      console.error("Failed to start recording:", error);
     }
   };
 
@@ -470,7 +473,7 @@ export default function VoiceCallScreen({ route, navigation }: VoiceCallScreenPr
       // Pre-prepare next audio while current plays (overlapping preparation)
       const prepareNextChunk = audioQueueRef.current.length > 0;
 
-      sound.setOnPlaybackStatusUpdate(async (status) => {
+      sound.setOnPlaybackStatusUpdate(async (status: any) => {
         if (status.isLoaded && status.didJustFinish) {
           isPlayingRef.current = false;
           // Fire-and-forget temp file cleanup - failure is non-critical

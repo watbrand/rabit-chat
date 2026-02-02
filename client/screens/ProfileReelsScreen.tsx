@@ -109,6 +109,7 @@ function ReelItem({
         player.pause();
       }
     } catch (error) {
+      console.error("Video playback control failed:", error);
     }
   }, [isActive, isPaused, player]);
 
@@ -120,6 +121,7 @@ function ReelItem({
           playerRef.current.seekTo(0);
         }
       } catch (error) {
+        console.error("Video cleanup failed:", error);
       }
     };
   }, []);
@@ -334,6 +336,7 @@ export default function ProfileReelsScreen() {
       await apiRequest("POST", `/api/posts/${postId}/share`, { platform: "other" });
       queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/posts`] });
     } catch (error) {
+      console.error("Post share failed:", error);
     }
   };
 

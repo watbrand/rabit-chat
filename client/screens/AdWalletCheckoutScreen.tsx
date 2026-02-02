@@ -148,6 +148,7 @@ export default function AdWalletCheckoutScreen() {
         }
       }
     } catch (err) {
+      console.error("Payment status check failed:", err);
     } finally {
       setCheckingStatus(false);
     }
@@ -232,6 +233,7 @@ export default function AdWalletCheckoutScreen() {
         navigation.dispatch(CommonActions.goBack());
       }
     } catch (error) {
+      console.error("Navigation back failed, resetting to MainTabs:", error);
       navigation.dispatch(
         CommonActions.reset({
           index: 0,
