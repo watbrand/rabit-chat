@@ -183,7 +183,9 @@ Your information may be transferred to and processed in countries other than you
 
 ## 8. Children's Privacy
 
-RabitChat is not intended for users under 18 years of age. We do not knowingly collect information from children. If we discover we have collected information from a child, we will delete it promptly.
+RabitChat is not intended for users under 13 years of age. We do not knowingly collect personal information from children under 13. If we discover we have collected information from a child under 13, we will delete it promptly.
+
+Users between 13 and 18 years of age should have parental or guardian consent before using the Platform. Parents or guardians may contact us at support@rabitchat.com to request information about or deletion of their child's account.
 
 ## 9. Third-Party Links and Services
 
