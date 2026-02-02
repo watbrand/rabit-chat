@@ -16,8 +16,8 @@ By creating an account, accessing, or using RabitChat ("the Platform," "we," "us
 ## 2. Eligibility
 
 To use RabitChat, you must:
-- Be at least 18 years of age
-- Have the legal capacity to enter into a binding agreement
+- Be at least 13 years of age
+- Have the legal capacity to enter into a binding agreement (or have parental/guardian consent if under 18)
 - Not be prohibited from using the Platform under applicable laws
 - Provide accurate and complete registration information
 

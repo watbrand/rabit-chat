@@ -131,7 +131,7 @@ export default function AuthScreen() {
     }
 
     if (!isLogin && !ageConfirmed) {
-      Alert.alert("Age Verification Required", "You must confirm that you are 18 years or older to create an account.");
+      Alert.alert("Age Verification Required", "You must confirm that you are 13 years or older to create an account.");
       return;
     }
 
@@ -390,20 +390,20 @@ export default function AuthScreen() {
                   />
                   <View style={styles.ageVerificationTextContainer}>
                     <ThemedText style={[styles.ageVerificationText, { color: theme.text }]}>
-                      I confirm that I am 18 years or older
+                      I confirm that I am 13 years or older
                     </ThemedText>
                     <ThemedText style={[styles.legalLinks, { color: theme.textSecondary }]}>
                       By creating an account, you agree to our{" "}
                       <ThemedText
                         style={{ color: theme.primary }}
-                        onPress={() => Linking.openURL("https://rabitchat.replit.app/terms")}
+                        onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN?.replace(':5000', '') || 'rabitchat.replit.app'}/terms`)}
                       >
                         Terms of Service
                       </ThemedText>
                       {" "}and{" "}
                       <ThemedText
                         style={{ color: theme.primary }}
-                        onPress={() => Linking.openURL("https://rabitchat.replit.app/privacy")}
+                        onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN?.replace(':5000', '') || 'rabitchat.replit.app'}/privacy`)}
                       >
                         Privacy Policy
                       </ThemedText>

@@ -34,10 +34,10 @@ You may NOT:
 
 ### 3.1 Eligibility
 To use the Application, you must:
-- Be at least 18 years of age
+- Be at least 13 years of age
 - Provide accurate and complete registration information
 - Maintain the security of your account credentials
-- Be legally capable of entering into binding agreements
+- Be legally capable of entering into binding agreements (or have parental/guardian consent if under 18)
 
 ### 3.2 Account Responsibility
 You are solely responsible for:
