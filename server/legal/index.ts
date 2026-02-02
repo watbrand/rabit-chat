@@ -1,6 +1,7 @@
 export { TERMS_OF_SERVICE, TERMS_VERSION, TERMS_EFFECTIVE_DATE } from "./terms-of-service";
 export { PRIVACY_POLICY, PRIVACY_VERSION, PRIVACY_EFFECTIVE_DATE } from "./privacy-policy";
 export { COMMUNITY_GUIDELINES, GUIDELINES_VERSION, GUIDELINES_EFFECTIVE_DATE } from "./community-guidelines";
+export { EULA, EULA_VERSION, EULA_EFFECTIVE_DATE } from "./eula";
 
 export const CURRENT_LEGAL_VERSION = "1.0";
 
@@ -9,7 +10,7 @@ export interface LegalDocument {
   version: string;
   effectiveDate: string;
   content: string;
-  type: "terms" | "privacy" | "guidelines";
+  type: "terms" | "privacy" | "guidelines" | "eula";
 }
 
 export interface LegalAgreementStatus {

@@ -15,6 +15,20 @@ import { initGossipJobs } from "./gossip-jobs";
 import { runStartupMigrations } from "./db";
 import { cleanupOldTempFiles, UPLOAD_TEMP_DIR } from "./cloudinary";
 import { seedGossipLocations } from "./seed-gossip-locations";
+import {
+  TERMS_OF_SERVICE,
+  TERMS_VERSION,
+  TERMS_EFFECTIVE_DATE,
+  PRIVACY_POLICY,
+  PRIVACY_VERSION,
+  PRIVACY_EFFECTIVE_DATE,
+  COMMUNITY_GUIDELINES,
+  GUIDELINES_VERSION,
+  GUIDELINES_EFFECTIVE_DATE,
+  EULA,
+  EULA_VERSION,
+  EULA_EFFECTIVE_DATE,
+} from "./legal";
 
 validateEnvironment();
 
@@ -204,6 +218,55 @@ function serveLandingPage({
   res.status(200).send(html);
 }
 
+function markdownToHtml(markdown: string): string {
+  return markdown
+    .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+    .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+    .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+    .replace(/^#### (.*$)/gm, '<h4>$1</h4>')
+    .replace(/\*\*Effective Date:\*\* (.*$)/gm, '<span class="effective-date">Effective Date: $1</span>')
+    .replace(/\*\*Version:\*\* (.*$)/gm, '<span class="effective-date">Version: $1</span>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/^- (.*$)/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+    .replace(/^---$/gm, '<hr>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/^(?!<[hpuol])/gm, '<p>')
+    .replace(/<p><h/g, '<h')
+    .replace(/<\/h(\d)><\/p>/g, '</h$1>')
+    .replace(/<p><ul>/g, '<ul>')
+    .replace(/<\/ul><\/p>/g, '</ul>')
+    .replace(/<p><li>/g, '<li>')
+    .replace(/<\/li><\/p>/g, '</li>')
+    .replace(/<p><hr><\/p>/g, '<hr>')
+    .replace(/<p><span/g, '<span')
+    .replace(/<\/span><\/p>/g, '</span>')
+    .replace(/<p><\/p>/g, '')
+    .replace(/https?:\/\/[^\s<]+/g, '<a href="$&" target="_blank" rel="noopener">$&</a>')
+    .replace(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/g, '<a href="mailto:$1">$1</a>');
+}
+
+function serveLegalPage(
+  res: Response,
+  template: string,
+  pageTitle: string,
+  content: string,
+  activeNav: "terms" | "privacy" | "guidelines" | "support" | "eula"
+) {
+  const htmlContent = markdownToHtml(content);
+  const html = template
+    .replace(/PAGE_TITLE_PLACEHOLDER/g, pageTitle)
+    .replace(/CONTENT_PLACEHOLDER/g, htmlContent)
+    .replace(/NAV_TERMS_CLASS/g, activeNav === "terms" ? "active" : "")
+    .replace(/NAV_PRIVACY_CLASS/g, activeNav === "privacy" ? "active" : "")
+    .replace(/NAV_GUIDELINES_CLASS/g, activeNav === "guidelines" ? "active" : "")
+    .replace(/NAV_SUPPORT_CLASS/g, activeNav === "support" ? "active" : "");
+  
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.status(200).send(html);
+}
+
 function configureExpoAndLanding(app: express.Application) {
   const templatePath = path.resolve(
     process.cwd(),
@@ -236,6 +299,87 @@ function configureExpoAndLanding(app: express.Application) {
       landingPageTemplate,
       appName,
     });
+  });
+
+  // Serve public legal pages
+  const legalTemplatePath = path.resolve(
+    process.cwd(),
+    "server",
+    "templates",
+    "legal-page.html",
+  );
+  const legalPageTemplate = fs.readFileSync(legalTemplatePath, "utf-8");
+
+  app.get("/terms", (req: Request, res: Response) => {
+    serveLegalPage(res, legalPageTemplate, "Terms of Service", TERMS_OF_SERVICE, "terms");
+  });
+
+  app.get("/privacy", (req: Request, res: Response) => {
+    serveLegalPage(res, legalPageTemplate, "Privacy Policy", PRIVACY_POLICY, "privacy");
+  });
+
+  app.get("/guidelines", (req: Request, res: Response) => {
+    serveLegalPage(res, legalPageTemplate, "Community Guidelines", COMMUNITY_GUIDELINES, "guidelines");
+  });
+
+  app.get("/eula", (req: Request, res: Response) => {
+    serveLegalPage(res, legalPageTemplate, "End User License Agreement", EULA, "eula");
+  });
+
+  app.get("/support", (req: Request, res: Response) => {
+    const supportContent = `
+# Contact Support
+
+We're here to help! Choose the best way to reach us:
+
+## In-App Support
+
+The fastest way to get help is through the app:
+1. Go to **Settings** > **Help & Support**
+2. Browse FAQs or submit a support ticket
+3. Our team typically responds within 24 hours
+
+## Email Support
+
+- **General Support:** support@rabitchat.com
+- **Privacy Concerns:** privacy@rabitchat.com
+- **Legal Inquiries:** legal@rabitchat.com
+- **Business Partnerships:** business@rabitchat.com
+
+## Report a Problem
+
+If you've encountered a bug or technical issue:
+1. Use the in-app bug reporter (Settings > Help > Report a Bug)
+2. Include screenshots if possible
+3. Describe the steps to reproduce the issue
+
+## Account Issues
+
+- **Forgot Password:** Use the "Forgot Password" link on the login screen
+- **Account Recovery:** Contact support@rabitchat.com with your registered email
+- **Account Deletion:** Go to Settings > Account > Delete Account
+
+## Safety & Trust
+
+- **Report User/Content:** Tap the three dots (...) on any post or profile to report
+- **Urgent Safety Concerns:** support@rabitchat.com (mark as URGENT)
+
+## Business Hours
+
+Our support team is available:
+- Monday - Friday: 9:00 AM - 6:00 PM (SAST)
+- Response time: Within 24-48 hours
+
+## Frequently Asked Questions
+
+Before contacting support, you might find your answer in our FAQ section within the app:
+Settings > Help > FAQs
+
+---
+
+*Thank you for using RabitChat. We're committed to providing you with the best possible experience.*
+`;
+    serveLegalPage(res, legalPageTemplate, "Contact Support", supportContent, "support");
   });
 
   // Serve web build static files
