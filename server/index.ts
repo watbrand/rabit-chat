@@ -359,6 +359,7 @@ function setupSecurityHeaders(app: express.Application) {
           imgSrc: ["'self'", "data:", "https:", "blob:"],
           scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net"],
           scriptSrcAttr: ["'unsafe-inline'"],
+          workerSrc: ["'self'", "blob:"],
           connectSrc: ["'self'", "https:", "wss:"],
           frameSrc: ["'none'"],
           objectSrc: ["'none'"],
