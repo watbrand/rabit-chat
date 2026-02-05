@@ -1,0 +1,37 @@
+{
+  "cli": {
+    "version": ">= 6.1.0"
+  },
+  "build": {
+    "production": {
+      "channel": "production",
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle",
+        "autoIncrement": "versionCode"
+      },
+      "ios": {
+        "autoIncrement": "buildNumber"
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "rabit-chat--watbrandafrica.replit.app"
+      }
+    },
+    "preview": {
+      "channel": "preview",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "rabit-chat--watbrandafrica.replit.app"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
