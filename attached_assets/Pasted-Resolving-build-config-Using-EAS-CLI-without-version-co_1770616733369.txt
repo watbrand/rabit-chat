@@ -1,0 +1,37 @@
+Resolving build config...
+Using EAS CLI without version control system is not recommended, use this mode only if you know what you are doing.
+Resolved "production" environment for the build. Learn more: https://docs.expo.dev/eas/environment-variables/#setting-the-environment-for-your-builds
+No environment variables with visibility "Plain text" and "Sensitive" found for the "production" environment on EAS.
+
+Specified value for "ios.bundleIdentifier" in app.json is ignored because an ios directory was detected in the project.
+EAS Build will use the value found in the native code.
+- Incrementing buildNumber from 3 to 4.
+✔ Incremented buildNumber from 3 to 4.
+✔ Using remote iOS credentials (Expo server)
+
+Distribution Certificate is not validated for non-interactive builds.
+Skipping Provisioning Profile validation on Apple Servers because we aren't authenticated.
+
+Project Credentials Configuration
+Project                   @replit-private-e42123f6-2a05-4c86-a608-763b544187e9/rabitchat
+Bundle Identifier         app.replit.rabitchat
+                          
+App Store Configuration   
+                          
+Distribution Certificate  
+Serial Number             27BB747C3A045152194EDB73BC9BCA44
+Expiration Date           Mon, 08 Feb 2027 19:33:39 PST
+Apple Team                CWZ992VP8S (Silvesta Khoza)
+Updated                   2 hours ago
+                          
+Provisioning Profile      
+Developer Portal ID       SGP47XCK5R
+Status                    active
+Expiration                Mon, 08 Feb 2027 19:33:39 PST
+Apple Team                CWZ992VP8S (Silvesta Khoza)
+Updated                   2 hours ago
+                          
+All credentials are ready to build @replit-private-e42123f6-2a05-4c86-a608-763b544187e9/rabitchat (app.replit.rabitchat)
+CommandError: You're currently using the bare workflow, where runtime version policies are not supported. You must set your runtime version manually. For example, define your runtime version as "1.0.0", not {"policy": "appVersion"} in your app config. https://docs.expo.dev/eas-update/runtime-versions
+Error: build:internal command failed.
+npx -y eas-cli@latest-eas-build build:internal --platform ios --profile production exited with non-zero code: 1
