@@ -6,7 +6,18 @@ RabitChat is a Forbes-style mobile social network application targeting high-net
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
-## Recent Changes (January 31, 2026)
+## Recent Changes (February 9, 2026)
+
+**Messaging & Real-Time Improvements:**
+- WebSocket now enabled on web platform (previously disabled, used polling only)
+- Message editing: PUT /api/messages/:id endpoint with 1-hour edit window, text-only restriction
+- Schema: Added `editedAt` timestamp column to messages table
+- Edit UI: "Edit Message" option in message long-press menu, edit banner above input, "edited" indicator on bubbles
+- WebSocket broadcasts `message_edited` event for real-time sync of edits
+- Haptic feedback for incoming messages from other users
+- Auto-scroll verified (inverted FlatList handles newest-at-bottom correctly)
+
+## Previous Changes (January 31, 2026)
 
 **Comprehensive Issue Fix - 200+ Issues Resolved:**
 
