@@ -53,6 +53,7 @@ interface Message {
   mediaUrl?: string | null;
   replyToId?: string | null;
   deletedAt?: string | null;
+  editedAt?: string | null;
   reactions?: any[];
   replyTo?: any;
   status?: MessageStatus;
@@ -112,6 +113,7 @@ export default function ChatScreen() {
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
 
   const { data: otherUser } = useQuery<any>({
     queryKey: [`/api/users/${otherUserId}`],
@@ -264,9 +266,6 @@ export default function ChatScreen() {
   }, [messages, conversationId, user?.id]);
 
   useEffect(() => {
-    // Skip WebSocket on web - use polling only
-    if (Platform.OS === "web") return;
-    
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let isUnmounted = false;
@@ -304,9 +303,18 @@ export default function ChatScreen() {
               queryClient.invalidateQueries({
                 queryKey: [`/api/conversations/${conversationId}/messages`],
               });
+              if (data.data.senderId !== user?.id) {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
             }
 
             if (data.type === "message_deleted" && data.data.conversationId === conversationId) {
+              queryClient.invalidateQueries({
+                queryKey: [`/api/conversations/${conversationId}/messages`],
+              });
+            }
+
+            if (data.type === "message_edited" && data.data.conversationId === conversationId) {
               queryClient.invalidateQueries({
                 queryKey: [`/api/conversations/${conversationId}/messages`],
               });
@@ -486,6 +494,24 @@ export default function ChatScreen() {
     },
   });
 
+  const editMutation = useMutation({
+    mutationFn: async ({ messageId, content }: { messageId: string; content: string }) => {
+      const res = await apiRequest("PUT", `/api/messages/${messageId}`, { content });
+      return res.json();
+    },
+    onSuccess: () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      queryClient.invalidateQueries({
+        queryKey: [`/api/conversations/${conversationId}/messages`],
+      });
+      setEditingMessage(null);
+    },
+    onError: (error: any) => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", error?.message || "Failed to edit message. Please try again.");
+    },
+  });
+
   const reactMutation = useMutation({
     mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
       const res = await apiRequest("POST", `/api/messages/${messageId}/react`, { emoji });
@@ -504,7 +530,7 @@ export default function ChatScreen() {
   });
 
   const handleSend = useCallback(() => {
-    if (!message.trim() || sendMutation.isPending) return;
+    if (!message.trim() || sendMutation.isPending || editMutation.isPending) return;
     if (message.length > 2000) {
       Alert.alert("Message too long", "Messages must be under 2000 characters.");
       return;
@@ -512,11 +538,16 @@ export default function ChatScreen() {
     const content = message.trim();
     setMessage("");
     sendTypingIndicator(false);
-    sendMutation.mutate({ 
-      content, 
-      replyToId: replyTo?.id 
-    });
-  }, [message, sendMutation, replyTo, sendTypingIndicator]);
+    
+    if (editingMessage) {
+      editMutation.mutate({ messageId: editingMessage.id, content });
+    } else {
+      sendMutation.mutate({ 
+        content, 
+        replyToId: replyTo?.id 
+      });
+    }
+  }, [message, sendMutation, editMutation, replyTo, sendTypingIndicator, editingMessage]);
 
   const handleReply = useCallback((msg: Message) => {
     setReplyTo(msg);
@@ -538,6 +569,13 @@ export default function ChatScreen() {
       ]
     );
   }, [deleteMutation]);
+
+  const handleEdit = useCallback((msg: Message) => {
+    setEditingMessage(msg);
+    setMessage(msg.content);
+    setShowOptionsMenu(false);
+    setShowReactionPicker(false);
+  }, []);
 
   const handleReact = useCallback((messageId: string, emoji: string) => {
     reactMutation.mutate({ messageId, emoji });
@@ -718,6 +756,7 @@ export default function ChatScreen() {
       status: msg.status || (msg.read ? "READ" : "DELIVERED") as MessageStatus,
       senderId: msg.senderId,
       createdAt: msg.createdAt,
+      editedAt: msg.editedAt,
       replyToMessage: msg.replyTo ? {
         id: msg.replyTo.id,
         content: msg.replyTo.content,
@@ -795,6 +834,18 @@ export default function ChatScreen() {
         </View>
       ) : (
         <View style={[styles.inputWrapper, { backgroundColor: theme.backgroundRoot }]}>
+          {editingMessage ? (
+            <View style={[styles.editBanner, { backgroundColor: theme.backgroundSecondary, borderTopColor: theme.border }]}>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={{ fontSize: 11, color: theme.primary, fontWeight: '600' }}>Editing Message</ThemedText>
+                <ThemedText style={{ fontSize: 13, color: theme.textSecondary }} numberOfLines={1}>{editingMessage.content}</ThemedText>
+              </View>
+              <Pressable onPress={() => { setEditingMessage(null); setMessage(""); }}>
+                <Feather name="x" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+          ) : null}
+
           {replyTo ? (
             <ReplyMessagePreview
               message={{
@@ -922,6 +973,7 @@ export default function ChatScreen() {
           onDeleteForMe={handleDeleteForMe}
           onDeleteForEveryone={handleDeleteForEveryone}
           onReact={handleShowOptionsMenu}
+          onEdit={() => { if (selectedMessage) handleEdit(selectedMessage); }}
         />
       ) : null}
     </RNKeyboardAvoidingView>
@@ -1079,5 +1131,13 @@ const styles = StyleSheet.create({
   requestText: {
     fontSize: Typography.body.fontSize,
     textAlign: "center",
+  },
+  editBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    gap: Spacing.sm,
   },
 });

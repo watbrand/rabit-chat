@@ -560,6 +560,8 @@ export const messages = pgTable("messages", {
   // Disappearing messages (optional feature)
   expiresAt: timestamp("expires_at"),
   
+  editedAt: timestamp("edited_at"),
+  
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("messages_conversation_created_idx").on(table.conversationId, table.createdAt),

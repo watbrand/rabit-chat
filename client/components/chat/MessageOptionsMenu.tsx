@@ -49,6 +49,7 @@ export interface MessageOptionsMenuProps {
   onDeleteForMe: () => void;
   onDeleteForEveryone: () => void;
   onReact: () => void;
+  onEdit?: () => void;
 }
 
 interface MenuOption {
@@ -74,6 +75,7 @@ export function MessageOptionsMenu({
   onDeleteForMe,
   onDeleteForEveryone,
   onReact,
+  onEdit,
 }: MessageOptionsMenuProps) {
   const { theme, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -135,6 +137,14 @@ export function MessageOptionsMenu({
       label: "React",
       onPress: () => handleOptionPress(onReact),
       visible: true,
+      group: "primary",
+    },
+    {
+      id: "edit",
+      icon: "edit-2" as keyof typeof Feather.glyphMap,
+      label: "Edit Message",
+      onPress: () => { onClose(); onEdit?.(); },
+      visible: isOwnMessage && isTextMessage && isWithinOneHour(),
       group: "primary",
     },
     {

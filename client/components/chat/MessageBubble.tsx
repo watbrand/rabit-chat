@@ -62,6 +62,7 @@ interface Message {
   status?: MessageStatus;
   senderId: string;
   createdAt: string;
+  editedAt?: string | null;
   replyToMessage?: ReplyToMessage;
 }
 
@@ -644,6 +645,16 @@ export function MessageBubble({
         {renderMessageContent()}
         <View style={styles.metaRow}>
           {message.encryptedContent && !message.content ? <EncryptionBadge isSent={isSent} /> : null}
+          {message.editedAt ? (
+            <Text
+              style={[
+                styles.timestamp,
+                { color: isSent ? "rgba(255,255,255,0.7)" : theme.textTertiary },
+              ]}
+            >
+              edited
+            </Text>
+          ) : null}
           <Text
             style={[
               styles.timestamp,

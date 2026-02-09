@@ -5654,6 +5654,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put("/api/messages/:id", requireAuth, async (req, res) => {
+    try {
+      const { content } = req.body;
+      const messageId = req.params.id;
+      const userId = req.session.userId!;
+      
+      if (!content || content.trim().length === 0) {
+        return res.status(400).json({ message: "Message content is required" });
+      }
+      
+      if (content.length > 2000) {
+        return res.status(400).json({ message: "Message must be under 2000 characters" });
+      }
+      
+      const [message] = await db.select().from(messages).where(eq(messages.id, messageId));
+      if (!message) {
+        return res.status(404).json({ message: "Message not found" });
+      }
+      if (message.senderId !== userId) {
+        return res.status(403).json({ message: "You can only edit your own messages" });
+      }
+      
+      const messageTime = new Date(message.createdAt).getTime();
+      const now = Date.now();
+      if (now - messageTime > 60 * 60 * 1000) {
+        return res.status(400).json({ message: "Messages can only be edited within 1 hour" });
+      }
+      
+      if (message.messageType && message.messageType !== "TEXT") {
+        return res.status(400).json({ message: "Only text messages can be edited" });
+      }
+      
+      const [updated] = await db.update(messages)
+        .set({ content: content.trim(), editedAt: new Date() })
+        .where(eq(messages.id, messageId))
+        .returning();
+      
+      const conversationId = message.conversationId;
+      if (conversationId) {
+        const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId));
+        if (conversation) {
+          const participantIds = [conversation.participant1Id, conversation.participant2Id];
+          participantIds.forEach(pid => {
+            broadcastToUser(pid, {
+              type: "message_edited",
+              data: { messageId, conversationId, content: content.trim() }
+            });
+          });
+        }
+      }
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Edit message error:", error);
+      res.status(500).json({ message: "Failed to edit message" });
+    }
+  });
+
   // Add reaction to message
   app.post("/api/messages/:messageId/reactions", requireAuth, validateBody(messageReactionSchema), async (req, res) => {
     try {
