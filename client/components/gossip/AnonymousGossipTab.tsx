@@ -84,6 +84,7 @@ export function AnonymousGossipTab() {
       console.log("[GossipTab] Full URL:", url);
       
       const response = await fetch(url, { 
+        credentials: "include",
         headers: deviceId ? { "x-device-id": deviceId } : {} 
       });
       
@@ -111,6 +112,7 @@ export function AnonymousGossipTab() {
     queryFn: async () => {
       if (!deviceId) return { reactions: [] };
       const response = await fetch(`${getApiUrl()}/api/gossip/v2/my-reactions`, {
+        credentials: "include",
         headers: { "x-device-id": deviceId },
       });
       if (!response.ok) return { reactions: [] };
@@ -124,6 +126,7 @@ export function AnonymousGossipTab() {
     mutationFn: async ({ postId, type }: { postId: string; type: ReactionType }) => {
       const response = await fetch(`${getApiUrl()}/api/gossip/v2/posts/${postId}/react`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "x-device-id": deviceId || "",
@@ -144,6 +147,7 @@ export function AnonymousGossipTab() {
     mutationFn: async (postId: string) => {
       const response = await fetch(`${getApiUrl()}/api/gossip/v2/posts/${postId}/report`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "x-device-id": deviceId || "",
@@ -182,6 +186,7 @@ export function AnonymousGossipTab() {
       if (!deviceId) throw new Error("No device ID");
       const response = await fetch(`${getApiUrl()}/api/gossip/v2/dm/start`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "x-device-id": deviceId,

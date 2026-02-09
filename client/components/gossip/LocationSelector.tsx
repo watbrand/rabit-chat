@@ -50,7 +50,7 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
   const { data: provincesData, isLoading: loadingProvinces } = useQuery<{ provinces: Province[] }>({
     queryKey: ["/api/gossip/v2/locations/provinces"],
     queryFn: async () => {
-      const response = await fetch(`${getApiUrl()}/api/gossip/v2/locations/provinces`);
+      const response = await fetch(`${getApiUrl()}/api/gossip/v2/locations/provinces`, { credentials: "include" });
       if (!response.ok) return { provinces: [] };
       return response.json();
     },
@@ -61,7 +61,7 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
     queryKey: ["/api/gossip/v2/locations/provinces", selectedProvince?.slug, "cities"],
     queryFn: async () => {
       if (!selectedProvince?.slug) return { cities: [] };
-      const response = await fetch(`${getApiUrl()}/api/gossip/v2/locations/provinces/${selectedProvince.slug}/cities`);
+      const response = await fetch(`${getApiUrl()}/api/gossip/v2/locations/provinces/${selectedProvince.slug}/cities`, { credentials: "include" });
       if (!response.ok) return { cities: [] };
       return response.json();
     },
@@ -73,7 +73,7 @@ export function LocationSelector({ selectedCountry, selectedLocation, onSelect }
     queryKey: ["/api/gossip/v2/locations/provinces", selectedProvince?.slug, "cities", selectedCity?.slug, "hoods"],
     queryFn: async () => {
       if (!selectedProvince?.slug || !selectedCity?.slug) return { hoods: [] };
-      const response = await fetch(`${getApiUrl()}/api/gossip/v2/locations/provinces/${selectedProvince.slug}/cities/${selectedCity.slug}/hoods`);
+      const response = await fetch(`${getApiUrl()}/api/gossip/v2/locations/provinces/${selectedProvince.slug}/cities/${selectedCity.slug}/hoods`, { credentials: "include" });
       if (!response.ok) return { hoods: [] };
       return response.json();
     },

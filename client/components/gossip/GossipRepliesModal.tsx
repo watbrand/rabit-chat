@@ -153,7 +153,7 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
       if (!deviceId || !post?.id) return [];
       const response = await fetch(
         `${getApiUrl()}/api/gossip/v2/posts/${post.id}/comments`,
-        { headers: { "x-device-id": deviceId } }
+        { credentials: "include", headers: { "x-device-id": deviceId } }
       );
       if (!response.ok) return [];
       const data = await response.json();
@@ -169,6 +169,7 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
         `${getApiUrl()}/api/gossip/v2/posts/${post.id}/comments`,
         {
           method: "POST",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
             "x-device-id": deviceId,
@@ -199,6 +200,7 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
         `${getApiUrl()}/api/gossip/v2/comments/${replyId}/react`,
         {
           method: "POST",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
             "x-device-id": deviceId,
@@ -251,6 +253,7 @@ export function GossipRepliesModal({ visible, onClose, post }: GossipRepliesModa
         `${getApiUrl()}/api/gossip/v2/comments/${reportReplyId}/report`,
         {
           method: "POST",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
             "x-device-id": deviceId,

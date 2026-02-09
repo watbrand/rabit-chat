@@ -76,6 +76,7 @@ export function GossipComposeModal({ visible, onClose, presetLocation }: GossipC
       
       const response = await fetch(fullUrl, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "x-device-id": deviceId,

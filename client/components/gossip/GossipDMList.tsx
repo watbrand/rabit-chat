@@ -145,6 +145,7 @@ export function GossipDMList() {
     queryFn: async () => {
       if (!deviceId) return { conversations: [] };
       const response = await fetch(`${getApiUrl()}/api/gossip/v2/dm/conversations`, {
+        credentials: "include",
         headers: { "x-device-id": deviceId },
       });
       if (!response.ok) throw new Error("Failed to fetch conversations");

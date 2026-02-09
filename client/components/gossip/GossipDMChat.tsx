@@ -151,7 +151,7 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
       if (!deviceId) return { messages: [] };
       const response = await fetch(
         `${getApiUrl()}/api/gossip/v2/dm/conversations/${conversationId}/messages`,
-        { headers: { "x-device-id": deviceId } }
+        { credentials: "include", headers: { "x-device-id": deviceId } }
       );
       if (!response.ok) throw new Error("Failed to fetch messages");
       return response.json();
@@ -167,6 +167,7 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
         `${getApiUrl()}/api/gossip/v2/dm/conversations/${conversationId}/read`,
         {
           method: "POST",
+          credentials: "include",
           headers: { "x-device-id": deviceId },
         }
       );
@@ -258,6 +259,7 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
         `${getApiUrl()}/api/gossip/v2/dm/conversations/${conversationId}/messages`,
         {
           method: "POST",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
             "x-device-id": deviceId,
@@ -291,6 +293,7 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
         `${getApiUrl()}/api/gossip/v2/dm/messages/${messageId}`,
         {
           method: "DELETE",
+          credentials: "include",
           headers: { "x-device-id": deviceId },
         }
       );
@@ -319,6 +322,7 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
         `${getApiUrl()}/api/gossip/v2/dm/conversations/${conversationId}/block`,
         {
           method: "POST",
+          credentials: "include",
           headers: { "x-device-id": deviceId },
         }
       );
@@ -346,6 +350,7 @@ export function GossipDMChat({ conversationId, theirAlias, onConnectionChange }:
         `${getApiUrl()}/api/gossip/v2/dm/conversations/${conversationId}/report`,
         {
           method: "POST",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
             "x-device-id": deviceId,
